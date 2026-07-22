@@ -59,6 +59,7 @@ interface PersistedMessage {
 }
 
 type BookingStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
+type CancellationReason = "schedule_change" | "no_longer_needed" | "participant_unavailable" | "safety_concern" | "other";
 
 interface BookingHistoryEvent {
   id: string;
@@ -106,8 +107,32 @@ interface PersistedBooking {
   reviewCount: number;
   averageRating: string | null;
   hasActorReview: boolean;
+  cancellationReason: CancellationReason | null;
+  cancellationDetails: string | null;
+  cancellationPriorStatus: "scheduled" | "in_progress" | null;
+  cancelledAt: string | null;
+  cancelledByName: string | null;
+  supportCaseCode: string | null;
+  supportCaseStatus: string | null;
   history?: BookingHistoryEvent[];
   reviews?: ServiceReview[];
+}
+
+interface SupportCase {
+  id: string;
+  publicCode: string;
+  caseType: "cancellation";
+  priority: "normal" | "high";
+  status: "open" | "in_review" | "resolved";
+  title: string;
+  description: string;
+  createdAt: string;
+  requestCode: string;
+  requestTitle: string;
+  reasonCode: CancellationReason;
+  priorStatus: "scheduled" | "in_progress";
+  openedByName: string;
+  openedByRole: "customer" | "provider";
 }
 
 const demoUiActorIds = {
@@ -519,11 +544,41 @@ function Affiliate({ initials, name, category, status }: { initials: string; nam
 }
 
 function OperationsView({ notify }: { notify: (message: string) => void }) {
+  const [cases, setCases] = useState<SupportCase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [refreshedAt, setRefreshedAt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/cases", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Não foi possível carregar a fila operacional.");
+        return response.json() as Promise<{ cases: SupportCase[] }>;
+      })
+      .then((payload) => { setCases(payload.cases); setRefreshedAt(Date.now()); })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a fila operacional.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const openCases = cases.filter((item) => item.status !== "resolved");
+  const highPriority = openCases.filter((item) => item.priority === "high").length;
+  const waiting = (value: string) => {
+    const minutes = Math.max(0, Math.floor((refreshedAt - new Date(value).getTime()) / 60_000));
+    if (minutes < 1) return "agora";
+    if (minutes < 60) return `${minutes} min`;
+    return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
+  };
+
   return (
     <>
       <DashboardHeader role="operacao" eyebrow="Operação e moderação" title="O que precisa de atenção hoje?" />
-      <div className="metric-grid"><Metric label="Perfis em análise" value="17" detail="4 há mais de 24 h" tone="warning" /><Metric label="Documentos pendentes" value="9" detail="3 reenviados hoje" /><Metric label="Ocorrências abertas" value="6" detail="1 em alta prioridade" /><Metric label="Serviços ativos" value="143" detail="98% sem ocorrência" /></div>
-      <section className="dashboard-section operations-table"><div className="dashboard-section-title"><div><small>FILA PRIORITÁRIA</small><h2>Análises e ocorrências</h2></div><button onClick={() => notify("Fila operacional atualizada.")}>Atualizar fila ↻</button></div><div className="table-head"><span>Tipo</span><span>Referência</span><span>Motivo</span><span>Espera</span><span>Status</span></div><OperationRow type="Prestador" reference="PR-8M4Q" reason="Documento reenviado" wait="38 min" status="Revisar" notify={notify} /><OperationRow type="Ocorrência" reference="SV-29K7" reason="Cancelamento contestado" wait="1 h 12" status="Prioridade" notify={notify} /><OperationRow type="Prestador" reference="PR-6D2A" reason="Dados incompletos" wait="3 h 40" status="Pendência" notify={notify} /><OperationRow type="Suporte" reference="CS-4N8R" reason="Dúvida sobre proposta" wait="5 h 03" status="Aberto" notify={notify} /></section>
+      <div className="metric-grid"><Metric label="Perfis em análise" value="17" detail="4 há mais de 24 h" tone="warning" /><Metric label="Documentos pendentes" value="9" detail="3 reenviados hoje" /><Metric label="Ocorrências abertas" value={loading ? "…" : String(openCases.length)} detail={`${highPriority} em alta prioridade`} tone={highPriority > 0 ? "warning" : undefined} /><Metric label="Serviços ativos" value="143" detail="Dados demonstrativos" /></div>
+      <section className="dashboard-section operations-table"><div className="dashboard-section-title"><div><small>FILA PRIORITÁRIA</small><h2>Cancelamentos e ocorrências</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Tipo</span><span>Referência</span><span>Motivo</span><span>Espera</span><span>Status</span></div>{loading && <div className="data-state">Carregando ocorrências...</div>}{!loading && cases.length === 0 && <div className="data-state"><strong>Nenhuma ocorrência aberta.</strong><span>Cancelamentos registrados aparecerão automaticamente nesta fila.</span></div>}{cases.map((item) => <OperationRow key={item.id} type="Cancelamento" reference={item.publicCode} reason={`${item.requestCode} · ${item.description}`} wait={waiting(item.createdAt)} status={item.priority === "high" ? "Prioridade" : item.status === "in_review" ? "Em análise" : item.status === "resolved" ? "Resolvido" : "Aberto"} notify={notify} />)}</section>
       <div className="operations-note"><span>!</span><p><strong>Ações críticas exigem justificativa.</strong> Aprovações, rejeições, suspensões e mudanças de regra ficam registradas com antes/depois na trilha de auditoria.</p></div>
     </>
   );
@@ -543,6 +598,14 @@ const bookingStatusLabel: Record<BookingStatus, string> = {
   in_progress: "Em andamento",
   completed: "Concluído",
   cancelled: "Cancelado",
+};
+
+const cancellationReasonLabel: Record<CancellationReason, string> = {
+  schedule_change: "Mudança de horário",
+  no_longer_needed: "Serviço não é mais necessário",
+  participant_unavailable: "Participante indisponível",
+  safety_concern: "Questão de segurança",
+  other: "Outro motivo",
 };
 
 function BookingActivityView({ role, notify }: { role: "cliente" | "prestador"; notify: (message: string) => void }) {
@@ -639,6 +702,10 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
   const [reviewing, setReviewing] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [showCancellation, setShowCancellation] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState<CancellationReason>("schedule_change");
+  const [cancelDetails, setCancelDetails] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
@@ -701,6 +768,30 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
     }
   };
 
+  const submitCancellation = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (cancelDetails.trim().length < 10) return;
+    setCancelling(true);
+    try {
+      const response = await fetch("/api/v1/bookings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role, bookingId, reasonCode: cancelReason, details: cancelDetails.trim() }),
+      });
+      const payload = await response.json() as { case?: { publicCode: string }; error?: string; message?: string };
+      if (!response.ok || !payload.case) throw new Error(payload.error ?? payload.message ?? "Não foi possível registrar o cancelamento.");
+      setBooking(await load());
+      setShowCancellation(false);
+      setCancelDetails("");
+      onChanged();
+      notify(`Cancelamento registrado. Ocorrência ${payload.case.publicCode} aberta para acompanhamento.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível registrar o cancelamento.");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const dateTime = (value: string | null) => value
     ? new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date(value))
     : "A combinar";
@@ -713,17 +804,19 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
         <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
         {loading && <div className="data-state">Carregando agendamento...</div>}
         {booking && <>
-          <header className="booking-dialog-header"><span>{booking.categoryIcon}</span><div><p className="dialog-kicker">{booking.requestCode} · {booking.categoryName}</p><h2 id="booking-title">{booking.requestTitle}</h2><p>{booking.neighborhood}, {booking.city} · {role === "cliente" ? booking.providerName : booking.customerName}</p></div><strong className="status-pill success">{bookingStatusLabel[booking.status]}</strong></header>
+          <header className="booking-dialog-header"><span>{booking.categoryIcon}</span><div><p className="dialog-kicker">{booking.requestCode} · {booking.categoryName}</p><h2 id="booking-title">{booking.requestTitle}</h2><p>{booking.neighborhood}, {booking.city} · {role === "cliente" ? booking.providerName : booking.customerName}</p></div><strong className={`status-pill ${booking.status === "cancelled" ? "warning" : "success"}`}>{bookingStatusLabel[booking.status]}</strong></header>
           <div className="booking-dialog-body">
-            <div className="booking-stage" aria-label={`Etapa atual: ${bookingStatusLabel[booking.status]}`}>
+            {booking.status === "cancelled" ? <div className="booking-cancelled-stage"><span>!</span><div><small>ATENDIMENTO INTERROMPIDO</small><strong>O cancelamento foi registrado e encaminhado para a equipe Max.</strong></div></div> : <div className="booking-stage" aria-label={`Etapa atual: ${bookingStatusLabel[booking.status]}`}>
               {["Agendado", "Em andamento", "Concluído"].map((label, index) => <div key={label} className={`${index <= stageIndex ? "active" : ""} ${index < stageIndex ? "complete" : ""}`}><i>{index < stageIndex ? "✓" : index + 1}</i><span>{label}</span></div>)}
-            </div>
+            </div>}
             <div className="booking-facts"><article><small>DATA E HORÁRIO</small><strong>{dateTime(booking.scheduledFor)}</strong></article><article><small>VALOR DA PROPOSTA</small><strong>{currency.format(booking.amountCents / 100)}</strong></article><article><small>DURAÇÃO PREVISTA</small><strong>{booking.estimatedMinutes < 120 ? `${booking.estimatedMinutes} min` : `${Math.round(booking.estimatedMinutes / 60)} h`}</strong></article></div>
             <section className="booking-description"><small>DETALHES DO PEDIDO</small><p>{booking.requestDescription}</p></section>
             <section className="booking-history"><small>HISTÓRICO DO SERVIÇO</small>{booking.history?.map((event) => <article key={event.id}><i>✓</i><div><strong>{bookingStatusLabel[event.status]}</strong><p>{event.note}</p><small>{event.actorName} · {dateTime(event.createdAt)}</small></div></article>)}</section>
+            {booking.status === "cancelled" && booking.cancellationReason && <section className="cancellation-summary"><div><small>MOTIVO DO CANCELAMENTO</small><strong>{cancellationReasonLabel[booking.cancellationReason]}</strong></div><p>{booking.cancellationDetails}</p><footer><span>Solicitado por {booking.cancelledByName}</span><strong>{booking.supportCaseCode} · {booking.supportCaseStatus === "open" ? "Ocorrência aberta" : booking.supportCaseStatus}</strong></footer></section>}
             {booking.reviews && booking.reviews.length > 0 && <section className="service-reviews"><div><small>AVALIAÇÕES DA EXPERIÊNCIA</small><strong>{booking.averageRating ? `${booking.averageRating} de 5` : "Avaliado"}</strong></div>{booking.reviews.map((review) => <article key={review.id}><header><span>{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</span><small>{review.authorName} · {review.authorRole === "customer" ? "Cliente" : "Profissional"}</small></header><p>{review.comment}</p></article>)}</section>}
             {booking.status === "completed" && !booking.hasActorReview && <form className="review-form" onSubmit={submitReview}><div><small>AVALIE ESTA EXPERIÊNCIA</small><strong>{role === "cliente" ? `Como foi o serviço de ${booking.providerName}?` : `Como foi atender ${booking.customerName}?`}</strong></div><div className="review-stars" role="radiogroup" aria-label="Nota da avaliação">{[1,2,3,4,5].map((value) => <button key={value} type="button" role="radio" aria-checked={rating === value} aria-label={`${value} estrela${value > 1 ? "s" : ""}`} className={value <= rating ? "active" : ""} onClick={() => setRating(value)}>★</button>)}</div><label><span>Comentário</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} minLength={10} maxLength={500} placeholder="Conte com clareza o que deu certo na experiência." /></label><button className="primary-action" type="submit" disabled={reviewing || comment.trim().length < 10}>{reviewing ? "Registrando..." : "Enviar avaliação"}</button></form>}
-            <div className="booking-next-action"><div><small>PRÓXIMA AÇÃO</small><strong>{booking.status === "scheduled" ? role === "prestador" ? "Inicie quando chegar ao local." : "Aguarde o profissional iniciar o serviço." : booking.status === "in_progress" ? role === "prestador" ? "Conclua após finalizar o atendimento." : "O profissional está executando o serviço." : booking.hasActorReview ? "Sua avaliação está registrada e vinculada ao serviço." : "Avalie a experiência para concluir esta jornada."}</strong></div>{role === "prestador" && booking.status === "scheduled" && <button className="primary-action" disabled={updating} onClick={() => transition("in_progress")}>{updating ? "Atualizando..." : "Iniciar serviço"}</button>}{role === "prestador" && booking.status === "in_progress" && <button className="primary-action" disabled={updating} onClick={() => transition("completed")}>{updating ? "Atualizando..." : "Marcar como concluído"}</button>}</div>
+            {showCancellation && (booking.status === "scheduled" || booking.status === "in_progress") && <form className="cancellation-form" onSubmit={submitCancellation}><div><small>CANCELAMENTO COM MOTIVO</small><strong>Confirme os dados antes de interromper o atendimento.</strong></div><label><span>Motivo</span><select value={cancelReason} onChange={(event) => setCancelReason(event.target.value as CancellationReason)}>{Object.entries(cancellationReasonLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label><span>Explique o ocorrido</span><textarea minLength={10} maxLength={500} value={cancelDetails} onChange={(event) => setCancelDetails(event.target.value)} placeholder="Informe detalhes para a equipe Max acompanhar o caso." /></label><div><button type="button" className="secondary-action" onClick={() => setShowCancellation(false)}>Voltar</button><button type="submit" className="danger-action" disabled={cancelling || cancelDetails.trim().length < 10}>{cancelling ? "Registrando..." : "Confirmar cancelamento"}</button></div></form>}
+            <div className="booking-next-action"><div><small>PRÓXIMA AÇÃO</small><strong>{booking.status === "scheduled" ? role === "prestador" ? "Inicie quando chegar ao local." : "Aguarde o profissional iniciar o serviço." : booking.status === "in_progress" ? role === "prestador" ? "Conclua após finalizar o atendimento." : "O profissional está executando o serviço." : booking.status === "cancelled" ? `Acompanhe a ocorrência ${booking.supportCaseCode ?? "aberta"}.` : booking.hasActorReview ? "Sua avaliação está registrada e vinculada ao serviço." : "Avalie a experiência para concluir esta jornada."}</strong></div><div className="booking-action-buttons">{role === "prestador" && booking.status === "scheduled" && <button className="primary-action" disabled={updating} onClick={() => transition("in_progress")}>{updating ? "Atualizando..." : "Iniciar serviço"}</button>}{role === "prestador" && booking.status === "in_progress" && <button className="primary-action" disabled={updating} onClick={() => transition("completed")}>{updating ? "Atualizando..." : "Marcar como concluído"}</button>}{(booking.status === "scheduled" || booking.status === "in_progress") && !showCancellation && <button className="danger-action" onClick={() => setShowCancellation(true)}>Solicitar cancelamento</button>}</div></div>
           </div>
         </>}
       </section>

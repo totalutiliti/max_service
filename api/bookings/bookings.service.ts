@@ -35,6 +35,13 @@ const bookingSelect = `
     provider.id AS "providerId",
     provider.display_name AS "providerName",
     provider.public_code AS "providerCode",
+    cancellation.reason_code AS "cancellationReason",
+    cancellation.details AS "cancellationDetails",
+    cancellation.prior_status AS "cancellationPriorStatus",
+    cancellation.created_at AS "cancelledAt",
+    canceller.display_name AS "cancelledByName",
+    support.public_code AS "supportCaseCode",
+    support.status AS "supportCaseStatus",
     (SELECT COUNT(*)::integer FROM service_reviews sr WHERE sr.booking_id = b.id) AS "reviewCount",
     (SELECT ROUND(AVG(sr.rating), 1) FROM service_reviews sr WHERE sr.booking_id = b.id) AS "averageRating",
     EXISTS (
@@ -48,6 +55,9 @@ const bookingSelect = `
   JOIN proposals p ON p.id = b.proposal_id
   JOIN users customer ON customer.id = b.customer_id
   JOIN users provider ON provider.id = b.provider_id
+  LEFT JOIN booking_cancellations cancellation ON cancellation.booking_id = b.id
+  LEFT JOIN users canceller ON canceller.id = cancellation.requested_by
+  LEFT JOIN support_cases support ON support.booking_id = b.id
 `;
 
 @Injectable()
@@ -189,6 +199,74 @@ export class BookingsService {
         [actor.id, actor.role, reviewId, JSON.stringify({ bookingId, subjectId, rating })],
       );
       return result.rows[0];
+    });
+  }
+
+  async cancel(
+    actor: Actor,
+    bookingId: string,
+    reasonCode: "schedule_change" | "no_longer_needed" | "participant_unavailable" | "safety_concern" | "other",
+    details: string,
+  ) {
+    if (actor.role !== "customer" && actor.role !== "provider") {
+      throw new ForbiddenException("Este perfil não pode cancelar o serviço.");
+    }
+    const normalizedDetails = details.trim();
+    if (normalizedDetails.length < 10) throw new BadRequestException("Descreva o motivo com pelo menos 10 caracteres.");
+
+    return this.database.withActor(actor, async (client) => {
+      const current = await client.query<{ id: string; requestId: string; requestCode: string; status: BookingStatus }>(`
+        SELECT b.id, b.request_id AS "requestId", r.public_code AS "requestCode", b.status
+        FROM bookings b
+        JOIN service_requests r ON r.id = b.request_id
+        WHERE b.id = $1
+      `, [bookingId]);
+      if (!current.rows[0]) throw new NotFoundException("Agendamento não encontrado.");
+      if (current.rows[0].status !== "scheduled" && current.rows[0].status !== "in_progress") {
+        throw new ConflictException("Este serviço não pode mais ser cancelado.");
+      }
+
+      const cancellationId = randomUUID();
+      const cancellation = await client.query(`
+        INSERT INTO booking_cancellations (id, booking_id, requested_by, actor_role, reason_code, details, prior_status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (booking_id) DO NOTHING
+        RETURNING id, reason_code AS "reasonCode", details, prior_status AS "priorStatus", created_at AS "createdAt"
+      `, [cancellationId, bookingId, actor.id, actor.role, reasonCode, normalizedDetails, current.rows[0].status]);
+      if (!cancellation.rows[0]) throw new ConflictException("O cancelamento deste serviço já foi registrado.");
+
+      const updated = await client.query(`
+        UPDATE bookings
+        SET status = 'cancelled', updated_at = now()
+        WHERE id = $1 AND status = $2
+        RETURNING id, status
+      `, [bookingId, current.rows[0].status]);
+      if (!updated.rows[0]) throw new ConflictException("O serviço foi atualizado por outra ação. Recarregue e tente novamente.");
+
+      await client.query("UPDATE service_requests SET status = 'cancelled', updated_at = now() WHERE id = $1", [current.rows[0].requestId]);
+      const historyNote = `Cancelamento solicitado: ${normalizedDetails}`;
+      await client.query(
+        "INSERT INTO booking_status_history (booking_id, status, actor_id, note) VALUES ($1, 'cancelled', $2, $3)",
+        [bookingId, actor.id, historyNote],
+      );
+      await client.query(
+        "INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'cancelled', $2, $3)",
+        [current.rows[0].requestId, actor.id, historyNote],
+      );
+
+      const caseId = randomUUID();
+      const caseCode = `CS-${randomUUID().slice(0, 6).toUpperCase()}`;
+      const supportCase = await client.query(`
+        INSERT INTO support_cases (id, public_code, booking_id, opened_by, case_type, priority, status, title, description)
+        VALUES ($1, $2, $3, $4, 'cancellation', $5, 'open', $6, $7)
+        RETURNING id, public_code AS "publicCode", priority, status, created_at AS "createdAt"
+      `, [caseId, caseCode, bookingId, actor.id, current.rows[0].status === "in_progress" ? "high" : "normal", `Cancelamento do serviço ${current.rows[0].requestCode}`, normalizedDetails]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'booking.cancelled', 'booking', $3, $4::jsonb)",
+        [actor.id, actor.role, bookingId, JSON.stringify({ from: current.rows[0].status, reasonCode, caseId })],
+      );
+
+      return { cancellation: cancellation.rows[0], case: supportCase.rows[0] };
     });
   }
 }

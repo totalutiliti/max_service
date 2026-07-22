@@ -25,7 +25,7 @@
 
 ### Marketplace
 
-`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`.
+`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `booking_cancellations`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`.
 
 ### Crescimento e receita
 
@@ -42,6 +42,8 @@
 - um booking nasce de exatamente uma proposta aceita;
 - o ciclo básico de booking é `scheduled → in_progress → completed`; apenas o prestador vinculado executa essas transições;
 - toda transição de booking gera histórico no mesmo commit;
+- um booking só pode ter um cancelamento, solicitado por cliente ou prestador vinculado enquanto estiver agendado ou em execução;
+- cada cancelamento abre exatamente um `support_case`; interrupções em execução recebem prioridade alta;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;
 - cada avaliação tem como alvo a outra parte do booking e não pode ser editada ou apagada pelo fluxo da aplicação;
 - um evento de PSP tem chave idempotente única;

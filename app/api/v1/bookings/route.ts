@@ -18,10 +18,18 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const payload = await request.json() as { role?: string; bookingId?: string; status?: string; note?: string; rating?: number; comment?: string };
+  const payload = await request.json() as { role?: string; bookingId?: string; status?: string; note?: string; rating?: number; comment?: string; reasonCode?: string; details?: string };
   const role = mapRole(payload.role ?? null);
   if (!role) return Response.json({ error: "Perfil sem acesso à agenda." }, { status: 403 });
   if (!payload.bookingId) return Response.json({ error: "bookingId é obrigatório." }, { status: 400 });
+  if (payload.reasonCode !== undefined || payload.details !== undefined) {
+    return proxyDemoRequest(
+      `/api/v1/bookings/${encodeURIComponent(payload.bookingId)}/cancellations`,
+      request,
+      role,
+      { reasonCode: payload.reasonCode, details: payload.details },
+    );
+  }
   if (payload.rating !== undefined || payload.comment !== undefined) {
     return proxyDemoRequest(
       `/api/v1/bookings/${encodeURIComponent(payload.bookingId)}/reviews`,

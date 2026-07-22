@@ -1,6 +1,7 @@
 const actorIds = {
   customer: "00000000-0000-4000-8000-000000000101",
   provider: "00000000-0000-4000-8000-000000000201",
+  operation: "00000000-0000-4000-8000-000000000401",
 } as const;
 
 type DemoRole = keyof typeof actorIds;

@@ -15,6 +15,8 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - A área **Atividade** apresenta a agenda persistente, detalhes do atendimento e a linha do tempo do serviço.
 - O profissional inicia e conclui o atendimento por transições validadas; o cliente acompanha cada atualização sem poder alterar o estado.
 - Após a conclusão, cliente e profissional avaliam a experiência uma única vez; notas e comentários permanecem vinculados ao atendimento.
+- Cliente e profissional podem cancelar atendimentos agendados ou em execução, com motivo obrigatório, histórico e auditoria.
+- Cada cancelamento abre automaticamente um chamado persistente; interrupções durante a execução entram como prioridade alta na fila da operação.
 - Pedidos agendados bloqueiam novas propostas e aceite duplicado; cada mudança relevante gera histórico e auditoria.
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
 - Nenhum pagamento real, carteira, crédito, biometria ou consulta de antecedentes está ativo.
@@ -70,4 +72,4 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 
 ## Limites desta etapa
 
-Esta entrega é uma fundação local de Fase 1, ainda com identidades e dados fictícios. Autenticação pública, uploads privados, entrega de mensagens em tempo real, cancelamentos, pagamentos e integrações externas permanecem desativados. Conversas, ciclo do agendamento e avaliações bilaterais são persistentes. As credenciais do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.
+Esta entrega é uma fundação local de Fase 1, ainda com identidades e dados fictícios. Autenticação pública, uploads privados, entrega de mensagens em tempo real, resolução manual dos chamados, pagamentos e integrações externas permanecem desativados. Conversas, ciclo do agendamento, cancelamentos, chamados operacionais e avaliações bilaterais são persistentes. As credenciais do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.

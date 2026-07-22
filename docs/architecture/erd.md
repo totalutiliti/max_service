@@ -15,6 +15,10 @@ erDiagram
   PROVIDER_PROFILES ||--o{ PROPOSALS : envia
   PROPOSALS ||--o| BOOKINGS : origina
   BOOKINGS ||--o{ BOOKING_STATUS_HISTORY : registra
+  BOOKINGS ||--o| BOOKING_CANCELLATIONS : cancela
+  BOOKINGS ||--o| SUPPORT_CASES : abre
+  USERS ||--o{ BOOKING_CANCELLATIONS : solicita
+  USERS ||--o{ SUPPORT_CASES : comunica
   BOOKINGS ||--|| CONVERSATIONS : possui
   CONVERSATIONS ||--o{ CONVERSATION_MEMBERS : autoriza
   CONVERSATIONS ||--o{ MESSAGES : contém
@@ -30,4 +34,4 @@ erDiagram
   USERS ||--o{ AUDIT_EVENTS : atua
 ```
 
-O desenho detalhado será materializado em migration na Fase 1. Entidades reguladas permanecem sem fluxo ativo.
+O núcleo transacional demonstrável está materializado em migrations versionadas. Entidades reguladas permanecem sem fluxo ativo.

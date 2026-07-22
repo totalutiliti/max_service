@@ -9,6 +9,8 @@ Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Oper
 | solicitação | própria | oportunidade elegível sem PII excessiva | nenhum | caso autorizado | auditado |
 | proposta | das próprias solicitações | própria | nenhum | suporte/disputa | auditado |
 | booking | próprio | próprio | afiliado sem chat/PII | suporte/disputa | auditado |
+| cancelamento | solicita e consulta no booking próprio | solicita e consulta no booking próprio | nenhum | consulta operacional | auditado |
+| chamado operacional | consulta os próprios | consulta os próprios | nenhum | fila completa | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
 | documentos | nenhum acesso direto | próprios | nenhum | fila de moderação | excepcional |
 | afiliados/comissões | nenhum | própria atribuição | somente atribuídos | financeiro | auditado |
@@ -32,5 +34,7 @@ Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Oper
 - conexão reaproveitada sem contexto retorna zero linhas;
 - transação sem contexto falha fechada;
 - endpoint administrativo sem papel é bloqueado;
+- cancelamento duplicado ou posterior à conclusão é bloqueado;
+- parceiro não abre chamado e a operação enxerga a fila sem obter acesso de escrita transacional;
 - query direta pela role de runtime continua sujeita a RLS;
 - cada migration preserva policies e grants.

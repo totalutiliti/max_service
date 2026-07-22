@@ -22,3 +22,13 @@ export class ReviewBookingDto {
   @MaxLength(500)
   comment!: string;
 }
+
+export class CancelBookingDto {
+  @IsIn(["schedule_change", "no_longer_needed", "participant_unavailable", "safety_concern", "other"])
+  reasonCode!: "schedule_change" | "no_longer_needed" | "participant_unavailable" | "safety_concern" | "other";
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(500)
+  details!: string;
+}

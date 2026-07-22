@@ -317,6 +317,7 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .records-toolbar label { width: min(100%, 420px); display: grid; gap: .35rem; }
 .records-toolbar label span { font-size: .65rem; font-weight: 800; }
 .records-toolbar input, .conversation-search input { min-height: 42px; border: 1px solid var(--line); border-radius: 10px; padding: .65rem .8rem; background: #fafbf9; }
+.records-counter { color: var(--muted); font-size: .67rem; font-weight: 700; }
 .record-list { display: grid; }
 .record-list > button { min-height: 72px; border: 0; border-top: 1px solid #e7ebe5; background: transparent; display: grid; grid-template-columns: 90px 1fr auto 24px; align-items: center; gap: .8rem; text-align: left; cursor: pointer; }
 .record-list > button:hover { background: #f7faf4; }
@@ -324,6 +325,39 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .record-list > button > span:nth-child(2) { display: grid; gap: .2rem; }
 .record-list small { color: var(--muted); font-size: .65rem; }
 .record-list i { color: #548d18; font-style: normal; }
+
+.booking-dialog { width: min(100%, 860px); }
+.booking-dialog-header { padding: 1.5rem 4.5rem 1.3rem 1.5rem; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1rem; color: var(--white); background: radial-gradient(circle at 85% 20%, rgba(117,230,0,.17), transparent 28%), var(--ink); }
+.booking-dialog-header > span { width: 58px; height: 58px; border-radius: 16px; display: grid; place-items: center; background: var(--lime); color: var(--ink); font-size: 1.5rem; }
+.booking-dialog-header .dialog-kicker { padding: 0; color: var(--lime); }
+.booking-dialog-header h2 { margin: .35rem 0; font-size: clamp(1.5rem, 3vw, 2.15rem); letter-spacing: -.045em; }
+.booking-dialog-header p:last-child { margin: 0; color: #aeb8b0; font-size: .7rem; }
+.booking-dialog-body { padding: 1.35rem 1.5rem 1.5rem; display: grid; gap: 1.2rem; }
+.booking-stage { display: grid; grid-template-columns: repeat(3, 1fr); }
+.booking-stage > div { position: relative; display: grid; justify-items: center; gap: .45rem; color: #8b958d; font-size: .64rem; font-weight: 750; }
+.booking-stage > div:not(:last-child)::after { content: ""; position: absolute; z-index: 0; top: 15px; left: calc(50% + 20px); width: calc(100% - 40px); height: 2px; background: #dce2da; }
+.booking-stage i { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: #e8ece6; color: #748077; font: 800 .66rem var(--font-geist-mono), monospace; font-style: normal; }
+.booking-stage > div.active { color: var(--ink); }
+.booking-stage > div.active i { background: var(--lime); color: var(--ink); }
+.booking-stage > div.complete:not(:last-child)::after { background: var(--lime); }
+.booking-facts { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: .65rem; }
+.booking-facts article { min-height: 88px; padding: .85rem; border: 1px solid #e0e5de; border-radius: 13px; background: #f8faf7; display: grid; align-content: center; gap: .35rem; }
+.booking-facts small, .booking-description > small, .booking-history > small, .booking-next-action small { color: var(--muted); font-size: .56rem; font-weight: 850; letter-spacing: .09em; }
+.booking-facts strong { font-size: .8rem; }
+.booking-description { padding: 1rem; border-radius: 13px; background: #eff5ec; }
+.booking-description p { margin: .45rem 0 0; color: #5c685e; font-size: .72rem; line-height: 1.55; }
+.booking-history { display: grid; gap: .65rem; }
+.booking-history > article { display: grid; grid-template-columns: auto 1fr; gap: .7rem; }
+.booking-history > article > i { width: 27px; height: 27px; border-radius: 50%; display: grid; place-items: center; background: #daf8bf; color: #3f750e; font: 850 .64rem var(--font-geist-mono), monospace; font-style: normal; }
+.booking-history article div { padding: .15rem 0 .75rem; border-bottom: 1px solid #e7ebe5; }
+.booking-history article strong { font-size: .76rem; }
+.booking-history article p { margin: .3rem 0; color: #69746b; font-size: .68rem; }
+.booking-history article small { color: #929b94; font-size: .58rem; }
+.booking-next-action { min-height: 82px; padding: .9rem 1rem; border-radius: 14px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--ink); color: var(--white); }
+.booking-next-action > div { display: grid; gap: .35rem; }
+.booking-next-action small { color: var(--lime); }
+.booking-next-action strong { font-size: .76rem; line-height: 1.45; }
+.booking-next-action .primary-action { flex: 0 0 auto; background: var(--lime); color: var(--ink); }
 
 .messages-layout { min-height: 630px; display: grid; grid-template-columns: 320px 1fr; border: 1px solid #dce2da; border-radius: 20px; background: var(--white); overflow: hidden; }
 .conversation-list { border-right: 1px solid #e4e8e2; }
@@ -545,6 +579,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .activity-overview article:last-child { grid-column: 1 / -1; }
   .record-list > button { grid-template-columns: 70px 1fr auto; }
   .record-list > button .status-pill { display: none; }
+  .booking-dialog-header { grid-template-columns: auto 1fr; }
+  .booking-dialog-header > strong { grid-column: 2; justify-self: start; }
+  .booking-facts { grid-template-columns: 1fr; }
   .plan-card { display: grid; }
   .plan-price { justify-items: start; }
   .app-toast { bottom: 5rem; }
@@ -594,6 +631,11 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .record-list > button { grid-template-columns: 1fr auto; padding: .75rem 0; }
   .record-code { grid-column: 1 / -1; }
   .record-list > button > i { grid-column: 2; grid-row: 2; }
+  .booking-dialog-header { padding: 1.2rem 3.8rem 1.2rem 1rem; }
+  .booking-dialog-header > span { width: 46px; height: 46px; }
+  .booking-dialog-body { padding: 1rem; }
+  .booking-next-action { align-items: stretch; flex-direction: column; }
+  .booking-next-action button { width: 100%; }
   .account-profile { grid-template-columns: auto 1fr; }
   .account-profile > button { grid-column: 1 / -1; }
   .message { max-width: 88%; }

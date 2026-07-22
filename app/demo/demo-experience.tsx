@@ -58,6 +58,44 @@ interface PersistedMessage {
   createdAt: string;
 }
 
+type BookingStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
+
+interface BookingHistoryEvent {
+  id: string;
+  status: BookingStatus;
+  note: string;
+  createdAt: string;
+  actorName: string;
+  actorRole: string;
+}
+
+interface PersistedBooking {
+  id: string;
+  status: BookingStatus;
+  scheduledFor: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  requestId: string;
+  requestCode: string;
+  requestTitle: string;
+  requestDescription: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  categoryName: string;
+  categoryIcon: string;
+  amountCents: number;
+  estimatedMinutes: number;
+  customerId: string;
+  customerName: string;
+  customerCode: string;
+  providerId: string;
+  providerName: string;
+  providerCode: string;
+  history?: BookingHistoryEvent[];
+}
+
 const demoUiActorIds = {
   cliente: "00000000-0000-4000-8000-000000000101",
   prestador: "00000000-0000-4000-8000-000000000201",
@@ -482,61 +520,172 @@ function OperationRow({ type, reference, reason, wait, status, notify }: { type:
 }
 
 function ActivityView({ role, notify }: { role: Role; notify: (message: string) => void }) {
+  if (role === "cliente" || role === "prestador") return <BookingActivityView role={role} notify={notify} />;
+  return <StaticActivityView role={role} notify={notify} />;
+}
+
+const bookingStatusLabel: Record<BookingStatus, string> = {
+  scheduled: "Agendado",
+  in_progress: "Em andamento",
+  completed: "Concluído",
+  cancelled: "Cancelado",
+};
+
+function BookingActivityView({ role, notify }: { role: "cliente" | "prestador"; notify: (message: string) => void }) {
   const [persistedRequests, setPersistedRequests] = useState<PersistedRequest[]>([]);
+  const [bookings, setBookings] = useState<PersistedBooking[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<PersistedRequest | null>(null);
-  const [refreshRequests, setRefreshRequests] = useState(0);
+  const [selectedBookingId, setSelectedBookingId] = useState("");
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
-    if (role !== "cliente") return;
     const controller = new AbortController();
-    fetch("/api/v1/service-requests", { signal: controller.signal, cache: "no-store" })
+    const bookingRequest = fetch(`/api/v1/bookings?role=${role}`, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) throw new Error("Falha ao carregar pedidos.");
-        return response.json() as Promise<{ requests: PersistedRequest[] }>;
+        if (!response.ok) throw new Error("Falha ao carregar a agenda.");
+        return response.json() as Promise<{ bookings: PersistedBooking[] }>;
+      });
+    const serviceRequest = role === "cliente"
+      ? fetch("/api/v1/service-requests", { signal: controller.signal, cache: "no-store" }).then(async (response) => {
+          if (!response.ok) throw new Error("Falha ao carregar pedidos.");
+          return response.json() as Promise<{ requests: PersistedRequest[] }>;
+        })
+      : Promise.resolve({ requests: [] as PersistedRequest[] });
+    Promise.all([bookingRequest, serviceRequest])
+      .then(([bookingPayload, requestPayload]) => {
+        setBookings(bookingPayload.bookings);
+        setPersistedRequests(requestPayload.requests);
       })
-      .then((payload) => setPersistedRequests(payload.requests))
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setPersistedRequests([]);
-      });
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a agenda.");
+      })
+      .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [role, refreshRequests]);
+  }, [notify, refresh, role]);
 
+  const pendingRequests = role === "cliente"
+    ? persistedRequests.filter((request) => request.status === "open" || request.status === "proposals_received")
+    : [];
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const filteredBookings = bookings.filter((booking) => !normalizedQuery || [booking.requestCode, booking.requestTitle, booking.customerName, booking.providerName, booking.categoryName].some((value) => value.toLocaleLowerCase("pt-BR").includes(normalizedQuery)));
+  const filteredRequests = pendingRequests.filter((request) => !normalizedQuery || [request.publicCode, request.title, request.categoryName].some((value) => value.toLocaleLowerCase("pt-BR").includes(normalizedQuery)));
+  const activeCount = bookings.filter((booking) => booking.status === "scheduled" || booking.status === "in_progress").length;
+  const completedCount = bookings.filter((booking) => booking.status === "completed").length;
+  const completionRate = bookings.length > 0 ? Math.round((completedCount / bookings.length) * 100) : 0;
+  const dateTime = (value: string | null) => value
+    ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date(value))
+    : "A combinar";
+
+  return (
+    <>
+      <DashboardHeader role={role} eyebrow={role === "cliente" ? "ACOMPANHAMENTO DE SERVIÇOS" : "MINHA AGENDA"} title={role === "cliente" ? "Do aceite à conclusão, tudo no mesmo lugar." : "Organize a execução e mantenha o cliente informado."}><button className="button button-small" onClick={() => setRefresh((value) => value + 1)}>Atualizar agenda</button></DashboardHeader>
+      <div className="activity-overview"><article><small>Serviços ativos</small><strong>{activeCount}</strong><span>Agenda persistente</span></article><article><small>Taxa de conclusão</small><strong>{completionRate}%</strong><span>{completedCount} concluído(s)</span></article><article><small>{role === "cliente" ? "Pedidos aguardando" : "Próximo serviço"}</small><strong>{role === "cliente" ? pendingRequests.length : bookings.find((booking) => booking.status === "scheduled") ? "09:00" : "—"}</strong><span>{role === "cliente" ? "Propostas em aberto" : "Horário local"}</span></article></div>
+      <section className="dashboard-section records-card">
+        <div className="records-toolbar"><label><span>Buscar</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, serviço ou pessoa" /></label><span className="records-counter">{filteredBookings.length + filteredRequests.length} registro(s)</span></div>
+        <div className="record-list">
+          {loading && <div className="data-state">Carregando agenda...</div>}
+          {!loading && filteredBookings.length === 0 && filteredRequests.length === 0 && <div className="data-state"><strong>Nenhum registro encontrado.</strong><span>Novos agendamentos aparecerão aqui após o aceite da proposta.</span></div>}
+          {filteredBookings.map((booking) => <button key={booking.id} onClick={() => setSelectedBookingId(booking.id)}><span className="record-code">{booking.requestCode}</span><span><strong>{booking.requestTitle}</strong><small>{role === "cliente" ? booking.providerName : booking.customerName} · {dateTime(booking.scheduledFor)}</small></span><span className={`status-pill ${booking.status === "cancelled" ? "warning" : "success"}`}>{bookingStatusLabel[booking.status]}</span><i>→</i></button>)}
+          {filteredRequests.map((request) => <button key={request.id} onClick={() => setSelectedRequest(request)}><span className="record-code">{request.publicCode}</span><span><strong>{request.title}</strong><small>{request.proposalCount > 0 ? `${request.proposalCount} proposta(s)` : request.preferredWindow}</small></span><span className="status-pill success">{request.status === "proposals_received" ? "Propostas" : "Aberto"}</span><i>→</i></button>)}
+        </div>
+      </section>
+      {selectedRequest && <ProposalComparisonDialog request={selectedRequest} onClose={() => setSelectedRequest(null)} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
+      {selectedBookingId && <BookingDetailDialog role={role} bookingId={selectedBookingId} onClose={() => setSelectedBookingId("")} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
+    </>
+  );
+}
+
+function StaticActivityView({ role, notify }: { role: "parceiro" | "operacao"; notify: (message: string) => void }) {
   const content = {
-    cliente: { eyebrow: "HISTÓRICO DE SERVIÇOS", title: "Seus pedidos, todos no lugar certo.", metric: ["3", "Pedidos ativos"], rows: [["SV-1048", "Troca de chuveiro", "Agendado", "Amanhã, 09:30"], ["SV-1039", "Pintura do quarto", "Propostas", "3 recebidas"], ["SV-0981", "Montagem de armário", "Concluído", "18 de julho"]] },
-    prestador: { eyebrow: "CENTRAL DE OPORTUNIDADES", title: "Escolha onde seu trabalho faz sentido.", metric: ["8", "Compatíveis hoje"], rows: [["OP-2218", "Instalação de ventilador", "2,4 km", "Hoje à tarde"], ["OP-2211", "Revisão de tomadas", "4,1 km", "A combinar"], ["OP-2198", "Troca de disjuntor", "6,0 km", "Sexta-feira"]] },
     parceiro: { eyebrow: "REDE DE PROFISSIONAIS", title: "Acompanhe cada indicação com transparência.", metric: ["24", "Afiliados ativos"], rows: [["PR-8M4Q", "João Lima · Pintor", "Ativo", "8 serviços"], ["PR-6D2A", "Ana Prado · Diarista", "Em análise", "Enviado hoje"], ["PR-9K7B", "Carlos Gomes · Encanador", "Ativo", "12 serviços"]] },
     operacao: { eyebrow: "FILA OPERACIONAL", title: "Prioridade clara para decidir com segurança.", metric: ["17", "Itens aguardando"], rows: [["PR-8M4Q", "Documento reenviado", "Revisar", "38 min"], ["SV-29K7", "Cancelamento contestado", "Prioridade", "1 h 12"], ["CS-4N8R", "Dúvida sobre proposta", "Aberto", "5 h 03"]] },
   }[role];
-  const statusLabel: Record<string, string> = {
-    open: "Aberto",
-    proposals_received: "Propostas",
-    booked: "Agendado",
-    in_progress: "Em andamento",
-    completed: "Concluído",
-    cancelled: "Cancelado",
-  };
-  const rows = role === "cliente" && persistedRequests.length > 0
-    ? persistedRequests.map((request) => [
-        request.publicCode,
-        request.title,
-        statusLabel[request.status] ?? request.status,
-        request.proposalCount > 0 ? `${request.proposalCount} proposta(s)` : request.preferredWindow,
-      ])
-    : content.rows;
-  const primaryMetric = role === "cliente" && persistedRequests.length > 0 ? String(persistedRequests.length) : content.metric[0];
+
   return (
     <>
       <DashboardHeader role={role} eyebrow={content.eyebrow} title={content.title}><button className="button button-small" onClick={() => notify("Filtros atualizados.")}>Filtrar resultados</button></DashboardHeader>
-      <div className="activity-overview"><article><small>{content.metric[1]}</small><strong>{primaryMetric}</strong><span>{role === "cliente" && persistedRequests.length > 0 ? "Dados persistidos" : "Atualizado agora"}</span></article><article><small>Taxa de conclusão</small><strong>96%</strong><span>Últimos 30 dias</span></article><article><small>Tempo médio de resposta</small><strong>18 min</strong><span>Dentro da meta</span></article></div>
+      <div className="activity-overview"><article><small>{content.metric[1]}</small><strong>{content.metric[0]}</strong><span>Atualizado agora</span></article><article><small>Taxa de conclusão</small><strong>96%</strong><span>Últimos 30 dias</span></article><article><small>Tempo médio de resposta</small><strong>18 min</strong><span>Dentro da meta</span></article></div>
       <section className="dashboard-section records-card">
         <div className="records-toolbar"><label><span>Buscar</span><input placeholder="Código, serviço ou pessoa" /></label><button className="secondary-action" onClick={() => notify("Relatório demonstrativo preparado.")}>Exportar</button></div>
         <div className="record-list">
-          {rows.map(([code, title, status, detail]) => <button key={code} onClick={() => { const request = persistedRequests.find((item) => item.publicCode === code); if (role === "cliente" && request) setSelectedRequest(request); else notify(`${code}: detalhes carregados.`); }}><span className="record-code">{code}</span><span><strong>{title}</strong><small>{detail}</small></span><span className={`status-pill ${status === "Prioridade" ? "warning" : "success"}`}>{status}</span><i>→</i></button>)}
+          {content.rows.map(([code, title, status, detail]) => <button key={code} onClick={() => notify(`${code}: detalhes carregados.`)}><span className="record-code">{code}</span><span><strong>{title}</strong><small>{detail}</small></span><span className={`status-pill ${status === "Prioridade" ? "warning" : "success"}`}>{status}</span><i>→</i></button>)}
         </div>
       </section>
-      {selectedRequest && <ProposalComparisonDialog request={selectedRequest} onClose={() => setSelectedRequest(null)} onChanged={() => setRefreshRequests((value) => value + 1)} notify={notify} />}
     </>
+  );
+}
+
+function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { role: "cliente" | "prestador"; bookingId: string; onClose: () => void; onChanged: () => void; notify: (message: string) => void }) {
+  const [booking, setBooking] = useState<PersistedBooking | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  const load = useCallback(async () => {
+    const response = await fetch(`/api/v1/bookings?role=${role}&bookingId=${encodeURIComponent(bookingId)}`, { cache: "no-store" });
+    const payload = await response.json() as { booking?: PersistedBooking; error?: string; message?: string };
+    if (!response.ok || !payload.booking) throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar o agendamento.");
+    return payload.booking;
+  }, [bookingId, role]);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    void load().then(setBooking).catch((error: unknown) => notify(error instanceof Error ? error.message : "Não foi possível carregar o agendamento.")).finally(() => setLoading(false));
+  }, [load, notify]);
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const transition = async (status: "in_progress" | "completed") => {
+    setUpdating(true);
+    try {
+      const response = await fetch("/api/v1/bookings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role, bookingId, status }),
+      });
+      const payload = await response.json() as { booking?: PersistedBooking | string; error?: string; message?: string };
+      if (!response.ok || typeof payload.booking !== "object") throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o serviço.");
+      setBooking(await load());
+      onChanged();
+      notify(status === "in_progress" ? "Serviço iniciado. O cliente já pode acompanhar a atualização." : "Serviço marcado como concluído e registrado no histórico.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar o serviço.");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const dateTime = (value: string | null) => value
+    ? new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date(value))
+    : "A combinar";
+  const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  const stageIndex = booking ? ["scheduled", "in_progress", "completed"].indexOf(booking.status) : 0;
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog booking-dialog" role="dialog" aria-modal="true" aria-labelledby="booking-title">
+        <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
+        {loading && <div className="data-state">Carregando agendamento...</div>}
+        {booking && <>
+          <header className="booking-dialog-header"><span>{booking.categoryIcon}</span><div><p className="dialog-kicker">{booking.requestCode} · {booking.categoryName}</p><h2 id="booking-title">{booking.requestTitle}</h2><p>{booking.neighborhood}, {booking.city} · {role === "cliente" ? booking.providerName : booking.customerName}</p></div><strong className="status-pill success">{bookingStatusLabel[booking.status]}</strong></header>
+          <div className="booking-dialog-body">
+            <div className="booking-stage" aria-label={`Etapa atual: ${bookingStatusLabel[booking.status]}`}>
+              {["Agendado", "Em andamento", "Concluído"].map((label, index) => <div key={label} className={`${index <= stageIndex ? "active" : ""} ${index < stageIndex ? "complete" : ""}`}><i>{index < stageIndex ? "✓" : index + 1}</i><span>{label}</span></div>)}
+            </div>
+            <div className="booking-facts"><article><small>DATA E HORÁRIO</small><strong>{dateTime(booking.scheduledFor)}</strong></article><article><small>VALOR DA PROPOSTA</small><strong>{currency.format(booking.amountCents / 100)}</strong></article><article><small>DURAÇÃO PREVISTA</small><strong>{booking.estimatedMinutes < 120 ? `${booking.estimatedMinutes} min` : `${Math.round(booking.estimatedMinutes / 60)} h`}</strong></article></div>
+            <section className="booking-description"><small>DETALHES DO PEDIDO</small><p>{booking.requestDescription}</p></section>
+            <section className="booking-history"><small>HISTÓRICO DO SERVIÇO</small>{booking.history?.map((event) => <article key={event.id}><i>✓</i><div><strong>{bookingStatusLabel[event.status]}</strong><p>{event.note}</p><small>{event.actorName} · {dateTime(event.createdAt)}</small></div></article>)}</section>
+            <div className="booking-next-action"><div><small>PRÓXIMA AÇÃO</small><strong>{booking.status === "scheduled" ? role === "prestador" ? "Inicie quando chegar ao local." : "Aguarde o profissional iniciar o serviço." : booking.status === "in_progress" ? role === "prestador" ? "Conclua após finalizar o atendimento." : "O profissional está executando o serviço." : "Serviço concluído e histórico preservado."}</strong></div>{role === "prestador" && booking.status === "scheduled" && <button className="primary-action" disabled={updating} onClick={() => transition("in_progress")}>{updating ? "Atualizando..." : "Iniciar serviço"}</button>}{role === "prestador" && booking.status === "in_progress" && <button className="primary-action" disabled={updating} onClick={() => transition("completed")}>{updating ? "Atualizando..." : "Marcar como concluído"}</button>}</div>
+          </div>
+        </>}
+      </section>
+    </div>
   );
 }
 

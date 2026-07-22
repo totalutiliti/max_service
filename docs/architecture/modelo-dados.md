@@ -40,6 +40,7 @@
 - uma proposta pertence a uma solicitação e a um prestador elegível;
 - apenas o cliente proprietário aceita proposta;
 - um booking nasce de exatamente uma proposta aceita;
+- o ciclo básico de booking é `scheduled → in_progress → completed`; apenas o prestador vinculado executa essas transições;
 - toda transição de booking gera histórico no mesmo commit;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;
 - um evento de PSP tem chave idempotente única;

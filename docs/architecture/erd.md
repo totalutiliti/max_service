@@ -19,6 +19,8 @@ erDiagram
   BOOKINGS ||--o| SUPPORT_CASES : abre
   USERS ||--o{ BOOKING_CANCELLATIONS : solicita
   USERS ||--o{ SUPPORT_CASES : comunica
+  SUPPORT_CASES ||--o{ SUPPORT_CASE_EVENTS : registra
+  USERS ||--o{ SUPPORT_CASE_EVENTS : executa
   BOOKINGS ||--|| CONVERSATIONS : possui
   CONVERSATIONS ||--o{ CONVERSATION_MEMBERS : autoriza
   CONVERSATIONS ||--o{ MESSAGES : contém

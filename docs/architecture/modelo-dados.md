@@ -33,7 +33,7 @@
 
 ### Operação
 
-`notifications`, `support_cases`, `audit_events`, `outbox_events` e `feature_flags`.
+`notifications`, `support_cases`, `support_case_events`, `audit_events`, `outbox_events` e `feature_flags`.
 
 ## Invariantes
 
@@ -44,6 +44,8 @@
 - toda transição de booking gera histórico no mesmo commit;
 - um booking só pode ter um cancelamento, solicitado por cliente ou prestador vinculado enquanto estiver agendado ou em execução;
 - cada cancelamento abre exatamente um `support_case`; interrupções em execução recebem prioridade alta;
+- notas e transições do chamado são append-only em `support_case_events`, visíveis apenas para a operação;
+- resolver um chamado exige justificativa, responsável e instante de resolução;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;
 - cada avaliação tem como alvo a outra parte do booking e não pode ser editada ou apagada pelo fluxo da aplicação;
 - um evento de PSP tem chave idempotente única;

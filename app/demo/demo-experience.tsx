@@ -126,13 +126,33 @@ interface SupportCase {
   status: "open" | "in_review" | "resolved";
   title: string;
   description: string;
+  resolution: string | null;
   createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
   requestCode: string;
   requestTitle: string;
   reasonCode: CancellationReason;
   priorStatus: "scheduled" | "in_progress";
   openedByName: string;
   openedByRole: "customer" | "provider";
+  assignedToName: string | null;
+  eventCount: number;
+}
+
+interface SupportCaseEvent {
+  id: string;
+  eventType: "opened" | "note" | "status_changed";
+  fromStatus: SupportCase["status"] | null;
+  toStatus: SupportCase["status"] | null;
+  note: string;
+  createdAt: string;
+  actorName: string;
+  actorRole: string;
+}
+
+interface SupportCaseDetail extends SupportCase {
+  events: SupportCaseEvent[];
 }
 
 const demoUiActorIds = {
@@ -548,6 +568,7 @@ function OperationsView({ notify }: { notify: (message: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
   const [refreshedAt, setRefreshedAt] = useState(0);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -578,14 +599,72 @@ function OperationsView({ notify }: { notify: (message: string) => void }) {
     <>
       <DashboardHeader role="operacao" eyebrow="Operação e moderação" title="O que precisa de atenção hoje?" />
       <div className="metric-grid"><Metric label="Perfis em análise" value="17" detail="4 há mais de 24 h" tone="warning" /><Metric label="Documentos pendentes" value="9" detail="3 reenviados hoje" /><Metric label="Ocorrências abertas" value={loading ? "…" : String(openCases.length)} detail={`${highPriority} em alta prioridade`} tone={highPriority > 0 ? "warning" : undefined} /><Metric label="Serviços ativos" value="143" detail="Dados demonstrativos" /></div>
-      <section className="dashboard-section operations-table"><div className="dashboard-section-title"><div><small>FILA PRIORITÁRIA</small><h2>Cancelamentos e ocorrências</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Tipo</span><span>Referência</span><span>Motivo</span><span>Espera</span><span>Status</span></div>{loading && <div className="data-state">Carregando ocorrências...</div>}{!loading && cases.length === 0 && <div className="data-state"><strong>Nenhuma ocorrência aberta.</strong><span>Cancelamentos registrados aparecerão automaticamente nesta fila.</span></div>}{cases.map((item) => <OperationRow key={item.id} type="Cancelamento" reference={item.publicCode} reason={`${item.requestCode} · ${item.description}`} wait={waiting(item.createdAt)} status={item.priority === "high" ? "Prioridade" : item.status === "in_review" ? "Em análise" : item.status === "resolved" ? "Resolvido" : "Aberto"} notify={notify} />)}</section>
+      <section className="dashboard-section operations-table"><div className="dashboard-section-title"><div><small>FILA PRIORITÁRIA</small><h2>Cancelamentos e ocorrências</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Tipo</span><span>Referência</span><span>Motivo</span><span>Espera</span><span>Status</span></div>{loading && <div className="data-state">Carregando ocorrências...</div>}{!loading && cases.length === 0 && <div className="data-state"><strong>Nenhuma ocorrência aberta.</strong><span>Cancelamentos registrados aparecerão automaticamente nesta fila.</span></div>}{cases.map((item) => <OperationRow key={item.id} item={item} wait={waiting(item.createdAt)} onOpen={() => setSelectedCaseId(item.id)} />)}</section>
       <div className="operations-note"><span>!</span><p><strong>Ações críticas exigem justificativa.</strong> Aprovações, rejeições, suspensões e mudanças de regra ficam registradas com antes/depois na trilha de auditoria.</p></div>
+      {selectedCaseId && <OperationCaseDialog caseId={selectedCaseId} onClose={() => setSelectedCaseId(null)} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
     </>
   );
 }
 
-function OperationRow({ type, reference, reason, wait, status, notify }: { type: string; reference: string; reason: string; wait: string; status: string; notify: (message: string) => void }) {
-  return <article className="table-row"><span data-label="Tipo"><strong>{type}</strong></span><span data-label="Referência">{reference}</span><span data-label="Motivo">{reason}</span><span data-label="Espera">{wait}</span><span data-label="Status"><button onClick={() => notify(`${reference}: análise aberta.`)} className={status === "Prioridade" ? "danger-action" : "secondary-action"}>{status}</button></span></article>;
+const supportCaseStatusLabel: Record<SupportCase["status"], string> = {
+  open: "Aberto",
+  in_review: "Em análise",
+  resolved: "Resolvido",
+};
+
+function OperationRow({ item, wait, onOpen }: { item: SupportCase; wait: string; onOpen: () => void }) {
+  const status = item.status === "open" && item.priority === "high" ? "Prioridade" : supportCaseStatusLabel[item.status];
+  return <article className={`table-row ${item.status === "resolved" ? "resolved" : ""}`}><span data-label="Tipo"><strong>Cancelamento</strong></span><span data-label="Referência">{item.publicCode}</span><span data-label="Motivo">{item.requestCode} · {item.description}</span><span data-label="Espera">{item.status === "resolved" ? "finalizado" : wait}</span><span data-label="Status"><button onClick={onOpen} className={`operation-open-button ${item.priority === "high" && item.status !== "resolved" ? "urgent" : ""}`}><span>{status}</span><i>→</i></button></span></article>;
+}
+
+function OperationCaseDialog({ caseId, onClose, onChanged, notify }: { caseId: string; onClose: () => void; onChanged: () => void; notify: (message: string) => void }) {
+  const [detail, setDetail] = useState<SupportCaseDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [note, setNote] = useState("");
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/operation/cases?caseId=${encodeURIComponent(caseId)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { case?: SupportCaseDetail; error?: string; message?: string };
+        if (!response.ok || !payload.case) throw new Error(payload.error ?? payload.message ?? "Não foi possível abrir o chamado.");
+        return payload.case;
+      })
+      .then(setDetail)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível abrir o chamado.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [caseId, notify, reload]);
+
+  const submit = async (action: "note" | "status", status?: "in_review" | "resolved") => {
+    if (note.trim().length < 10) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/v1/operation/cases", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ caseId, action, status, note: note.trim() }),
+      });
+      const payload = await response.json() as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o chamado.");
+      setNote("");
+      setReload((value) => value + 1);
+      onChanged();
+      notify(action === "note" ? "Nota interna registrada." : status === "resolved" ? "Chamado resolvido com auditoria." : "Chamado assumido pela operação.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar o chamado.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const formatDate = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  return <div className="dialog-backdrop" role="presentation"><section className="request-dialog operation-case-dialog" role="dialog" aria-modal="true" aria-labelledby="operation-case-title"><button className="dialog-close" onClick={onClose} aria-label="Fechar chamado">×</button>{loading && !detail && <div className="data-state"><strong>Carregando chamado...</strong></div>}{!loading && !detail && <div className="data-state"><strong>Chamado indisponível.</strong><button className="secondary-action" onClick={onClose}>Fechar</button></div>}{detail && <><header className="operation-case-header"><span>{detail.priority === "high" ? "!" : "CS"}</span><div><p className="dialog-kicker">{detail.publicCode} · {detail.requestCode}</p><h2 id="operation-case-title">{detail.title}</h2><p>{detail.requestTitle}</p></div><strong className={`status-pill ${detail.status === "resolved" ? "success" : detail.priority === "high" ? "warning" : "neutral"}`}>{supportCaseStatusLabel[detail.status]}</strong></header><div className="operation-case-body"><section className="operation-case-facts"><article><small>ABERTO POR</small><strong>{detail.openedByName}</strong><span>{detail.openedByRole === "customer" ? "Cliente" : "Profissional"}</span></article><article><small>RESPONSÁVEL</small><strong>{detail.assignedToName ?? "Não atribuído"}</strong><span>{detail.assignedToName ? "Equipe de operação" : "Aguardando análise"}</span></article><article><small>PRIORIDADE</small><strong>{detail.priority === "high" ? "Alta" : "Normal"}</strong><span>{detail.priorStatus === "in_progress" ? "Serviço interrompido" : "Antes do início"}</span></article></section><section className="operation-case-description"><small>RELATO ORIGINAL</small><p>{detail.description}</p></section>{detail.resolution && <section className="operation-resolution"><span>✓</span><div><small>RESOLUÇÃO REGISTRADA</small><strong>{detail.resolution}</strong><p>{detail.resolvedAt ? formatDate(detail.resolvedAt) : ""}</p></div></section>}<section className="operation-timeline"><small>LINHA DO TEMPO · {detail.events.length} EVENTO(S)</small>{detail.events.map((event) => <article key={event.id}><i>{event.eventType === "note" ? "N" : event.eventType === "opened" ? "+" : "→"}</i><div><header><strong>{event.eventType === "opened" ? "Chamado aberto" : event.eventType === "note" ? "Nota interna" : `${event.fromStatus ? supportCaseStatusLabel[event.fromStatus] : ""} → ${event.toStatus ? supportCaseStatusLabel[event.toStatus] : ""}`}</strong><small>{formatDate(event.createdAt)}</small></header><p>{event.note}</p><span>{event.actorName}</span></div></article>)}</section>{detail.status !== "resolved" && <section className="operation-case-actions"><div><small>REGISTRO OPERACIONAL</small><strong>Justifique cada ação para manter a trilha completa.</strong></div><label><span>Nota ou justificativa</span><textarea minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Descreva a análise, contato realizado ou solução adotada." /><small>{note.trim().length}/1000</small></label><div className="operation-action-buttons"><button className="secondary-action" disabled={submitting || note.trim().length < 10} onClick={() => submit("note")}>Adicionar nota</button>{detail.status === "open" && <button className="primary-action" disabled={submitting || note.trim().length < 10} onClick={() => submit("status", "in_review")}>Assumir análise</button>}<button className="danger-action" disabled={submitting || note.trim().length < 10} onClick={() => submit("status", "resolved")}>{submitting ? "Salvando..." : "Resolver chamado"}</button></div></section>}</div></>}</section></div>;
 }
 
 function ActivityView({ role, notify }: { role: Role; notify: (message: string) => void }) {

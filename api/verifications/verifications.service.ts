@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
+import { validateProviderDocumentFile } from "./document-file-validation.js";
 
 type VerificationStatus = "submitted" | "in_review" | "changes_requested" | "approved";
 type DocumentStatus = "accepted" | "changes_requested";
@@ -32,7 +34,10 @@ const verificationSelect = `
 
 @Injectable()
 export class VerificationsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly storage: PrivateObjectStorageService,
+  ) {}
 
   private ensureOperation(actor: Actor) {
     if (actor.role !== "operation") throw new ForbiddenException("Somente a operação pode revisar cadastros.");
@@ -60,9 +65,24 @@ export class VerificationsService {
         document.note,
         document.checked_at AS "checkedAt",
         document.updated_at AS "updatedAt",
-        CASE WHEN document.checked_by IS NULL THEN NULL ELSE COALESCE(reviewer.display_name, 'Equipe Max') END AS "checkedByName"
+        CASE WHEN document.checked_by IS NULL THEN NULL ELSE COALESCE(reviewer.display_name, 'Equipe Max') END AS "checkedByName",
+        latest_file.id AS "fileId",
+        latest_file.original_name AS "fileName",
+        latest_file.content_type AS "fileContentType",
+        latest_file.size_bytes AS "fileSizeBytes",
+        latest_file.sha256 AS "fileSha256",
+        latest_file.scan_status AS "fileScanStatus",
+        latest_file.uploaded_at AS "fileUploadedAt",
+        (SELECT count(*)::int FROM provider_document_files file_count WHERE file_count.document_check_id = document.id) AS "fileVersionCount"
       FROM provider_document_checks document
       LEFT JOIN users reviewer ON reviewer.id = document.checked_by
+      LEFT JOIN LATERAL (
+        SELECT file.id, file.original_name, file.content_type, file.size_bytes, file.sha256, file.scan_status, file.uploaded_at
+        FROM provider_document_files file
+        WHERE file.document_check_id = document.id
+        ORDER BY file.uploaded_at DESC, file.id DESC
+        LIMIT 1
+      ) latest_file ON true
       WHERE document.verification_id = $1
       ORDER BY CASE document.document_type
         WHEN 'identity' THEN 1 WHEN 'address' THEN 2
@@ -216,5 +236,88 @@ export class VerificationsService {
       );
       return this.detailWithClient(client, verificationId);
     });
+  }
+
+  async uploadDocument(actor: Actor, documentId: string, originalName: string, contentType: string, bytes: Buffer) {
+    this.ensureProvider(actor);
+    const fileName = validateProviderDocumentFile(originalName, contentType, bytes);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const fileId = randomUUID();
+    const document = await this.database.withActor(actor, async (client) => {
+      const result = await client.query<{ verificationId: string; providerId: string; label: string }>(`
+        SELECT verification.id AS "verificationId", verification.provider_id AS "providerId", document.label
+        FROM provider_document_checks document
+        JOIN provider_verifications verification ON verification.id = document.verification_id
+        WHERE document.id = $1 AND verification.provider_id = $2
+      `, [documentId, actor.id]);
+      return result.rows[0];
+    });
+    if (!document) throw new NotFoundException("Item documental não encontrado.");
+
+    const objectKey = `provider-verifications/${document.verificationId}/${documentId}/${fileId}`;
+    await this.storage.put(objectKey, bytes, contentType, sha256);
+    try {
+      await this.database.withActor(actor, async (client) => {
+        await client.query(`
+          INSERT INTO provider_document_files (
+            id, verification_id, document_check_id, provider_id, object_key,
+            original_name, content_type, size_bytes, sha256, uploaded_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $4)
+        `, [fileId, document.verificationId, documentId, actor.id, objectKey, fileName, contentType, bytes.length, sha256]);
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO provider_verification_events (id, verification_id, actor_id, event_type, note)
+          VALUES ($1, $2, $3, 'document_uploaded', $4)
+        `, [eventId, document.verificationId, actor.id, `${document.label}: novo arquivo sintético privado enviado para conferência.`]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_document.uploaded', 'provider_document_file', $3, $4::jsonb)",
+          [actor.id, actor.role, fileId, JSON.stringify({ documentId, verificationId: document.verificationId, contentType, sizeBytes: bytes.length, sha256, eventId })],
+        );
+      });
+    } catch (error) {
+      await this.storage.remove(objectKey);
+      throw error;
+    }
+    return this.providerStatus(actor);
+  }
+
+  async downloadDocument(actor: Actor, fileId: string) {
+    if (actor.role !== "provider" && actor.role !== "operation") {
+      throw new ForbiddenException("Perfil sem acesso ao cofre documental.");
+    }
+    const record = await this.database.withActor(actor, async (client) => {
+      const result = await client.query<{
+        id: string;
+        objectKey: string;
+        originalName: string;
+        contentType: string;
+        sizeBytes: number;
+        sha256: string;
+      }>(`
+        SELECT
+          file.id,
+          file.object_key AS "objectKey",
+          file.original_name AS "originalName",
+          file.content_type AS "contentType",
+          file.size_bytes AS "sizeBytes",
+          file.sha256
+        FROM provider_document_files file
+        WHERE file.id = $1
+      `, [fileId]);
+      return result.rows[0];
+    });
+    if (!record) throw new NotFoundException("Arquivo privado não encontrado.");
+    const bytes = await this.storage.get(record.objectKey);
+    const actualHash = createHash("sha256").update(bytes).digest("hex");
+    if (bytes.length !== record.sizeBytes || actualHash !== record.sha256) {
+      throw new ConflictException("A integridade do arquivo privado não pôde ser confirmada.");
+    }
+    await this.database.withActor(actor, async (client) => {
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_document.downloaded', 'provider_document_file', $3, $4::jsonb)",
+        [actor.id, actor.role, fileId, JSON.stringify({ contentType: record.contentType, sizeBytes: record.sizeBytes, sha256: record.sha256 })],
+      );
+    });
+    return { ...record, bytes };
   }
 }

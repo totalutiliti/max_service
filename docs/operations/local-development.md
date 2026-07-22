@@ -37,5 +37,7 @@ Endereços locais:
 - SaaS: `http://127.0.0.1:4174/demo`;
 - saúde da API: `http://127.0.0.1:3001/health`;
 - PostgreSQL: `127.0.0.1:54329`.
+- object storage privado: `127.0.0.1:59000`;
+- console local do object storage: `127.0.0.1:59001`.
 
 Nunca usar anexos ou dados reais em seed. Nunca aplicar `db push`. As senhas literais do Compose são deliberadamente locais e devem ser substituídas por segredos provisionados fora do repositório em qualquer ambiente compartilhado.

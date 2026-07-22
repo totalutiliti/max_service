@@ -17,6 +17,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
 | checklist de verificação | nenhum acesso | somente o próprio | nenhum | fila completa e decisão | excepcional e auditado |
+| arquivos de verificação | nenhum | somente versões próprias | nenhum | todas as versões para revisão | excepcional e auditado |
 | intents financeiros sandbox | próprios | próprios | somente rede atribuída | visão completa | auditado |
 | alocações e ledger | cashback próprio | recebível próprio | comissão própria | visão completa e conciliação | auditado |
 | auditoria | nenhum | nenhum | nenhum | recorte funcional | explícito e somente leitura |
@@ -49,6 +50,8 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - prestador consulta somente a própria verificação e não altera decisões ou itens;
 - cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;
 - aprovação com item pendente e correção sem item marcado são bloqueadas;
+- profissional não associa arquivo à verificação de outro; cliente e parceiro enxergam zero metadados;
+- bucket anônimo retorna `403`; downloads do profissional e da operação validam tamanho/hash e geram auditoria;
 - cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
 - somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
 - evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;

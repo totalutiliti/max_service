@@ -1,9 +1,14 @@
-import { proxyDemoRequest } from "../../_proxy";
+import { proxyDemoDownloadRequest, proxyDemoRequest } from "../../_proxy";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const verificationId = new URL(request.url).searchParams.get("verificationId");
+  const url = new URL(request.url);
+  const fileId = url.searchParams.get("fileId");
+  if (fileId) {
+    return proxyDemoDownloadRequest(`/api/v1/operation/verifications/files/${encodeURIComponent(fileId)}`, request, "operation");
+  }
+  const verificationId = url.searchParams.get("verificationId");
   const path = verificationId
     ? `/api/v1/operation/verifications/${encodeURIComponent(verificationId)}`
     : "/api/v1/operation/verifications";

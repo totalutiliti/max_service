@@ -3,6 +3,7 @@ import test from "node:test";
 import { demoActorIds, parseDemoActor } from "../auth/demo-actor.js";
 import { computeInternalSignature, verifyInternalSignature } from "../auth/internal-signature.js";
 import { computeSandboxSignature, verifySandboxSignature } from "../finance/finance-signature.js";
+import { maximumProviderDocumentBytes, validateProviderDocumentFile } from "../verifications/document-file-validation.js";
 
 test("aceita somente a identidade correspondente ao perfil demonstrativo", () => {
   assert.deepEqual(parseDemoActor("customer", demoActorIds.customer, true), {
@@ -50,5 +51,18 @@ test("vincula a identidade interna ao método e ao caminho da requisição", () 
   assert.equal(
     verifyInternalSignature("segredo-bff-de-teste", timestamp, "GET", path, "operation", demoActorIds.operation, signature),
     false,
+  );
+});
+
+test("valida nome, tamanho, MIME e assinatura binária de documento", () => {
+  const pdf = Buffer.from("%PDF-1.4\nsynthetic\n%%EOF\n");
+  assert.equal(validateProviderDocumentFile("pasta\\comprovante.pdf", "application/pdf", pdf), "comprovante.pdf");
+  assert.throws(
+    () => validateProviderDocumentFile("falso.pdf", "application/pdf", Buffer.from("conteúdo adulterado")),
+    /assinatura/,
+  );
+  assert.throws(
+    () => validateProviderDocumentFile("grande.png", "image/png", Buffer.alloc(maximumProviderDocumentBytes + 1)),
+    /2 MB/,
   );
 });

@@ -9,6 +9,9 @@ erDiagram
   USERS ||--o{ TERMS_ACCEPTANCES : aceita
   PROVIDER_PROFILES }o--o{ SERVICE_CATEGORIES : atende
   PROVIDER_PROFILES }o--o{ REGIONS : cobre
+  USERS ||--o{ PROVIDER_VERIFICATIONS : submete
+  PROVIDER_VERIFICATIONS ||--o{ PROVIDER_DOCUMENT_CHECKS : exige
+  PROVIDER_DOCUMENT_CHECKS ||--o{ PROVIDER_DOCUMENT_FILES : versiona
   CUSTOMER_PROFILES ||--o{ SERVICE_REQUESTS : cria
   SERVICE_REQUESTS ||--o{ SERVICE_REQUEST_ATTACHMENTS : inclui
   SERVICE_REQUESTS ||--o{ PROPOSALS : recebe
@@ -42,4 +45,4 @@ erDiagram
   USERS ||--o{ AUDIT_EVENTS : atua
 ```
 
-O núcleo transacional demonstrável está materializado em migrations versionadas. `DEMO_SESSIONS` valida o ciclo local de sessão, não representa uma identidade pública de produção. O financeiro ativo é exclusivamente sandbox; PSP, custódia e movimentação real permanecem ausentes.
+O núcleo transacional demonstrável está materializado em migrations versionadas. `PROVIDER_DOCUMENT_FILES` representa metadados; os bytes residem em object storage privado. `DEMO_SESSIONS` valida o ciclo local de sessão, não representa uma identidade pública de produção. O financeiro ativo é exclusivamente sandbox; PSP, custódia e movimentação real permanecem ausentes.

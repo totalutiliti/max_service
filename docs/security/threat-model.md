@@ -28,3 +28,7 @@ Browser/PWA, BFF, API, PostgreSQL, Redis/worker, object storage, PSP, e-mail/SMS
 ## Gates
 
 Pagamento real, garantia, antecedentes, biometria, crédito e categorias reguladas exigem nova revisão de ameaça e aprovação jurídica antes de feature flag de produção.
+
+## Situação do upload no piloto
+
+O piloto implementa bucket privado, chave aleatória gerada pelo servidor, allowlist de tipo/extensão/assinatura, limite de 2 MB, hash de integridade, versionamento, autorização por sessão/RLS e auditoria. Quarentena automatizada e antivírus continuam ausentes; portanto somente arquivos sintéticos são permitidos.

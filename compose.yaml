@@ -36,9 +36,16 @@ services:
       MIGRATION_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@database:5432/max_service
       BFF_INTERNAL_SECRET: max-service-bff-local-only
       FINANCIAL_SANDBOX_SECRET: max-service-sandbox-local-only
+      OBJECT_STORAGE_ENDPOINT: http://storage:9000
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_BUCKET: max-service-private
+      OBJECT_STORAGE_ACCESS_KEY: max_service_local
+      OBJECT_STORAGE_SECRET_KEY: max_service_objects_local
     depends_on:
       database:
         condition: service_healthy
+      storage:
+        condition: service_started
     ports:
       - "127.0.0.1:3001:3001"
     healthcheck:
@@ -47,6 +54,20 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+
+  storage:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: max-service-storage
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: max_service_local
+      MINIO_ROOT_PASSWORD: max_service_objects_local
+    ports:
+      - "127.0.0.1:59000:9000"
+      - "127.0.0.1:59001:9001"
+    volumes:
+      - max-service-objects:/data
 
   web:
     build:
@@ -77,3 +98,4 @@ services:
 
 volumes:
   max-service-postgres:
+  max-service-objects:

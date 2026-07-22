@@ -17,6 +17,7 @@ import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
 import { PartnersController } from "./partners/partners.controller.js";
 import { PartnersService } from "./partners/partners.service.js";
+import { PrivateObjectStorageService } from "./storage/private-object-storage.service.js";
 import { OperationVerificationsController, ProviderVerificationController } from "./verifications/verifications.controller.js";
 import { VerificationsService } from "./verifications/verifications.service.js";
 
@@ -33,7 +34,7 @@ class HealthController {
 
 @Module({
   controllers: [HealthController, DemoSessionController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService, VerificationsService, FinanceService],
+  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService, VerificationsService, FinanceService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

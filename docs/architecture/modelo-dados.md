@@ -21,7 +21,7 @@
 
 ### Catálogo e verificação
 
-`service_categories`, `provider_categories` (alvo), `provider_document_checks`, `provider_verifications` e `provider_verification_events`.
+`service_categories`, `provider_categories` (alvo), `provider_document_checks`, `provider_document_files`, `provider_verifications` e `provider_verification_events`. Os bytes de `provider_document_files` ficam no object storage privado; o banco contém somente metadados e hash.
 
 ### Marketplace
 
@@ -62,3 +62,5 @@
 - uma sessão demonstrativa referencia exatamente um usuário e papel compatíveis, persiste apenas o hash do token e deixa de autorizar após expiração ou revogação;
 - identidade, papel, hash, validade e criação da sessão são imutáveis; `last_seen_at` só avança e `revoked_at` nunca volta a nulo;
 - sem `app.session_token_hash`, a role de runtime não lê nem altera sessões.
+- cada versão documental possui chave de objeto aleatória, hash SHA-256, tipo e tamanho validados; nenhuma versão é sobrescrita pela aplicação;
+- somente o profissional proprietário e a operação consultam os metadados; o arquivo é entregue como anexo privado, sem URL pública;

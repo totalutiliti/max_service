@@ -30,6 +30,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - Fases 1 e 3 possuem jornadas persistentes demonstráveis no Docker local.
 - A Fase 4 já inclui rede do parceiro, fila de ocorrências e moderação manual de profissionais com checklist e auditoria.
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
+- A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.
 - Captura pública de indicação, arquivos privados, autenticação real e integrações reguladas continuam condicionados aos gates das fases seguintes.
 
 ## Não objetivos do MVP

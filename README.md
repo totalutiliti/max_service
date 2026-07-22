@@ -7,6 +7,8 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Fase 0 de descoberta e auditoria concluída e documentada em `docs/`.
 - Landing page e primeira experiência SaaS navegável para cliente, profissional, parceiro e administração.
 - A demonstração inclui entrada por perfil, painéis, atividades, mensagens e área de conta/plano com dados fictícios.
+- A entrada agora cria uma sessão opaca, temporária e revogável em cookie `HttpOnly`; troca de perfil invalida a sessão anterior e o logout revoga a atual.
+- O BFF deriva o ator exclusivamente da sessão e assina o contexto enviado à API; parâmetros de perfil adulterados e cabeçalhos diretos são bloqueados.
 - API NestJS versionada e PostgreSQL 16 já sustentam categorias, solicitações, propostas e aceite.
 - Solicitações criadas pelo painel do cliente são persistidas e reaparecem após recarregar a aplicação.
 - O profissional recebe oportunidades do banco, envia ou atualiza sua proposta e o cliente compara valores e prazos antes de aceitar.
@@ -75,8 +77,9 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - [Visão do produto](docs/product/visao-produto.md)
 - [Arquitetura](docs/architecture/architecture-overview.md)
 - [Segurança](docs/security/threat-model.md)
+- [Autenticação e sessões](docs/security/authentication.md)
 - [Design system](docs/ux/design-system.md)
 
 ## Limites desta etapa
 
-Esta entrega é uma fundação local, ainda com identidades e dados fictícios. Autenticação pública, captura pública do link/QR de indicação, upload e armazenamento de documentos, entrega em tempo real por push/WebSocket, e-mail/SMS, pagamentos reais e integrações externas permanecem desativados. Conversas, notificações internas, rede do parceiro, ciclo do agendamento, cancelamentos, tratamento de chamados, estados da verificação, avaliações e ledger financeiro sandbox são persistentes. As credenciais e a chave de assinatura do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.
+Esta entrega é uma fundação local, ainda com identidades e dados fictícios. As sessões demonstrativas exercitam expiração, revogação, cookie seguro e autorização, mas não substituem cadastro público, senha forte, confirmação de contato, recuperação de conta ou MFA administrativo. Captura pública do link/QR de indicação, upload e armazenamento de documentos, entrega em tempo real por push/WebSocket, e-mail/SMS, pagamentos reais e integrações externas permanecem desativados. Conversas, notificações internas, rede do parceiro, ciclo do agendamento, cancelamentos, tratamento de chamados, estados da verificação, avaliações e ledger financeiro sandbox são persistentes. As credenciais e chaves do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.

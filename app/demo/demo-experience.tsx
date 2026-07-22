@@ -8,6 +8,13 @@ type Role = "cliente" | "prestador" | "parceiro" | "operacao";
 type Section = "inicio" | "atividade" | "mensagens" | "conta";
 type RequestStep = 1 | 2 | 3 | 4;
 
+interface DemoSession {
+  role: "customer" | "provider" | "partner" | "operation";
+  name: string;
+  email: string;
+  expiresAt: string;
+}
+
 interface PersistedRequest {
   id: string;
   publicCode: string;
@@ -338,9 +345,30 @@ const sectionLabels: Record<Role, Record<Section, string>> = {
 
 export function DemoExperience() {
   const [signedIn, setSignedIn] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [role, setRole] = useState<Role>("cliente");
   const [section, setSection] = useState<Section>("inicio");
   const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/auth/session", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<{ session?: DemoSession }>;
+      })
+      .then((payload) => {
+        if (payload?.session) {
+          setRole(uiRole(payload.session.role));
+          setSignedIn(true);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setCheckingSession(false));
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -348,18 +376,62 @@ export function DemoExperience() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const enter = () => {
-    setSignedIn(true);
-    setSection("inicio");
+  const createSession = async (nextRole: Role) => {
+    setAuthBusy(true);
+    setAuthError("");
+    try {
+      const response = await fetch("/api/v1/auth/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: nextRole }),
+      });
+      const payload = await response.json() as { session?: DemoSession; error?: string };
+      if (!response.ok || !payload.session) throw new Error(payload.error ?? "Não foi possível iniciar a sessão.");
+      setRole(uiRole(payload.session.role));
+      setSignedIn(true);
+      setSection("inicio");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Não foi possível iniciar a sessão.");
+    } finally {
+      setAuthBusy(false);
+    }
   };
 
-  const changeRole = (nextRole: Role) => {
-    setRole(nextRole);
-    setSection("inicio");
-    setToast(`Perfil alterado para ${roleDetails[nextRole].label}.`);
+  const changeRole = async (nextRole: Role) => {
+    if (nextRole === role) return;
+    setAuthBusy(true);
+    try {
+      const response = await fetch("/api/v1/auth/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: nextRole }),
+      });
+      const payload = await response.json() as { session?: DemoSession; error?: string };
+      if (!response.ok || !payload.session) throw new Error(payload.error ?? "Não foi possível trocar o perfil.");
+      const authenticatedRole = uiRole(payload.session.role);
+      setRole(authenticatedRole);
+      setSection("inicio");
+      setToast(`Sessão alterada para ${roleDetails[authenticatedRole].label}.`);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "Não foi possível trocar o perfil.");
+    } finally {
+      setAuthBusy(false);
+    }
   };
 
-  if (!signedIn) return <AccessScreen role={role} setRole={setRole} onEnter={enter} />;
+  const signOut = async () => {
+    setAuthBusy(true);
+    try {
+      await fetch("/api/v1/auth/session", { method: "DELETE" });
+    } finally {
+      setSignedIn(false);
+      setSection("inicio");
+      setAuthBusy(false);
+    }
+  };
+
+  if (checkingSession) return <main className="session-loading"><Image src="/max-service-mark.png" alt="" width={76} height={76} priority /><strong>Preparando seu espaço Max Service…</strong></main>;
+  if (!signedIn) return <AccessScreen role={role} setRole={setRole} onEnter={() => createSession(role)} busy={authBusy} error={authError} />;
 
   return (
     <Shell
@@ -367,7 +439,8 @@ export function DemoExperience() {
       section={section}
       setSection={setSection}
       changeRole={changeRole}
-      onSignOut={() => setSignedIn(false)}
+      onSignOut={signOut}
+      authBusy={authBusy}
     >
       {section === "inicio" && role === "cliente" && <CustomerView notify={setToast} />}
       {section === "inicio" && role === "prestador" && <ProviderView notify={setToast} />}
@@ -382,7 +455,14 @@ export function DemoExperience() {
   );
 }
 
-function AccessScreen({ role, setRole, onEnter }: { role: Role; setRole: (role: Role) => void; onEnter: () => void }) {
+function uiRole(role: DemoSession["role"]): Role {
+  if (role === "customer") return "cliente";
+  if (role === "provider") return "prestador";
+  if (role === "partner") return "parceiro";
+  return "operacao";
+}
+
+function AccessScreen({ role, setRole, onEnter, busy, error }: { role: Role; setRole: (role: Role) => void; onEnter: () => void; busy: boolean; error: string }) {
   const selected = roleDetails[role];
   return (
     <main className="access-page">
@@ -423,10 +503,11 @@ function AccessScreen({ role, setRole, onEnter }: { role: Role; setRole: (role: 
           </div>
           <div className="demo-credentials">
             <div><small>E-MAIL DEMONSTRATIVO</small><strong>{selected.email}</strong></div>
-            <span>Senha preenchida automaticamente</span>
+            <span>Sessão local protegida e temporária</span>
           </div>
-          <button className="button access-submit" onClick={onEnter}>Entrar como {selected.label} <span aria-hidden="true">→</span></button>
-          <p className="access-disclaimer">Ao continuar, você entra apenas na demonstração local. A autenticação definitiva será conectada ao backend na próxima fase.</p>
+          {error && <p className="access-error" role="alert">{error}</p>}
+          <button className="button access-submit" onClick={onEnter} disabled={busy}>{busy ? "Criando sessão…" : `Entrar como ${selected.label}`} <span aria-hidden="true">→</span></button>
+          <p className="access-disclaimer">Ao continuar, o servidor cria uma sessão demonstrativa revogável. Os dados são fictícios e não existe cobrança real.</p>
           <Link className="access-back" href="/">← Voltar para o site</Link>
         </div>
       </section>
@@ -434,12 +515,13 @@ function AccessScreen({ role, setRole, onEnter }: { role: Role; setRole: (role: 
   );
 }
 
-function Shell({ role, section, setSection, changeRole, onSignOut, children }: {
+function Shell({ role, section, setSection, changeRole, onSignOut, authBusy, children }: {
   role: Role;
   section: Section;
   setSection: (section: Section) => void;
-  changeRole: (role: Role) => void;
-  onSignOut: () => void;
+  changeRole: (role: Role) => Promise<void>;
+  onSignOut: () => Promise<void>;
+  authBusy: boolean;
   children: React.ReactNode;
 }) {
   const user = roleDetails[role];
@@ -462,12 +544,12 @@ function Shell({ role, section, setSection, changeRole, onSignOut, children }: {
         </nav>
         <div className="demo-profile-switcher">
           <small>PERFIL DA DEMONSTRAÇÃO</small>
-          <select value={role} onChange={(event) => changeRole(event.target.value as Role)} aria-label="Trocar perfil da demonstração">
+          <select value={role} disabled={authBusy} onChange={(event) => void changeRole(event.target.value as Role)} aria-label="Trocar perfil da demonstração">
             {(Object.keys(roleDetails) as Role[]).map((item) => <option key={item} value={item}>{roleDetails[item].label}</option>)}
           </select>
           <p>Dados fictícios · sem pagamento real</p>
         </div>
-        <button className="signout-button" onClick={onSignOut}>← Sair da demonstração</button>
+        <button className="signout-button" disabled={authBusy} onClick={() => void onSignOut()}>← Encerrar sessão</button>
       </aside>
       <div className="demo-main" id="painel">{children}</div>
     </main>

@@ -39,6 +39,22 @@ export class DatabaseService implements OnModuleDestroy {
     }
   }
 
+  async withSessionHash<T>(tokenHash: string, operation: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.session_token_hash', $1, true)", [tokenHash]);
+      const result = await operation(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async onModuleDestroy() {
     await this.pool.end();
   }

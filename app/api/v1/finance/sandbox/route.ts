@@ -1,3 +1,5 @@
+import { crossOriginMutation, resolveDemoSession } from "../../_session";
+
 export const dynamic = "force-dynamic";
 
 function hex(bytes: ArrayBuffer) {
@@ -5,6 +7,10 @@ function hex(bytes: ArrayBuffer) {
 }
 
 export async function POST(request: Request) {
+  if (crossOriginMutation(request)) return Response.json({ error: "Origem da requisição inválida." }, { status: 403 });
+  const session = await resolveDemoSession(request);
+  if (!session) return Response.json({ error: "Sessão ausente, expirada ou revogada." }, { status: 401 });
+  if (session.role !== "operation") return Response.json({ error: "Somente a operação pode simular eventos financeiros." }, { status: 403 });
   const payload = await request.json() as { intentId?: string; eventType?: "settlement" | "refund"; amountCents?: number };
   if (!payload.intentId || !payload.eventType || !Number.isInteger(payload.amountCents) || Number(payload.amountCents) <= 0) {
     return Response.json({ error: "Evento financeiro sandbox inválido." }, { status: 400 });

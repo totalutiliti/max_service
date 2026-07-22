@@ -4,6 +4,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 
 | Recurso | Cliente | Prestador | Parceiro | Operação | Admin |
 |---|---|---|---|---|---|
+| sessão demonstrativa | somente token próprio | somente token próprio | somente token próprio | somente token próprio | nenhum acesso direto |
 | perfil do cliente | próprio | nenhum | nenhum | caso autorizado | auditado |
 | perfil do prestador | dados públicos; privado só quando necessário ao booking | próprio | afiliados, campos mínimos | moderação | auditado |
 | solicitação | própria | oportunidade elegível sem PII excessiva | nenhum | caso autorizado | auditado |
@@ -51,5 +52,8 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
 - somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
 - evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;
+- sem hash de token, sessões retornam zero linhas; usuário/papel incompatível é rejeitado no insert;
+- sessão revogada ou expirada retorna `401`; troca de perfil invalida o token anterior;
+- BFF rejeita parâmetro de papel diferente da sessão e API rejeita cabeçalho de ator sem assinatura interna válida;
 - query direta pela role de runtime continua sujeita a RLS;
 - cada migration preserva policies e grants.

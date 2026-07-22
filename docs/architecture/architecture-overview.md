@@ -7,7 +7,7 @@ Monorepo npm com frontend Next.js, API NestJS, pacote compartilhado, PostgreSQL,
 ```text
 Browser/PWA
     |
-Next.js BFF - cookies HttpOnly, CSRF, headers
+Next.js BFF - sessão HttpOnly, origem e contexto assinado
     |
 NestJS /api/v1 - autenticação, autorização e módulos
     |---------------- PostgreSQL + RLS
@@ -29,6 +29,8 @@ Identity, Accounts, Customers, Providers, Partners, Advertisers, Catalog, Geogra
 - consumidores e webhooks são idempotentes;
 - valores comerciais vêm de regras versionadas;
 - nenhuma autorização depende do frontend.
+- rotas privadas derivam o ator da sessão revogável; o BFF assina método, caminho, papel e UUID para a API;
+- a API rejeita cabeçalhos de identidade sem a assinatura interna dentro da janela de replay.
 
 ## ADRs iniciais
 

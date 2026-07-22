@@ -34,6 +34,7 @@ services:
       CORS_ORIGIN: http://127.0.0.1:4174
       DATABASE_URL: postgresql://max_service_app:max_service_runtime_local@database:5432/max_service
       MIGRATION_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@database:5432/max_service
+      BFF_INTERNAL_SECRET: max-service-bff-local-only
       FINANCIAL_SANDBOX_SECRET: max-service-sandbox-local-only
     depends_on:
       database:
@@ -55,6 +56,8 @@ services:
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:3001
+      BFF_INTERNAL_SECRET: max-service-bff-local-only
+      COOKIE_SECURE: "false"
       FINANCIAL_SANDBOX_SECRET: max-service-sandbox-local-only
     depends_on:
       api:

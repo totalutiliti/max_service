@@ -1,4 +1,7 @@
-import { Controller, Get, Module } from "@nestjs/common";
+import { Controller, Get, MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
+import { DemoSessionController } from "./auth/demo-session.controller.js";
+import { DemoSessionService } from "./auth/demo-session.service.js";
+import { InternalAuthMiddleware } from "./auth/internal-auth.middleware.js";
 import { BookingsController } from "./bookings/bookings.controller.js";
 import { BookingsService } from "./bookings/bookings.service.js";
 import { DatabaseService } from "./database/database.service.js";
@@ -29,7 +32,11 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService, VerificationsService, FinanceService],
+  controllers: [HealthController, DemoSessionController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, ProviderVerificationController, OperationVerificationsController, FinanceController],
+  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService, VerificationsService, FinanceService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(InternalAuthMiddleware).forRoutes("*");
+  }
+}

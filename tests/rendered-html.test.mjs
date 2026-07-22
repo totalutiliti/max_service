@@ -24,15 +24,11 @@ test("renderiza a landing própria da Max Service", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Triider|GetNinjas/i);
 });
 
-test("renderiza a demonstração com os quatro perfis", async () => {
+test("renderiza o carregamento seguro antes de resolver a sessão", async () => {
   const response = await render("/demo");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Cliente/);
-  assert.match(html, /Profissional/);
-  assert.match(html, /Parceiro/);
-  assert.match(html, /Administração/);
-  assert.match(html, /Pedir um serviço/);
-  assert.match(html, /PLATAFORMA MAX SERVICE/);
-  assert.match(html, /nenhuma cobrança real/i);
+  assert.match(html, /Preparando seu espaço Max Service/);
+  assert.match(html, /Plataforma SaaS \| Max Service/);
+  assert.doesNotMatch(html, /token|ms_demo_session/i);
 });

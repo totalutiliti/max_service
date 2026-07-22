@@ -1,19 +1,18 @@
-const actorIds = {
-  customer: "00000000-0000-4000-8000-000000000101",
-  provider: "00000000-0000-4000-8000-000000000201",
-  partner: "00000000-0000-4000-8000-000000000301",
-  operation: "00000000-0000-4000-8000-000000000401",
-} as const;
-
-type DemoRole = keyof typeof actorIds;
+import { apiUrl, crossOriginMutation, demoActorIds, type DemoRole, resolveDemoSession, signedInternalHeaders } from "./_session";
 
 export async function proxyDemoRequest(path: string, request: Request, role: DemoRole, payload?: unknown) {
-  const apiUrl = process.env.API_INTERNAL_URL ?? "http://127.0.0.1:3001";
-  const headers = new Headers({
-    accept: "application/json",
-    "x-demo-role": role,
-    "x-demo-actor-id": actorIds[role],
-  });
+  if (crossOriginMutation(request)) return Response.json({ error: "Origem da requisição inválida." }, { status: 403 });
+  const session = await resolveDemoSession(request);
+  if (!session) return Response.json({ error: "Sessão ausente, expirada ou revogada." }, { status: 401 });
+  if (session.role !== role || session.actorId !== demoActorIds[role]) {
+    return Response.json({ error: "O perfil da sessão não tem acesso a este recurso." }, { status: 403 });
+  }
+  let headers: Headers;
+  try {
+    headers = await signedInternalHeaders(request.method, path, role, session.actorId);
+  } catch {
+    return Response.json({ error: "Canal interno da Max Service não configurado." }, { status: 503 });
+  }
 
   let body: string | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -22,7 +21,7 @@ export async function proxyDemoRequest(path: string, request: Request, role: Dem
   }
 
   try {
-    const response = await fetch(`${apiUrl}${path}`, {
+    const response = await fetch(`${apiUrl()}${path}`, {
       method: request.method,
       headers,
       body,

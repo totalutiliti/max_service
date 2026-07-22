@@ -13,7 +13,7 @@
 
 ### Identidade e acesso
 
-`users`, `identities`, `sessions`, `roles`, `permissions`, `user_roles`, `terms_versions`, `terms_acceptances`, `consent_records`.
+`users` e `demo_sessions` estão materializados no piloto. `identities`, sessões de produção, `roles`, `permissions`, `user_roles`, `terms_versions`, `terms_acceptances` e `consent_records` permanecem como alvo.
 
 ### Perfis e geografia
 
@@ -59,3 +59,6 @@
 - regra financeira aplicada é congelada por versão no booking/payment intent.
 - a soma das alocações de um intent é exatamente o valor bruto, com o resíduo de arredondamento absorvido pelo recebível do profissional;
 - liquidação exige serviço concluído; estorno de autorização exige serviço cancelado;
+- uma sessão demonstrativa referencia exatamente um usuário e papel compatíveis, persiste apenas o hash do token e deixa de autorizar após expiração ou revogação;
+- identidade, papel, hash, validade e criação da sessão são imutáveis; `last_seen_at` só avança e `revoked_at` nunca volta a nulo;
+- sem `app.session_token_hash`, a role de runtime não lê nem altera sessões.

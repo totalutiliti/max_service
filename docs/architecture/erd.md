@@ -5,7 +5,7 @@ erDiagram
   USERS ||--o| CUSTOMER_PROFILES : possui
   USERS ||--o| PROVIDER_PROFILES : possui
   USERS ||--o| PARTNER_PROFILES : possui
-  USERS ||--o{ SESSIONS : abre
+  USERS ||--o{ DEMO_SESSIONS : abre
   USERS ||--o{ TERMS_ACCEPTANCES : aceita
   PROVIDER_PROFILES }o--o{ SERVICE_CATEGORIES : atende
   PROVIDER_PROFILES }o--o{ REGIONS : cobre
@@ -42,4 +42,4 @@ erDiagram
   USERS ||--o{ AUDIT_EVENTS : atua
 ```
 
-O núcleo transacional demonstrável está materializado em migrations versionadas. O financeiro ativo é exclusivamente sandbox; PSP, custódia e movimentação real permanecem ausentes.
+O núcleo transacional demonstrável está materializado em migrations versionadas. `DEMO_SESSIONS` valida o ciclo local de sessão, não representa uma identidade pública de produção. O financeiro ativo é exclusivamente sandbox; PSP, custódia e movimentação real permanecem ausentes.

@@ -1,0 +1,21 @@
+name: max-service
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: max-service-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4174:4174"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:4174/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s

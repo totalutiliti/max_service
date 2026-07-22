@@ -10,6 +10,8 @@ import { NotificationsController } from "./notifications/notifications.controlle
 import { NotificationsService } from "./notifications/notifications.service.js";
 import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
+import { PartnersController } from "./partners/partners.controller.js";
+import { PartnersService } from "./partners/partners.service.js";
 
 @Controller()
 class HealthController {
@@ -23,7 +25,7 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController],
-  providers: [DatabaseService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService],
+  controllers: [HealthController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController],
+  providers: [DatabaseService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService],
 })
 export class AppModule {}

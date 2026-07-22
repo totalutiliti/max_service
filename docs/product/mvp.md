@@ -11,7 +11,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - seis categorias piloto;
 - solicitações, propostas, conversa, agendamento e histórico de estados;
 - cancelamento estruturado e avaliações;
-- indicação por link/QR;
+- código persistente e registro manual de indicação; captura pública por link/QR permanece como integração posterior;
 - moderação manual de prestador;
 - notificações internas persistentes; e-mail permanece como integração posterior;
 - PSP fake e visualização de divisão financeira, sem transação real;

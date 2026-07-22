@@ -167,6 +167,26 @@ interface UserNotification {
   actorName: string | null;
 }
 
+interface PartnerReferral {
+  id: string;
+  publicCode: string;
+  professionalName: string;
+  email: string;
+  status: "invited" | "in_review" | "active" | "rejected";
+  source: "link" | "qr" | "manual";
+  createdAt: string;
+  activatedAt: string | null;
+  categoryName: string;
+  categoryIcon: string;
+  providerCode: string | null;
+}
+
+interface PartnerDashboardData {
+  link: { id: string; referralCode: string; slug: string; status: "active" | "paused"; createdAt: string };
+  metrics: { totalCount: number; activeCount: number; pendingCount: number; activationRate: number };
+  referrals: PartnerReferral[];
+}
+
 const demoUiActorIds = {
   cliente: "00000000-0000-4000-8000-000000000101",
   prestador: "00000000-0000-4000-8000-000000000201",
@@ -613,21 +633,95 @@ function ProposalDialog({ request, onClose, onSaved, notify }: { request: Persis
   );
 }
 
+function usePartnerDashboard(notify: (message: string) => void) {
+  const [data, setData] = useState<PartnerDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/partner/dashboard", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as PartnerDashboardData & { error?: string; message?: string };
+        if (!response.ok || !payload.link) throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a rede.");
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a rede.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+  return { data, loading, refresh: () => setRefresh((value) => value + 1) };
+}
+
+const referralStatusLabel: Record<PartnerReferral["status"], string> = {
+  invited: "Convidado",
+  in_review: "Em análise",
+  active: "Ativo",
+  rejected: "Não aprovado",
+};
+
 function PartnerView({ notify }: { notify: (message: string) => void }) {
+  const { data, loading, refresh } = usePartnerDashboard(notify);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const referralPath = data ? `/demo?ref=${data.link.referralCode}` : "";
+  const referralUrl = data ? `maxservice.local${referralPath}` : "Carregando...";
+  const copyLink = async () => {
+    if (!data) return;
+    try { await navigator.clipboard.writeText(`${window.location.origin}${referralPath}`); } catch { /* O ambiente pode bloquear a área de transferência. */ }
+    notify("Link de indicação copiado.");
+  };
   return (
     <>
-      <DashboardHeader role="parceiro" eyebrow="Área do parceiro" title="Sua rede está crescendo."><button className="button button-small" onClick={() => notify("Link de indicação copiado.")}>Compartilhar link</button></DashboardHeader>
-      <div className="metric-grid"><Metric label="Afiliados ativos" value="24" detail="+4 neste mês" tone="lime" /><Metric label="Em análise" value="5" detail="Aguardando moderação" /><Metric label="Serviços concluídos" value="38" detail="Por afiliados no mês" /><Metric label="Comissão estimada" value="R$ 684" detail="Valor demonstrativo" /></div>
+      <DashboardHeader role="parceiro" eyebrow="Área do parceiro" title="Sua rede, com origem e status claros."><button className="button button-small" onClick={() => setInviteOpen(true)}>Nova indicação</button></DashboardHeader>
+      <div className="metric-grid"><Metric label="Afiliados ativos" value={loading ? "…" : String(data?.metrics.activeCount ?? 0)} detail="Cadastro concluído" tone="lime" /><Metric label="Em andamento" value={loading ? "…" : String(data?.metrics.pendingCount ?? 0)} detail="Convites e análises" /><Metric label="Indicações totais" value={loading ? "…" : String(data?.metrics.totalCount ?? 0)} detail="Somente sua rede" /><Metric label="Taxa de ativação" value={loading ? "…" : `${data?.metrics.activationRate ?? 0}%`} detail="Ativos sobre indicações" /></div>
       <div className="dashboard-columns">
-        <section className="dashboard-section referral-card"><div><small>SEU LINK DE INDICAÇÃO</small><h2>Convide profissionais da sua região.</h2><p>O vínculo só é criado quando o profissional conclui o cadastro pelo seu link ou QR Code.</p><div className="fake-link"><span>maxservice.local/p/PC-7K2M</span><button onClick={() => notify("Link de indicação copiado.")}>Copiar</button></div></div><div className="fake-qr" aria-label="Representação visual de QR Code"><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></section>
-        <section className="dashboard-section"><div className="dashboard-section-title"><div><small>REDE RECENTE</small><h2>Novos afiliados</h2></div></div><div className="affiliate-list"><Affiliate initials="JL" name="João Lima" category="Pintor" status="Ativo" /><Affiliate initials="AP" name="Ana Prado" category="Diarista" status="Em análise" /><Affiliate initials="CG" name="Carlos Gomes" category="Encanador" status="Ativo" /></div></section>
+        <section className="dashboard-section referral-card"><div><small>SEU CÓDIGO DE INDICAÇÃO</small><h2>Convide profissionais da sua região.</h2><p>O código e o link são persistentes. Nesta fase, registre o convite pelo botão “Nova indicação”; captura pública e QR escaneável serão conectados ao onboarding.</p><div className="fake-link"><span>{referralUrl}</span><button disabled={!data} onClick={copyLink}>Copiar</button></div></div><div className="fake-qr" aria-label={`Representação demonstrativa do QR Code ${data?.link.referralCode ?? ""}`}><i/><i/><i/><i/><i/><i/><i/><i/><i/></div></section>
+        <section className="dashboard-section"><div className="dashboard-section-title"><div><small>REDE RECENTE</small><h2>Últimas indicações</h2></div><button onClick={refresh}>Atualizar ↻</button></div><div className="affiliate-list">{loading && <div className="data-state">Carregando indicações...</div>}{!loading && data?.referrals.length === 0 && <div className="data-state"><strong>Sua rede começa aqui.</strong><span>Registre a primeira indicação para acompanhar o progresso.</span></div>}{data?.referrals.slice(0, 5).map((referral) => <Affiliate key={referral.id} referral={referral} />)}</div></section>
       </div>
+      {inviteOpen && <ReferralInviteDialog onClose={() => setInviteOpen(false)} onSaved={refresh} notify={notify} />}
     </>
   );
 }
 
-function Affiliate({ initials, name, category, status }: { initials: string; name: string; category: string; status: string }) {
-  return <div><span className="mini-avatar neutral">{initials}</span><p><strong>{name}</strong><small>{category}</small></p><span className={`status-pill ${status === "Ativo" ? "success" : "warning"}`}>{status}</span></div>;
+function Affiliate({ referral }: { referral: PartnerReferral }) {
+  const initials = referral.professionalName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  return <div><span className="mini-avatar neutral">{initials}</span><p><strong>{referral.professionalName}</strong><small>{referral.categoryIcon} {referral.categoryName} · {referral.publicCode}</small></p><span className={`status-pill ${referral.status === "active" ? "success" : "warning"}`}>{referralStatusLabel[referral.status]}</span></div>;
+}
+
+function ReferralInviteDialog({ onClose, onSaved, notify }: { onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [categorySlug, setCategorySlug] = useState("eletricista");
+  const [saving, setSaving] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { closeRef.current?.focus(); }, []);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/partner/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ professionalName: name.trim(), email: email.trim(), categorySlug }),
+      });
+      const payload = await response.json() as { referral?: PartnerReferral; error?: string; message?: string };
+      if (!response.ok || !payload.referral) throw new Error(payload.error ?? payload.message ?? "Não foi possível registrar a indicação.");
+      notify(`${payload.referral.publicCode}: indicação registrada. O envio externo ainda não está ativo.`);
+      onSaved();
+      onClose();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível registrar a indicação.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog referral-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="referral-invite-title"><button ref={closeRef} className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>+</span><div><p className="dialog-kicker">NOVA INDICAÇÃO</p><h2 id="referral-invite-title">Registre um profissional.</h2><p>O cadastro entrará como convidado e ficará vinculado ao seu código.</p></div></header><form onSubmit={submit}><label className="field"><span>Nome do profissional</span><input minLength={3} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome completo" required /></label><label className="field"><span>E-mail</span><input type="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="profissional@exemplo.com" required /></label><label className="field"><span>Categoria principal</span><select value={categorySlug} onChange={(event) => setCategorySlug(event.target.value)}><option value="eletricista">Eletricista</option><option value="encanador">Encanador</option><option value="pedreiro">Pedreiro</option><option value="pintor">Pintor</option><option value="diarista">Diarista</option><option value="montagem">Montagem</option></select></label><div className="commercial-preview"><span>i</span><p><strong>Registro sem disparo automático</strong>A indicação será persistida, mas nenhum e-mail ou mensagem externa será enviado nesta demonstração.</p></div><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || name.trim().length < 3 || !email.includes("@")}>{saving ? "Registrando..." : "Registrar indicação →"}</button></footer></form></section></div>;
 }
 
 function OperationsView({ notify }: { notify: (message: string) => void }) {
@@ -736,7 +830,8 @@ function OperationCaseDialog({ caseId, onClose, onChanged, notify }: { caseId: s
 
 function ActivityView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   if (role === "cliente" || role === "prestador") return <BookingActivityView role={role} notify={notify} />;
-  return <StaticActivityView role={role} notify={notify} />;
+  if (role === "parceiro") return <PartnerActivityView notify={notify} />;
+  return <StaticActivityView role="operacao" notify={notify} />;
 }
 
 const bookingStatusLabel: Record<BookingStatus, string> = {
@@ -821,11 +916,18 @@ function BookingActivityView({ role, notify }: { role: "cliente" | "prestador"; 
   );
 }
 
-function StaticActivityView({ role, notify }: { role: "parceiro" | "operacao"; notify: (message: string) => void }) {
-  const content = {
-    parceiro: { eyebrow: "REDE DE PROFISSIONAIS", title: "Acompanhe cada indicação com transparência.", metric: ["24", "Afiliados ativos"], rows: [["PR-8M4Q", "João Lima · Pintor", "Ativo", "8 serviços"], ["PR-6D2A", "Ana Prado · Diarista", "Em análise", "Enviado hoje"], ["PR-9K7B", "Carlos Gomes · Encanador", "Ativo", "12 serviços"]] },
-    operacao: { eyebrow: "FILA OPERACIONAL", title: "Prioridade clara para decidir com segurança.", metric: ["17", "Itens aguardando"], rows: [["PR-8M4Q", "Documento reenviado", "Revisar", "38 min"], ["SV-29K7", "Cancelamento contestado", "Prioridade", "1 h 12"], ["CS-4N8R", "Dúvida sobre proposta", "Aberto", "5 h 03"]] },
-  }[role];
+function PartnerActivityView({ notify }: { notify: (message: string) => void }) {
+  const { data, loading, refresh } = usePartnerDashboard(notify);
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const referrals = data?.referrals.filter((referral) => !normalizedQuery || [referral.publicCode, referral.professionalName, referral.email, referral.categoryName, referralStatusLabel[referral.status]].some((value) => value.toLocaleLowerCase("pt-BR").includes(normalizedQuery))) ?? [];
+  const date = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+
+  return <><DashboardHeader role="parceiro" eyebrow="REDE DE PROFISSIONAIS" title="Acompanhe cada indicação com transparência."><button className="button button-small" onClick={refresh}>Atualizar rede</button></DashboardHeader><div className="activity-overview"><article><small>Afiliados ativos</small><strong>{loading ? "…" : data?.metrics.activeCount ?? 0}</strong><span>Vínculo confirmado</span></article><article><small>Taxa de ativação</small><strong>{loading ? "…" : `${data?.metrics.activationRate ?? 0}%`}</strong><span>Sem estimativa financeira</span></article><article><small>Em andamento</small><strong>{loading ? "…" : data?.metrics.pendingCount ?? 0}</strong><span>Convites e análises</span></article></div><section className="dashboard-section records-card"><div className="records-toolbar"><label><span>Buscar na rede</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, profissional, e-mail ou categoria" /></label><span className="records-counter">{referrals.length} indicação(ões)</span></div><div className="record-list">{loading && <div className="data-state">Carregando rede...</div>}{!loading && referrals.length === 0 && <div className="data-state"><strong>Nenhuma indicação encontrada.</strong><span>Ajuste a busca ou registre um novo profissional.</span></div>}{referrals.map((referral) => <button key={referral.id} onClick={() => notify(`${referral.publicCode}: origem ${referral.source} em ${date(referral.createdAt)}.`)}><span className="record-code">{referral.publicCode}</span><span><strong>{referral.professionalName} · {referral.categoryName}</strong><small>{referral.email} · registrado em {date(referral.createdAt)}</small></span><span className={`status-pill ${referral.status === "active" ? "success" : "warning"}`}>{referralStatusLabel[referral.status]}</span><i>→</i></button>)}</div></section></>;
+}
+
+function StaticActivityView({ role, notify }: { role: "operacao"; notify: (message: string) => void }) {
+  const content = { eyebrow: "FILA OPERACIONAL", title: "Prioridade clara para decidir com segurança.", metric: ["17", "Itens aguardando"], rows: [["PR-8M4Q", "Documento reenviado", "Revisar", "38 min"], ["SV-29K7", "Cancelamento contestado", "Prioridade", "1 h 12"], ["CS-4N8R", "Dúvida sobre proposta", "Aberto", "5 h 03"]] };
 
   return (
     <>

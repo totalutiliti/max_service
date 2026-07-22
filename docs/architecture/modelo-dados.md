@@ -29,7 +29,7 @@
 
 ### Crescimento e receita
 
-`referrals`, `referral_attributions`, `commission_rules`, `commissions`, `cashback_ledger`, `payment_intents`, `payment_transactions`, `webhook_events`, `advertisements`, `advertisement_targeting`.
+`partner_referral_links`, `partner_referrals`, `commission_rules`, `commissions`, `cashback_ledger`, `payment_intents`, `payment_transactions`, `webhook_events`, `advertisements`, `advertisement_targeting`.
 
 ### Operação
 
@@ -48,6 +48,8 @@
 - resolver um chamado exige justificativa, responsável e instante de resolução;
 - cada notificação pertence a um destinatário e só pode ser emitida a partir de uma relação transacional comprovada;
 - leitura de notificação altera apenas `read_at`; conteúdo, origem e destinatário permanecem imutáveis;
+- um parceiro possui um código ativo e enxerga somente indicações vinculadas à própria rede;
+- convite manual nasce como `invited`; ativação exige um prestador convertido e instante de ativação;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;
 - cada avaliação tem como alvo a outra parte do booking e não pode ser editada ou apagada pelo fluxo da aplicação;
 - um evento de PSP tem chave idempotente única;

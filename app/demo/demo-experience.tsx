@@ -187,6 +187,52 @@ interface PartnerDashboardData {
   referrals: PartnerReferral[];
 }
 
+type VerificationStatus = "submitted" | "in_review" | "changes_requested" | "approved";
+type VerificationDocumentStatus = "pending" | "accepted" | "changes_requested";
+
+interface VerificationDocument {
+  id: string;
+  documentType: "identity" | "address" | "professional_qualification" | "profile_photo";
+  label: string;
+  status: VerificationDocumentStatus;
+  note: string | null;
+  checkedAt: string | null;
+  updatedAt: string;
+  checkedByName: string | null;
+}
+
+interface VerificationEvent {
+  id: string;
+  eventType: "submitted" | "review_started" | "document_reviewed" | "approved" | "changes_requested";
+  fromStatus: VerificationStatus | null;
+  toStatus: VerificationStatus | null;
+  note: string;
+  createdAt: string;
+  actorName: string;
+  actorRole: string;
+}
+
+interface ProviderVerification {
+  id: string;
+  publicCode: string;
+  providerId: string;
+  providerName: string;
+  providerCode: string;
+  status: VerificationStatus;
+  reviewPriority: "standard" | "attention";
+  policyVersion: string;
+  submittedAt: string;
+  decisionReason: string | null;
+  decidedAt: string | null;
+  updatedAt: string;
+  assignedToName: string | null;
+  documentCount: number;
+  acceptedDocumentCount: number;
+  attentionDocumentCount: number;
+  documents?: VerificationDocument[];
+  events?: VerificationEvent[];
+}
+
 const demoUiActorIds = {
   cliente: "00000000-0000-4000-8000-000000000101",
   prestador: "00000000-0000-4000-8000-000000000201",
@@ -538,10 +584,25 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
   );
 }
 
+const verificationStatusLabel: Record<VerificationStatus, string> = {
+  submitted: "Aguardando análise",
+  in_review: "Em análise",
+  changes_requested: "Correção solicitada",
+  approved: "Perfil aprovado",
+};
+
+const verificationDocumentStatusLabel: Record<VerificationDocumentStatus, string> = {
+  pending: "Pendente",
+  accepted: "Conferido",
+  changes_requested: "Corrigir",
+};
+
 function ProviderView({ notify }: { notify: (message: string) => void }) {
   const [opportunities, setOpportunities] = useState<PersistedRequest[]>([]);
+  const [verification, setVerification] = useState<ProviderVerification | null>(null);
   const [selected, setSelected] = useState<PersistedRequest | null>(null);
   const [loading, setLoading] = useState(true);
+  const [verificationLoading, setVerificationLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
@@ -560,13 +621,35 @@ function ProviderView({ notify }: { notify: (message: string) => void }) {
     return () => controller.abort();
   }, [notify, refresh]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/provider/verification", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as { verification?: ProviderVerification; error?: string; message?: string };
+        if (!response.ok || !payload.verification) throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a verificação do perfil.");
+        return payload.verification;
+      })
+      .then(setVerification)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a verificação do perfil.");
+      })
+      .finally(() => setVerificationLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const verificationPercentage = verification?.documentCount
+    ? Math.round((verification.acceptedDocumentCount / verification.documentCount) * 100)
+    : 0;
+  const verificationTone = verification?.status === "approved" ? "success" : "warning";
+
   return (
     <>
-      <DashboardHeader role="prestador" eyebrow="Área do profissional" title="Bom trabalho começa com boas oportunidades."><span className="status-pill success">● Perfil aprovado</span></DashboardHeader>
+      <DashboardHeader role="prestador" eyebrow="Área do profissional" title="Bom trabalho começa com boas oportunidades."><span className={`status-pill ${verificationTone}`}>● {verificationLoading ? "Consultando perfil" : verification ? verificationStatusLabel[verification.status] : "Perfil indisponível"}</span></DashboardHeader>
       <div className="metric-grid"><Metric label="Novas oportunidades" value={loading ? "…" : String(opportunities.length)} detail="Pedidos disponíveis agora" tone="lime" /><Metric label="Propostas ativas" value={String(opportunities.filter((item) => item.hasActorProposal).length)} detail="Enviadas por você" /><Metric label="Serviços no mês" value="12" detail="+20% desde junho" /><Metric label="Avaliação" value="4,9" detail="126 avaliações" /></div>
       <div className="dashboard-columns wide-left">
         <section className="dashboard-section"><div className="dashboard-section-title"><div><small>OPORTUNIDADES PRÓXIMAS</small><h2>Pedidos disponíveis</h2></div><button onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar ↻</button></div><div className="opportunity-list">{loading && <div className="data-state">Buscando oportunidades...</div>}{!loading && opportunities.length === 0 && <div className="data-state"><strong>Nenhum pedido disponível agora.</strong><span>Novos pedidos aparecerão aqui automaticamente.</span></div>}{opportunities.slice(0, 5).map((request) => <Opportunity key={request.id} request={request} onSelect={() => setSelected(request)} />)}</div></section>
-        <section className="dashboard-section profile-progress"><small>SEU PERFIL</small><div className="progress-ring">86<sup>%</sup></div><h2>Falta pouco.</h2><p>Adicione mais duas fotos de trabalhos para aumentar a confiança no seu perfil.</p><button className="primary-action" onClick={() => notify("Checklist do perfil aberto.")}>Completar perfil</button></section>
+        <section className="dashboard-section profile-progress"><small>VERIFICAÇÃO · {verification?.publicCode ?? "…"}</small><div className="progress-ring" style={{ background: `radial-gradient(circle at center, white 59%, transparent 61%), conic-gradient(var(--lime) ${verificationPercentage}%, #e2e7df 0)` }}>{verificationLoading ? "…" : verificationPercentage}<sup>%</sup></div><h2>{verification ? verificationStatusLabel[verification.status] : "Carregando perfil"}</h2><p>{verification?.decisionReason ?? (verification ? `${verification.acceptedDocumentCount} de ${verification.documentCount} itens conferidos pela operação.` : "Consultando o checklist de verificação.")}</p>{verification?.documents && <ul className="profile-checklist">{verification.documents.map((document) => <li key={document.id} className={document.status}><span>{document.status === "accepted" ? "✓" : "!"}</span><strong>{document.label}</strong><small>{verificationDocumentStatusLabel[document.status]}</small></li>)}</ul>}</section>
       </div>
       {selected && <ProposalDialog request={selected} onClose={() => setSelected(null)} onSaved={() => { setLoading(true); setRefresh((value) => value + 1); }} notify={notify} />}
     </>
@@ -726,19 +809,27 @@ function ReferralInviteDialog({ onClose, onSaved, notify }: { onClose: () => voi
 
 function OperationsView({ notify }: { notify: (message: string) => void }) {
   const [cases, setCases] = useState<SupportCase[]>([]);
+  const [verifications, setVerifications] = useState<ProviderVerification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
   const [refreshedAt, setRefreshedAt] = useState(0);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [selectedVerificationId, setSelectedVerificationId] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/v1/operation/cases", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Não foi possível carregar a fila operacional.");
-        return response.json() as Promise<{ cases: SupportCase[] }>;
+    Promise.all([
+      fetch("/api/v1/operation/cases", { cache: "no-store", signal: controller.signal }),
+      fetch("/api/v1/operation/verifications", { cache: "no-store", signal: controller.signal }),
+    ])
+      .then(async ([casesResponse, verificationsResponse]) => {
+        const casesPayload = await casesResponse.json() as { cases?: SupportCase[]; error?: string; message?: string };
+        const verificationsPayload = await verificationsResponse.json() as { verifications?: ProviderVerification[]; error?: string; message?: string };
+        if (!casesResponse.ok || !casesPayload.cases) throw new Error(casesPayload.error ?? casesPayload.message ?? "Não foi possível carregar as ocorrências.");
+        if (!verificationsResponse.ok || !verificationsPayload.verifications) throw new Error(verificationsPayload.error ?? verificationsPayload.message ?? "Não foi possível carregar as verificações.");
+        return { cases: casesPayload.cases, verifications: verificationsPayload.verifications };
       })
-      .then((payload) => { setCases(payload.cases); setRefreshedAt(Date.now()); })
+      .then((payload) => { setCases(payload.cases); setVerifications(payload.verifications); setRefreshedAt(Date.now()); })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         notify(error instanceof Error ? error.message : "Não foi possível carregar a fila operacional.");
@@ -749,6 +840,9 @@ function OperationsView({ notify }: { notify: (message: string) => void }) {
 
   const openCases = cases.filter((item) => item.status !== "resolved");
   const highPriority = openCases.filter((item) => item.priority === "high").length;
+  const profilesInReview = verifications.filter((item) => item.status === "submitted" || item.status === "in_review");
+  const documentsRequiringAttention = verifications.reduce((total, item) => total + item.attentionDocumentCount, 0);
+  const approvedProfiles = verifications.filter((item) => item.status === "approved").length;
   const waiting = (value: string) => {
     const minutes = Math.max(0, Math.floor((refreshedAt - new Date(value).getTime()) / 60_000));
     if (minutes < 1) return "agora";
@@ -759,12 +853,79 @@ function OperationsView({ notify }: { notify: (message: string) => void }) {
   return (
     <>
       <DashboardHeader role="operacao" eyebrow="Operação e moderação" title="O que precisa de atenção hoje?" />
-      <div className="metric-grid"><Metric label="Perfis em análise" value="17" detail="4 há mais de 24 h" tone="warning" /><Metric label="Documentos pendentes" value="9" detail="3 reenviados hoje" /><Metric label="Ocorrências abertas" value={loading ? "…" : String(openCases.length)} detail={`${highPriority} em alta prioridade`} tone={highPriority > 0 ? "warning" : undefined} /><Metric label="Serviços ativos" value="143" detail="Dados demonstrativos" /></div>
+      <div className="metric-grid"><Metric label="Perfis na fila" value={loading ? "…" : String(profilesInReview.length)} detail="Enviados ou em análise" tone={profilesInReview.length > 0 ? "warning" : undefined} /><Metric label="Itens com atenção" value={loading ? "…" : String(documentsRequiringAttention)} detail="Pendentes ou para correção" /><Metric label="Ocorrências abertas" value={loading ? "…" : String(openCases.length)} detail={`${highPriority} em alta prioridade`} tone={highPriority > 0 ? "warning" : undefined} /><Metric label="Perfis aprovados" value={loading ? "…" : String(approvedProfiles)} detail="Na amostra demonstrativa" /></div>
+      <section className="dashboard-section operations-table verification-table"><div className="dashboard-section-title"><div><small>MODERAÇÃO DE CADASTROS</small><h2>Verificação de profissionais</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Referência</span><span>Profissional</span><span>Documentos</span><span>Prioridade</span><span>Status</span></div>{loading && <div className="data-state">Carregando verificações...</div>}{!loading && verifications.length === 0 && <div className="data-state"><strong>Nenhuma verificação encontrada.</strong><span>Novos cadastros enviados aparecerão automaticamente nesta fila.</span></div>}{verifications.map((item) => <VerificationRow key={item.id} item={item} onOpen={() => setSelectedVerificationId(item.id)} />)}</section>
       <section className="dashboard-section operations-table"><div className="dashboard-section-title"><div><small>FILA PRIORITÁRIA</small><h2>Cancelamentos e ocorrências</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Tipo</span><span>Referência</span><span>Motivo</span><span>Espera</span><span>Status</span></div>{loading && <div className="data-state">Carregando ocorrências...</div>}{!loading && cases.length === 0 && <div className="data-state"><strong>Nenhuma ocorrência aberta.</strong><span>Cancelamentos registrados aparecerão automaticamente nesta fila.</span></div>}{cases.map((item) => <OperationRow key={item.id} item={item} wait={waiting(item.createdAt)} onOpen={() => setSelectedCaseId(item.id)} />)}</section>
       <div className="operations-note"><span>!</span><p><strong>Ações críticas exigem justificativa.</strong> Aprovações, rejeições, suspensões e mudanças de regra ficam registradas com antes/depois na trilha de auditoria.</p></div>
+      {selectedVerificationId && <OperationVerificationDialog verificationId={selectedVerificationId} onClose={() => setSelectedVerificationId(null)} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
       {selectedCaseId && <OperationCaseDialog caseId={selectedCaseId} onClose={() => setSelectedCaseId(null)} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
     </>
   );
+}
+
+function VerificationRow({ item, onOpen }: { item: ProviderVerification; onOpen: () => void }) {
+  const urgent = item.reviewPriority === "attention" && item.status !== "approved";
+  return <article className={`table-row ${item.status === "approved" ? "resolved" : ""}`}><span data-label="Referência"><strong>{item.publicCode}</strong></span><span data-label="Profissional">{item.providerName}<small>{item.providerCode}</small></span><span data-label="Documentos">{item.acceptedDocumentCount}/{item.documentCount} conferidos</span><span data-label="Prioridade">{item.reviewPriority === "attention" ? "Atenção" : "Padrão"}</span><span data-label="Status"><button onClick={onOpen} className={`operation-open-button ${urgent || item.status === "changes_requested" ? "urgent" : ""}`}><span>{verificationStatusLabel[item.status]}</span><i>→</i></button></span></article>;
+}
+
+function OperationVerificationDialog({ verificationId, onClose, onChanged, notify }: { verificationId: string; onClose: () => void; onChanged: () => void; notify: (message: string) => void }) {
+  const [detail, setDetail] = useState<ProviderVerification | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/operation/verifications?verificationId=${encodeURIComponent(verificationId)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { verification?: ProviderVerification; error?: string; message?: string };
+        if (!response.ok || !payload.verification) throw new Error(payload.error ?? payload.message ?? "Não foi possível abrir a verificação.");
+        return payload.verification;
+      })
+      .then(setDetail)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível abrir a verificação.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [verificationId, notify]);
+
+  const submit = async (action: "status" | "document", status: "in_review" | "approved" | "changes_requested" | "accepted", documentId?: string) => {
+    if (note.trim().length < 10) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/v1/operation/verifications", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ verificationId, documentId, action, status, note: note.trim() }),
+      });
+      const payload = await response.json() as { verification?: ProviderVerification; error?: string; message?: string };
+      if (!response.ok || !payload.verification) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a verificação.");
+      setDetail(payload.verification);
+      setNote("");
+      onChanged();
+      notify(action === "document" ? "Item documental revisado com auditoria." : status === "approved" ? "Perfil aprovado com justificativa registrada." : status === "changes_requested" ? "Correção solicitada ao profissional." : "Análise assumida pela operação.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a verificação.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const formatDate = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  const documents = detail?.documents ?? [];
+  const events = detail?.events ?? [];
+  const hasCorrection = documents.some((document) => document.status === "changes_requested");
+  const eventTitle: Record<VerificationEvent["eventType"], string> = {
+    submitted: "Cadastro enviado",
+    review_started: "Análise iniciada",
+    document_reviewed: "Item documental revisado",
+    approved: "Perfil aprovado",
+    changes_requested: "Correção solicitada",
+  };
+
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog operation-case-dialog verification-dialog" role="dialog" aria-modal="true" aria-labelledby="verification-title"><button className="dialog-close" onClick={onClose} aria-label="Fechar verificação">×</button>{loading && !detail && <div className="data-state"><strong>Carregando verificação...</strong></div>}{!loading && !detail && <div className="data-state"><strong>Verificação indisponível.</strong><button className="secondary-action" onClick={onClose}>Fechar</button></div>}{detail && <><header className="operation-case-header"><span>VF</span><div><p className="dialog-kicker">{detail.publicCode} · {detail.policyVersion}</p><h2 id="verification-title">{detail.providerName}</h2><p>{detail.providerCode} · enviado em {formatDate(detail.submittedAt)}</p></div><strong className={`status-pill ${detail.status === "approved" ? "success" : "warning"}`}>{verificationStatusLabel[detail.status]}</strong></header><div className="operation-case-body"><section className="operation-case-facts"><article><small>RESPONSÁVEL</small><strong>{detail.assignedToName ?? "Não atribuído"}</strong><span>{detail.assignedToName ? "Equipe de operação" : "Aguardando triagem"}</span></article><article><small>PRIORIDADE</small><strong>{detail.reviewPriority === "attention" ? "Atenção" : "Padrão"}</strong><span>Critério operacional, sem score automático</span></article><article><small>CHECKLIST</small><strong>{detail.acceptedDocumentCount} de {detail.documentCount}</strong><span>Itens demonstrativos conferidos</span></article></section>{detail.decisionReason && <section className="operation-resolution"><span>{detail.status === "approved" ? "✓" : "!"}</span><div><small>DECISÃO REGISTRADA</small><strong>{detail.decisionReason}</strong><p>{detail.decidedAt ? formatDate(detail.decidedAt) : ""}</p></div></section>}<section className="verification-documents"><div><small>CHECKLIST DOCUMENTAL</small><span>Nesta fase são armazenados apenas estados e metadados fictícios, sem arquivos.</span></div>{documents.map((document) => <article key={document.id}><i className={document.status}>{document.status === "accepted" ? "✓" : document.status === "changes_requested" ? "!" : "…"}</i><div><strong>{document.label}</strong><span>{verificationDocumentStatusLabel[document.status]}{document.checkedByName ? ` · ${document.checkedByName}` : ""}</span>{document.note && <p>{document.note}</p>}</div>{detail.status === "in_review" && <div className="verification-document-actions"><button className="secondary-action" disabled={submitting || note.trim().length < 10 || document.status === "accepted"} onClick={() => submit("document", "accepted", document.id)}>Aceitar</button><button className="danger-action" disabled={submitting || note.trim().length < 10 || document.status === "changes_requested"} onClick={() => submit("document", "changes_requested", document.id)}>Corrigir</button></div>}</article>)}</section><section className="operation-timeline"><small>TRILHA DE AUDITORIA · {events.length} EVENTO(S)</small>{events.map((event) => <article key={event.id}><i>{event.eventType === "document_reviewed" ? "D" : event.eventType === "submitted" ? "+" : "→"}</i><div><header><strong>{eventTitle[event.eventType]}</strong><small>{formatDate(event.createdAt)}</small></header><p>{event.note}</p><span>{event.actorName}</span></div></article>)}</section>{detail.status !== "approved" && detail.status !== "changes_requested" && <section className="operation-case-actions"><div><small>JUSTIFICATIVA OBRIGATÓRIA</small><strong>O texto será anexado à ação e ao histórico da verificação.</strong></div><label><span>Nota da revisão</span><textarea minLength={10} maxLength={900} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Descreva objetivamente a conferência ou a correção necessária." /><small>{note.trim().length}/900</small></label><div className="operation-action-buttons">{detail.status === "submitted" && <button className="primary-action" disabled={submitting || note.trim().length < 10} onClick={() => submit("status", "in_review")}>Iniciar análise</button>}{detail.status === "in_review" && <><button className="danger-action" disabled={submitting || note.trim().length < 10 || !hasCorrection} onClick={() => submit("status", "changes_requested")}>Solicitar correção</button><button className="primary-action" disabled={submitting || note.trim().length < 10 || detail.attentionDocumentCount > 0} onClick={() => submit("status", "approved")}>{submitting ? "Salvando..." : "Aprovar perfil"}</button></>}</div></section>}</div></>}</section></div>;
 }
 
 const supportCaseStatusLabel: Record<SupportCase["status"], string> = {

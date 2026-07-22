@@ -25,6 +25,12 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - PSP sandbox com split; sem custódia pela Max Service;
 - aprovação manual de prestador após validações sintáticas e documentais.
 
+## Progresso implementado
+
+- Fases 1 e 3 possuem jornadas persistentes demonstráveis no Docker local.
+- A Fase 4 já inclui rede do parceiro, fila de ocorrências e moderação manual de profissionais com checklist e auditoria.
+- Captura pública de indicação, arquivos privados, autenticação real e integrações reguladas continuam condicionados aos gates das fases seguintes.
+
 ## Não objetivos do MVP
 
 Carteira, conta de pagamento, PIX operado pela empresa, custódia, crédito, investimento de cashback, biometria facial, antecedentes automatizados, orçamento por IA, categorias reguladas, iOS nativo e expansão nacional.

@@ -21,7 +21,7 @@
 
 ### Catálogo e verificação
 
-`service_categories`, `provider_categories`, `provider_documents`, `provider_verifications` e histórico de decisões.
+`service_categories`, `provider_categories` (alvo), `provider_document_checks`, `provider_verifications` e `provider_verification_events`.
 
 ### Marketplace
 
@@ -50,6 +50,8 @@
 - leitura de notificação altera apenas `read_at`; conteúdo, origem e destinatário permanecem imutáveis;
 - um parceiro possui um código ativo e enxerga somente indicações vinculadas à própria rede;
 - convite manual nasce como `invited`; ativação exige um prestador convertido e instante de ativação;
+- uma verificação só sai de `submitted` para `in_review`; a decisão final é `approved` ou `changes_requested`;
+- aprovação exige todos os itens aceitos; correção exige ao menos um item marcado; cada ação gera evento e auditoria;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;
 - cada avaliação tem como alvo a outra parte do booking e não pode ser editada ou apagada pelo fluxo da aplicação;
 - um evento de PSP tem chave idempotente única;

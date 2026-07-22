@@ -1,20 +1,24 @@
 # Verificação de prestadores
 
-## Estados
+## Estados implementados no piloto local
 
-`DRAFT → INCOMPLETE → SUBMITTED → IN_REVIEW → PENDING → APPROVED | APPROVED_RESTRICTED | REJECTED → SUSPENDED | BLOCKED`.
+`SUBMITTED → IN_REVIEW → APPROVED | CHANGES_REQUESTED`.
 
-Toda mudança registra ator, timestamp, motivo estruturado, observação protegida, evidência, validade e versão da política. Histórico não é sobrescrito.
+Toda mudança registra ator, timestamp, justificativa, estado anterior, estado posterior e versão da política. A decisão corrente fica em `provider_verifications`; o histórico em `provider_verification_events` é append-only. Uma aprovação só é aceita quando todos os itens estão conferidos. Uma solicitação de correção exige que ao menos um item tenha sido marcado para correção.
+
+Os estados ampliados `DRAFT`, `INCOMPLETE`, `APPROVED_RESTRICTED`, `REJECTED`, `SUSPENDED` e `BLOCKED` pertencem à evolução pós-piloto e não devem ser simulados como funcionalidades prontas.
 
 ## MVP
 
 - validação sintática de CPF sem persistir valor em log;
 - confirmação de e-mail/telefone;
-- upload privado de documentos;
+- checklist persistente de metadados documentais fictícios;
 - revisão humana por pessoa autorizada;
 - pendência com solicitação de correção;
-- validade e reavaliação;
-- suspensão separada de rejeição.
+- isolamento por RLS entre o profissional e a fila da operação;
+- justificativa obrigatória e auditoria por ação.
+
+O upload privado, validade, reavaliação e suspensão separada de rejeição permanecem requisitos do MVP de produção, ainda não implementados no piloto local.
 
 ## Fora do MVP
 
@@ -22,4 +26,4 @@ Consulta criminal/civil, protestos, score financeiro, biometria, reconhecimento 
 
 ## Salvaguardas
 
-Critérios objetivos, possibilidade de contestação, minimização, segregação do revisor, dupla confirmação para bloqueio, monitoramento de viés e revisão jurídica de cada fornecedor.
+Critérios objetivos, possibilidade de contestação, minimização, segregação do revisor, dupla confirmação para bloqueio, monitoramento de viés e revisão jurídica de cada fornecedor. O banco local não armazena imagem, CPF, número de documento, endereço ou biometria; os itens sem arquivo servem apenas para validar estados e autorização.

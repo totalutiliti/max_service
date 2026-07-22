@@ -1,6 +1,6 @@
 # Matriz de RLS
 
-Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Operações privilegiadas usam papel explícito, escopo mínimo e auditoria.
+Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Operações privilegiadas usam papel explícito, escopo mínimo e auditoria.
 
 | Recurso | Cliente | Prestador | Parceiro | Operação | Admin |
 |---|---|---|---|---|---|
@@ -15,7 +15,7 @@ Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Oper
 | notificações | somente próprias | somente próprias | somente próprias | somente próprias | auditado |
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
-| documentos | nenhum acesso direto | próprios | nenhum | fila de moderação | excepcional |
+| checklist de verificação | nenhum acesso | somente o próprio | nenhum | fila completa e decisão | excepcional e auditado |
 | afiliados/comissões | nenhum | própria atribuição | somente atribuídos | financeiro | auditado |
 | pagamentos/cashback | próprios | recebíveis próprios | comissões próprias | financeiro | auditado |
 | auditoria | nenhum | nenhum | nenhum | recorte funcional | explícito e somente leitura |
@@ -24,7 +24,7 @@ Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Oper
 
 1. iniciar transação;
 2. validar claims de sessão no backend;
-3. `set_config('app.user_id', ..., true)` e papéis normalizados;
+3. `set_config('app.actor_id', ..., true)` e `set_config('app.actor_role', ..., true)`;
 4. executar todas as queries dentro da mesma transação;
 5. encerrar; `SET LOCAL` impede vazamento no pool.
 
@@ -45,5 +45,8 @@ Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Oper
 - emissão transacional exige vínculo comprovado com a entidade de origem;
 - parceiro não consulta nem registra convite na rede de outro parceiro;
 - cliente não enxerga dados de indicação e prestador vê somente seu vínculo convertido;
+- prestador consulta somente a própria verificação e não altera decisões ou itens;
+- cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;
+- aprovação com item pendente e correção sem item marcado são bloqueadas;
 - query direta pela role de runtime continua sujeita a RLS;
 - cada migration preserva policies e grants.

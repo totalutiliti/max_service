@@ -21,6 +21,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Os quatro perfis têm uma central persistente de notificações, com contador de não lidas e leitura individual ou em massa.
 - Propostas, aceite, mensagens, execução, avaliações, cancelamentos e atualizações de chamados geram avisos transacionais para o destinatário correto.
 - O perfil parceiro possui código persistente, métricas reais da própria rede, histórico pesquisável e registro manual de novas indicações.
+- A operação possui uma fila persistente de verificação de profissionais, revisão item a item, justificativa obrigatória e trilha de auditoria; o profissional acompanha o próprio status e checklist.
 - Pedidos agendados bloqueiam novas propostas e aceite duplicado; cada mudança relevante gera histórico e auditoria.
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
 - Nenhum pagamento real, carteira, crédito, biometria ou consulta de antecedentes está ativo.
@@ -76,4 +77,4 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 
 ## Limites desta etapa
 
-Esta entrega é uma fundação local de Fase 1, ainda com identidades e dados fictícios. Autenticação pública, captura pública do link/QR de indicação, uploads privados, entrega em tempo real por push/WebSocket, e-mail/SMS, pagamentos e integrações externas permanecem desativados. Conversas, notificações internas, rede do parceiro, ciclo do agendamento, cancelamentos, tratamento de chamados operacionais e avaliações bilaterais são persistentes. As credenciais do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.
+Esta entrega é uma fundação local, ainda com identidades e dados fictícios. Autenticação pública, captura pública do link/QR de indicação, upload e armazenamento de documentos, entrega em tempo real por push/WebSocket, e-mail/SMS, pagamentos e integrações externas permanecem desativados. Conversas, notificações internas, rede do parceiro, ciclo do agendamento, cancelamentos, tratamento de chamados, estados da verificação de profissionais e avaliações bilaterais são persistentes. As credenciais do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.

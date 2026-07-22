@@ -1,12 +1,62 @@
 name: max-service
 
 services:
+  database:
+    image: postgres:16-alpine
+    container_name: max-service-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: max_service
+      POSTGRES_USER: max_service_admin
+      POSTGRES_PASSWORD: max_service_admin_local
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - max-service-postgres:/var/lib/postgresql/data
+      - ./api/docker/init-db.sql:/docker-entrypoint-initdb.d/001-init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U max_service_admin -d max_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: max-service-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      DEMO_MODE: "true"
+      CORS_ORIGIN: http://127.0.0.1:4174
+      DATABASE_URL: postgresql://max_service_app:max_service_runtime_local@database:5432/max_service
+      MIGRATION_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@database:5432/max_service
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
   web:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: max-service-web
     restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:3001
+    depends_on:
+      api:
+        condition: service_healthy
     ports:
       - "127.0.0.1:4174:4174"
     healthcheck:
@@ -19,3 +69,6 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
+
+volumes:
+  max-service-postgres:

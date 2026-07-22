@@ -3,6 +3,7 @@
 .vinext
 .wrangler
 dist
+.api-dist
 node_modules
 outputs
 work

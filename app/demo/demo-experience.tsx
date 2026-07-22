@@ -8,6 +8,16 @@ type Role = "cliente" | "prestador" | "parceiro" | "operacao";
 type Section = "inicio" | "atividade" | "mensagens" | "conta";
 type RequestStep = 1 | 2 | 3 | 4;
 
+interface PersistedRequest {
+  id: string;
+  publicCode: string;
+  title: string;
+  status: string;
+  preferredWindow: string;
+  categoryName: string;
+  proposalCount: number;
+}
+
 const roleDetails: Record<Role, { label: string; short: string; name: string; email: string; description: string }> = {
   cliente: {
     label: "Cliente",
@@ -43,6 +53,15 @@ const categories = [
   ["⚡", "Eletricista"], ["💧", "Encanador"], ["▦", "Pedreiro"],
   ["◒", "Pintor"], ["✦", "Diarista"], ["⌁", "Montagem"],
 ];
+
+const categorySlugs: Record<string, string> = {
+  Eletricista: "eletricista",
+  Encanador: "encanador",
+  Pedreiro: "pedreiro",
+  Pintor: "pintor",
+  Diarista: "diarista",
+  Montagem: "montagem",
+};
 
 const sectionLabels: Record<Role, Record<Section, string>> = {
   cliente: { inicio: "Início", atividade: "Meus pedidos", mensagens: "Mensagens", conta: "Conta e plano" },
@@ -236,6 +255,7 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
   const [step, setStep] = useState<RequestStep>(1);
   const [category, setCategory] = useState("Eletricista");
   const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { closeRef.current?.focus(); }, []);
@@ -247,7 +267,32 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
 
   const next = () => setStep((Math.min(4, step + 1)) as RequestStep);
   const back = () => setStep((Math.max(1, step - 1)) as RequestStep);
-  const finish = () => { notify("Pedido criado com sucesso. A busca por profissionais começou."); onClose(); };
+  const finish = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/service-requests", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          categorySlug: categorySlugs[category],
+          title: description.trim().slice(0, 100),
+          description: description.trim(),
+          neighborhood: "Jardim Europa",
+          city: "Sorocaba",
+          state: "SP",
+          preferredWindow: "O quanto antes",
+        }),
+      });
+      const payload = await response.json() as { request?: { publicCode?: string }; error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível criar o pedido.");
+      notify(`Pedido ${payload.request?.publicCode ?? ""} criado e salvo com sucesso.`);
+      onClose();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível salvar o pedido.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -257,7 +302,7 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
         {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map(([icon, name]) => <button key={name} onClick={() => setCategory(name)} className={category === name ? "selected" : ""} aria-pressed={category === name}><span>{icon}</span>{name}<i aria-hidden="true">✓</i></button>)}</div></div>}
         {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><button className="upload-placeholder" type="button" onClick={() => notify("Envio de fotos será conectado na próxima fase.")}><span>＋</span><strong>Adicionar fotos</strong><small>Opcional · JPG ou PNG</small></button></div>}
         {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Você poderá ajustar os detalhes com o profissional pelo chat.</p><label className="field"><span>Região</span><input value="Jardim Europa, Sorocaba - SP" readOnly /></label><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
-        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO ENVIADO</p><h2 id="request-title">Agora é com a gente.</h2><p>Profissionais disponíveis na sua região poderão enviar propostas. Você receberá uma notificação quando isso acontecer.</p><div className="success-summary"><span>{categories.find((item) => item[1] === category)?.[0]}</span><div><small>Categoria</small><strong>{category}</strong><small>Jardim Europa · o quanto antes</small></div></div><button className="button" onClick={finish}>Acompanhar pedido</button></div>}
+        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{categories.find((item) => item[1] === category)?.[0]}</span><div><small>Categoria</small><strong>{category}</strong><small>Jardim Europa · o quanto antes</small></div></div><button className="button" onClick={finish} disabled={saving}>{saving ? "Salvando..." : "Confirmar e acompanhar"}</button></div>}
         {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={step === 2 && description.trim().length < 10}>Continuar →</button></footer>}
       </section>
     </div>
@@ -314,20 +359,55 @@ function OperationRow({ type, reference, reason, wait, status, notify }: { type:
 }
 
 function ActivityView({ role, notify }: { role: Role; notify: (message: string) => void }) {
+  const [persistedRequests, setPersistedRequests] = useState<PersistedRequest[]>([]);
+
+  useEffect(() => {
+    if (role !== "cliente") return;
+    const controller = new AbortController();
+    fetch("/api/v1/service-requests", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Falha ao carregar pedidos.");
+        return response.json() as Promise<{ requests: PersistedRequest[] }>;
+      })
+      .then((payload) => setPersistedRequests(payload.requests))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPersistedRequests([]);
+      });
+    return () => controller.abort();
+  }, [role]);
+
   const content = {
     cliente: { eyebrow: "HISTÓRICO DE SERVIÇOS", title: "Seus pedidos, todos no lugar certo.", metric: ["3", "Pedidos ativos"], rows: [["SV-1048", "Troca de chuveiro", "Agendado", "Amanhã, 09:30"], ["SV-1039", "Pintura do quarto", "Propostas", "3 recebidas"], ["SV-0981", "Montagem de armário", "Concluído", "18 de julho"]] },
     prestador: { eyebrow: "CENTRAL DE OPORTUNIDADES", title: "Escolha onde seu trabalho faz sentido.", metric: ["8", "Compatíveis hoje"], rows: [["OP-2218", "Instalação de ventilador", "2,4 km", "Hoje à tarde"], ["OP-2211", "Revisão de tomadas", "4,1 km", "A combinar"], ["OP-2198", "Troca de disjuntor", "6,0 km", "Sexta-feira"]] },
     parceiro: { eyebrow: "REDE DE PROFISSIONAIS", title: "Acompanhe cada indicação com transparência.", metric: ["24", "Afiliados ativos"], rows: [["PR-8M4Q", "João Lima · Pintor", "Ativo", "8 serviços"], ["PR-6D2A", "Ana Prado · Diarista", "Em análise", "Enviado hoje"], ["PR-9K7B", "Carlos Gomes · Encanador", "Ativo", "12 serviços"]] },
     operacao: { eyebrow: "FILA OPERACIONAL", title: "Prioridade clara para decidir com segurança.", metric: ["17", "Itens aguardando"], rows: [["PR-8M4Q", "Documento reenviado", "Revisar", "38 min"], ["SV-29K7", "Cancelamento contestado", "Prioridade", "1 h 12"], ["CS-4N8R", "Dúvida sobre proposta", "Aberto", "5 h 03"]] },
   }[role];
+  const statusLabel: Record<string, string> = {
+    open: "Aberto",
+    proposals_received: "Propostas",
+    booked: "Agendado",
+    in_progress: "Em andamento",
+    completed: "Concluído",
+    cancelled: "Cancelado",
+  };
+  const rows = role === "cliente" && persistedRequests.length > 0
+    ? persistedRequests.map((request) => [
+        request.publicCode,
+        request.title,
+        statusLabel[request.status] ?? request.status,
+        request.proposalCount > 0 ? `${request.proposalCount} proposta(s)` : request.preferredWindow,
+      ])
+    : content.rows;
+  const primaryMetric = role === "cliente" && persistedRequests.length > 0 ? String(persistedRequests.length) : content.metric[0];
   return (
     <>
       <DashboardHeader role={role} eyebrow={content.eyebrow} title={content.title}><button className="button button-small" onClick={() => notify("Filtros atualizados.")}>Filtrar resultados</button></DashboardHeader>
-      <div className="activity-overview"><article><small>{content.metric[1]}</small><strong>{content.metric[0]}</strong><span>Atualizado agora</span></article><article><small>Taxa de conclusão</small><strong>96%</strong><span>Últimos 30 dias</span></article><article><small>Tempo médio de resposta</small><strong>18 min</strong><span>Dentro da meta</span></article></div>
+      <div className="activity-overview"><article><small>{content.metric[1]}</small><strong>{primaryMetric}</strong><span>{role === "cliente" && persistedRequests.length > 0 ? "Dados persistidos" : "Atualizado agora"}</span></article><article><small>Taxa de conclusão</small><strong>96%</strong><span>Últimos 30 dias</span></article><article><small>Tempo médio de resposta</small><strong>18 min</strong><span>Dentro da meta</span></article></div>
       <section className="dashboard-section records-card">
         <div className="records-toolbar"><label><span>Buscar</span><input placeholder="Código, serviço ou pessoa" /></label><button className="secondary-action" onClick={() => notify("Relatório demonstrativo preparado.")}>Exportar</button></div>
         <div className="record-list">
-          {content.rows.map(([code, title, status, detail]) => <button key={code} onClick={() => notify(`${code}: detalhes carregados.`)}><span className="record-code">{code}</span><span><strong>{title}</strong><small>{detail}</small></span><span className={`status-pill ${status === "Prioridade" ? "warning" : "success"}`}>{status}</span><i>→</i></button>)}
+          {rows.map(([code, title, status, detail]) => <button key={code} onClick={() => notify(`${code}: detalhes carregados.`)}><span className="record-code">{code}</span><span><strong>{title}</strong><small>{detail}</small></span><span className={`status-pill ${status === "Prioridade" ? "warning" : "success"}`}>{status}</span><i>→</i></button>)}
         </div>
       </section>
     </>

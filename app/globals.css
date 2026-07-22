@@ -353,6 +353,25 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .booking-history article strong { font-size: .76rem; }
 .booking-history article p { margin: .3rem 0; color: #69746b; font-size: .68rem; }
 .booking-history article small { color: #929b94; font-size: .58rem; }
+.service-reviews { padding: 1rem; border: 1px solid #dce8d2; border-radius: 14px; background: #f5fced; display: grid; gap: .75rem; }
+.service-reviews > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.service-reviews > div small, .review-form > div:first-child small { color: #56851f; font-size: .56rem; font-weight: 850; letter-spacing: .09em; }
+.service-reviews > div strong { font-size: .78rem; }
+.service-reviews article { padding-top: .7rem; border-top: 1px solid #dfebd5; }
+.service-reviews article header { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.service-reviews article header span { color: #67a91f; letter-spacing: .08em; }
+.service-reviews article header small { color: var(--muted); font-size: .58rem; }
+.service-reviews article p { margin: .55rem 0 0; color: #5f6c61; font-size: .7rem; line-height: 1.5; }
+.review-form { padding: 1rem; border: 1px solid #dbe1d8; border-radius: 14px; display: grid; gap: .85rem; }
+.review-form > div:first-child { display: grid; gap: .3rem; }
+.review-form > div:first-child strong { font-size: .84rem; }
+.review-stars { display: flex; gap: .25rem; }
+.review-stars button { width: 36px; height: 36px; border: 1px solid #d9dfd6; border-radius: 9px; background: #f3f5f1; color: #aeb6ae; font-size: 1.15rem; cursor: pointer; }
+.review-stars button.active { border-color: #75b92c; background: #edffdb; color: #64a51c; }
+.review-form label { display: grid; gap: .35rem; }
+.review-form label span { font-size: .65rem; font-weight: 750; }
+.review-form textarea { min-height: 86px; border: 1px solid #cfd6ce; border-radius: 11px; padding: .75rem; resize: vertical; }
+.review-form > .primary-action { justify-self: end; }
 .booking-next-action { min-height: 82px; padding: .9rem 1rem; border-radius: 14px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--ink); color: var(--white); }
 .booking-next-action > div { display: grid; gap: .35rem; }
 .booking-next-action small { color: var(--lime); }
@@ -636,6 +655,8 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .booking-dialog-body { padding: 1rem; }
   .booking-next-action { align-items: stretch; flex-direction: column; }
   .booking-next-action button { width: 100%; }
+  .service-reviews article header { align-items: flex-start; flex-direction: column; }
+  .review-form > .primary-action { width: 100%; }
   .account-profile { grid-template-columns: auto 1fr; }
   .account-profile > button { grid-column: 1 / -1; }
   .message { max-width: 88%; }

@@ -69,6 +69,16 @@ interface BookingHistoryEvent {
   actorRole: string;
 }
 
+interface ServiceReview {
+  id: string;
+  rating: number;
+  comment: string;
+  authorRole: "customer" | "provider";
+  authorName: string;
+  subjectName: string;
+  createdAt: string;
+}
+
 interface PersistedBooking {
   id: string;
   status: BookingStatus;
@@ -93,7 +103,11 @@ interface PersistedBooking {
   providerId: string;
   providerName: string;
   providerCode: string;
+  reviewCount: number;
+  averageRating: string | null;
+  hasActorReview: boolean;
   history?: BookingHistoryEvent[];
+  reviews?: ServiceReview[];
 }
 
 const demoUiActorIds = {
@@ -622,6 +636,9 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
   const [booking, setBooking] = useState<PersistedBooking | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
@@ -661,6 +678,29 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
     }
   };
 
+  const submitReview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (comment.trim().length < 10) return;
+    setReviewing(true);
+    try {
+      const response = await fetch("/api/v1/bookings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role, bookingId, rating, comment: comment.trim() }),
+      });
+      const payload = await response.json() as { review?: ServiceReview | string; error?: string; message?: string };
+      if (!response.ok || typeof payload.review !== "object") throw new Error(payload.error ?? payload.message ?? "Não foi possível registrar a avaliação.");
+      setBooking(await load());
+      setComment("");
+      onChanged();
+      notify("Avaliação registrada. Obrigado por compartilhar sua experiência.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível registrar a avaliação.");
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   const dateTime = (value: string | null) => value
     ? new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date(value))
     : "A combinar";
@@ -681,7 +721,9 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
             <div className="booking-facts"><article><small>DATA E HORÁRIO</small><strong>{dateTime(booking.scheduledFor)}</strong></article><article><small>VALOR DA PROPOSTA</small><strong>{currency.format(booking.amountCents / 100)}</strong></article><article><small>DURAÇÃO PREVISTA</small><strong>{booking.estimatedMinutes < 120 ? `${booking.estimatedMinutes} min` : `${Math.round(booking.estimatedMinutes / 60)} h`}</strong></article></div>
             <section className="booking-description"><small>DETALHES DO PEDIDO</small><p>{booking.requestDescription}</p></section>
             <section className="booking-history"><small>HISTÓRICO DO SERVIÇO</small>{booking.history?.map((event) => <article key={event.id}><i>✓</i><div><strong>{bookingStatusLabel[event.status]}</strong><p>{event.note}</p><small>{event.actorName} · {dateTime(event.createdAt)}</small></div></article>)}</section>
-            <div className="booking-next-action"><div><small>PRÓXIMA AÇÃO</small><strong>{booking.status === "scheduled" ? role === "prestador" ? "Inicie quando chegar ao local." : "Aguarde o profissional iniciar o serviço." : booking.status === "in_progress" ? role === "prestador" ? "Conclua após finalizar o atendimento." : "O profissional está executando o serviço." : "Serviço concluído e histórico preservado."}</strong></div>{role === "prestador" && booking.status === "scheduled" && <button className="primary-action" disabled={updating} onClick={() => transition("in_progress")}>{updating ? "Atualizando..." : "Iniciar serviço"}</button>}{role === "prestador" && booking.status === "in_progress" && <button className="primary-action" disabled={updating} onClick={() => transition("completed")}>{updating ? "Atualizando..." : "Marcar como concluído"}</button>}</div>
+            {booking.reviews && booking.reviews.length > 0 && <section className="service-reviews"><div><small>AVALIAÇÕES DA EXPERIÊNCIA</small><strong>{booking.averageRating ? `${booking.averageRating} de 5` : "Avaliado"}</strong></div>{booking.reviews.map((review) => <article key={review.id}><header><span>{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</span><small>{review.authorName} · {review.authorRole === "customer" ? "Cliente" : "Profissional"}</small></header><p>{review.comment}</p></article>)}</section>}
+            {booking.status === "completed" && !booking.hasActorReview && <form className="review-form" onSubmit={submitReview}><div><small>AVALIE ESTA EXPERIÊNCIA</small><strong>{role === "cliente" ? `Como foi o serviço de ${booking.providerName}?` : `Como foi atender ${booking.customerName}?`}</strong></div><div className="review-stars" role="radiogroup" aria-label="Nota da avaliação">{[1,2,3,4,5].map((value) => <button key={value} type="button" role="radio" aria-checked={rating === value} aria-label={`${value} estrela${value > 1 ? "s" : ""}`} className={value <= rating ? "active" : ""} onClick={() => setRating(value)}>★</button>)}</div><label><span>Comentário</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} minLength={10} maxLength={500} placeholder="Conte com clareza o que deu certo na experiência." /></label><button className="primary-action" type="submit" disabled={reviewing || comment.trim().length < 10}>{reviewing ? "Registrando..." : "Enviar avaliação"}</button></form>}
+            <div className="booking-next-action"><div><small>PRÓXIMA AÇÃO</small><strong>{booking.status === "scheduled" ? role === "prestador" ? "Inicie quando chegar ao local." : "Aguarde o profissional iniciar o serviço." : booking.status === "in_progress" ? role === "prestador" ? "Conclua após finalizar o atendimento." : "O profissional está executando o serviço." : booking.hasActorReview ? "Sua avaliação está registrada e vinculada ao serviço." : "Avalie a experiência para concluir esta jornada."}</strong></div>{role === "prestador" && booking.status === "scheduled" && <button className="primary-action" disabled={updating} onClick={() => transition("in_progress")}>{updating ? "Atualizando..." : "Iniciar serviço"}</button>}{role === "prestador" && booking.status === "in_progress" && <button className="primary-action" disabled={updating} onClick={() => transition("completed")}>{updating ? "Atualizando..." : "Marcar como concluído"}</button>}</div>
           </div>
         </>}
       </section>

@@ -1,4 +1,5 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 
@@ -33,7 +34,14 @@ const bookingSelect = `
     customer.public_code AS "customerCode",
     provider.id AS "providerId",
     provider.display_name AS "providerName",
-    provider.public_code AS "providerCode"
+    provider.public_code AS "providerCode",
+    (SELECT COUNT(*)::integer FROM service_reviews sr WHERE sr.booking_id = b.id) AS "reviewCount",
+    (SELECT ROUND(AVG(sr.rating), 1) FROM service_reviews sr WHERE sr.booking_id = b.id) AS "averageRating",
+    EXISTS (
+      SELECT 1 FROM service_reviews sr
+      WHERE sr.booking_id = b.id
+        AND sr.author_id = NULLIF(current_setting('app.actor_id', true), '')::uuid
+    ) AS "hasActorReview"
   FROM bookings b
   JOIN service_requests r ON r.id = b.request_id
   JOIN service_categories sc ON sc.id = r.category_id
@@ -77,7 +85,23 @@ export class BookingsService {
         ORDER BY h.created_at, h.id
       `, [bookingId]);
 
-      return { ...booking.rows[0], history: history.rows };
+      const reviews = await client.query(`
+        SELECT
+          sr.id,
+          sr.rating,
+          sr.comment,
+          sr.author_role AS "authorRole",
+          sr.created_at AS "createdAt",
+          author.display_name AS "authorName",
+          subject.display_name AS "subjectName"
+        FROM service_reviews sr
+        JOIN users author ON author.id = sr.author_id
+        JOIN users subject ON subject.id = sr.subject_id
+        WHERE sr.booking_id = $1
+        ORDER BY sr.created_at, sr.id
+      `, [bookingId]);
+
+      return { ...booking.rows[0], history: history.rows, reviews: reviews.rows };
     });
   }
 
@@ -127,6 +151,44 @@ export class BookingsService {
       );
 
       return updated.rows[0];
+    });
+  }
+
+  async review(actor: Actor, bookingId: string, rating: number, comment: string) {
+    if (actor.role !== "customer" && actor.role !== "provider") {
+      throw new ForbiddenException("Este perfil não pode avaliar o serviço.");
+    }
+    const normalizedComment = comment.trim();
+    if (normalizedComment.length < 10) throw new BadRequestException("O comentário deve ter pelo menos 10 caracteres.");
+
+    return this.database.withActor(actor, async (client) => {
+      const booking = await client.query<{ id: string; status: BookingStatus; customerId: string; providerId: string }>(`
+        SELECT id, status, customer_id AS "customerId", provider_id AS "providerId"
+        FROM bookings
+        WHERE id = $1
+      `, [bookingId]);
+      if (!booking.rows[0]) throw new NotFoundException("Agendamento não encontrado.");
+      if (booking.rows[0].status !== "completed") {
+        throw new ConflictException("A avaliação será liberada após a conclusão do serviço.");
+      }
+
+      const existing = await client.query("SELECT id FROM service_reviews WHERE booking_id = $1 AND author_id = $2", [bookingId, actor.id]);
+      if (existing.rows[0]) throw new ConflictException("Você já avaliou este serviço.");
+
+      const subjectId = actor.role === "customer" ? booking.rows[0].providerId : booking.rows[0].customerId;
+      const reviewId = randomUUID();
+      const result = await client.query(`
+        INSERT INTO service_reviews (id, booking_id, author_id, subject_id, author_role, rating, comment)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (booking_id, author_id) DO NOTHING
+        RETURNING id, booking_id AS "bookingId", rating, comment, author_role AS "authorRole", created_at AS "createdAt"
+      `, [reviewId, bookingId, actor.id, subjectId, actor.role, rating, normalizedComment]);
+      if (!result.rows[0]) throw new ConflictException("Você já avaliou este serviço.");
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_review.created', 'service_review', $3, $4::jsonb)",
+        [actor.id, actor.role, reviewId, JSON.stringify({ bookingId, subjectId, rating })],
+      );
+      return result.rows[0];
     });
   }
 }

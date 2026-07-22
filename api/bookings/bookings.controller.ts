@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
-import { TransitionBookingDto } from "./bookings.dto.js";
+import { ReviewBookingDto, TransitionBookingDto } from "./bookings.dto.js";
 import { BookingsService } from "./bookings.service.js";
 
 function actorFromHeaders(role: string | undefined, id: string | undefined) {
@@ -40,5 +40,15 @@ export class BookingsController {
     @Body() input: TransitionBookingDto,
   ) {
     return { booking: await this.bookings.transition(actorFromHeaders(role, id), bookingId, input.status, input.note) };
+  }
+
+  @Post("bookings/:bookingId/reviews")
+  async review(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("bookingId") bookingId: string,
+    @Body() input: ReviewBookingDto,
+  ) {
+    return { review: await this.bookings.review(actorFromHeaders(role, id), bookingId, input.rating, input.comment) };
   }
 }

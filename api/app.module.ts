@@ -2,6 +2,8 @@ import { Controller, Get, Module } from "@nestjs/common";
 import { BookingsController } from "./bookings/bookings.controller.js";
 import { BookingsService } from "./bookings/bookings.service.js";
 import { DatabaseService } from "./database/database.service.js";
+import { FinanceController } from "./finance/finance.controller.js";
+import { FinanceService } from "./finance/finance.service.js";
 import { MarketplaceController } from "./marketplace/marketplace.controller.js";
 import { MarketplaceService } from "./marketplace/marketplace.service.js";
 import { MessagingController } from "./messaging/messaging.controller.js";
@@ -27,7 +29,7 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, ProviderVerificationController, OperationVerificationsController],
-  providers: [DatabaseService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService, VerificationsService],
+  controllers: [HealthController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, ProviderVerificationController, OperationVerificationsController, FinanceController],
+  providers: [DatabaseService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService, VerificationsService, FinanceService],
 })
 export class AppModule {}

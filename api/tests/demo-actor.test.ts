@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { demoActorIds, parseDemoActor } from "../auth/demo-actor.js";
+import { computeSandboxSignature, verifySandboxSignature } from "../finance/finance-signature.js";
 
 test("aceita somente a identidade correspondente ao perfil demonstrativo", () => {
   assert.deepEqual(parseDemoActor("customer", demoActorIds.customer, true), {
@@ -12,4 +13,16 @@ test("aceita somente a identidade correspondente ao perfil demonstrativo", () =>
 
 test("bloqueia cabeçalhos demonstrativos fora do modo de demonstração", () => {
   assert.throws(() => parseDemoActor("customer", demoActorIds.customer, false), /desativado/);
+});
+
+test("assina eventos financeiros sandbox de forma determinística e rejeita adulteração", () => {
+  const event = {
+    eventId: "95000000-0000-4000-8000-000000000001",
+    intentId: "96000000-0000-4000-8000-000000000001",
+    eventType: "settlement" as const,
+    amountCents: 9500,
+  };
+  const signature = computeSandboxSignature("segredo-local-de-teste", "1784746800", event);
+  assert.equal(verifySandboxSignature("segredo-local-de-teste", "1784746800", event, signature), true);
+  assert.equal(verifySandboxSignature("segredo-local-de-teste", "1784746800", { ...event, amountCents: 9501 }, signature), false);
 });

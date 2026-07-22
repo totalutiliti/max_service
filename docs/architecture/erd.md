@@ -31,11 +31,15 @@ erDiagram
   PARTNER_REFERRAL_LINKS ||--o{ PARTNER_REFERRALS : origina
   USERS o|--o| PARTNER_REFERRALS : converte
   BOOKINGS ||--o| PAYMENT_INTENTS : cobra
+  COMMERCIAL_RULES ||--o{ PAYMENT_INTENTS : versiona
+  PAYMENT_INTENTS ||--o{ PAYMENT_ALLOCATIONS : divide
   PAYMENT_INTENTS ||--o{ PAYMENT_TRANSACTIONS : movimenta
-  BOOKINGS ||--o{ COMMISSIONS : gera
-  BOOKINGS ||--o{ CASHBACK_LEDGER : gera
+  PAYMENT_TRANSACTIONS ||--o{ FINANCIAL_LEDGER_ENTRIES : registra
+  PAYMENT_ALLOCATIONS ||--o{ FINANCIAL_LEDGER_ENTRIES : reconhece
+  USERS ||--o{ PAYMENT_ALLOCATIONS : recebe
+  USERS ||--o{ FINANCIAL_LEDGER_ENTRIES : recebe
   USERS ||--o{ NOTIFICATIONS : recebe
   USERS ||--o{ AUDIT_EVENTS : atua
 ```
 
-O núcleo transacional demonstrável está materializado em migrations versionadas. Entidades reguladas permanecem sem fluxo ativo.
+O núcleo transacional demonstrável está materializado em migrations versionadas. O financeiro ativo é exclusivamente sandbox; PSP, custódia e movimentação real permanecem ausentes.

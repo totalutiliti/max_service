@@ -29,7 +29,7 @@
 
 ### Crescimento e receita
 
-`partner_referral_links`, `partner_referrals`, `commission_rules`, `commissions`, `cashback_ledger`, `payment_intents`, `payment_transactions`, `webhook_events`, `advertisements`, `advertisement_targeting`.
+`partner_referral_links`, `partner_referrals`, `commercial_rules`, `payment_intents`, `payment_allocations`, `payment_transactions`, `financial_ledger_entries`; comissões, cashback e recebíveis são tipos de alocação/ledger. Publicidade permanece como evolução posterior.
 
 ### Operação
 
@@ -55,5 +55,7 @@
 - uma avaliação só existe após conclusão e uma vez por autor/booking;
 - cada avaliação tem como alvo a outra parte do booking e não pode ser editada ou apagada pelo fluxo da aplicação;
 - um evento de PSP tem chave idempotente única;
-- lançamentos de comissão/cashback não são editados: correções geram estorno;
+- lançamentos de recebível, taxa, comissão e cashback não são editados: correções geram débitos de estorno;
 - regra financeira aplicada é congelada por versão no booking/payment intent.
+- a soma das alocações de um intent é exatamente o valor bruto, com o resíduo de arredondamento absorvido pelo recebível do profissional;
+- liquidação exige serviço concluído; estorno de autorização exige serviço cancelado;

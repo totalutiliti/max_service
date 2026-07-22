@@ -233,6 +233,52 @@ interface ProviderVerification {
   events?: VerificationEvent[];
 }
 
+type SandboxPaymentStatus = "sandbox_authorized" | "sandbox_settled" | "sandbox_refunded";
+
+interface FinanceRecord {
+  id: string;
+  publicCode: string;
+  bookingId: string;
+  requestPublicCode: string;
+  serviceTitle: string;
+  grossAmountCents: number;
+  status: SandboxPaymentStatus;
+  actorAmountCents: number;
+  recognizedAmountCents: number;
+  reversedAmountCents: number;
+  bookingStatus: BookingStatus | null;
+  createdAt: string;
+  settledAt: string | null;
+  refundedAt: string | null;
+  reconciledAt: string | null;
+}
+
+interface FinanceDashboardData {
+  rule: {
+    version: string;
+    currency: "BRL";
+    platformFeeBps: number;
+    partnerCommissionBps: number;
+    customerCashbackBps: number;
+    effectiveFrom: string;
+  };
+  summary: {
+    recordCount: number;
+    grossAmountCents: number;
+    pendingAmountCents: number;
+    recognizedAmountCents: number;
+    reversedAmountCents: number;
+  };
+  reconciliation: null | {
+    expectedLedgerCents: number;
+    ledgerNetCents: number;
+    unreconciledCount: number;
+    differenceCents: number;
+    matched: boolean;
+  };
+  records: FinanceRecord[];
+}
+
 const demoUiActorIds = {
   cliente: "00000000-0000-4000-8000-000000000101",
   prestador: "00000000-0000-4000-8000-000000000201",
@@ -1425,12 +1471,73 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
-        <section className="dashboard-section commercial-note">
-          <small>TRANSPARÊNCIA COMERCIAL</small><h2>Nenhuma cobrança acontece aqui.</h2><p>A estrutura de comissão 12% + 2% + 2% permanece como hipótese de validação. Pagamentos reais dependerão de parceiro financeiro autorizado, aceite explícito e conciliação.</p><button className="secondary-action" onClick={() => notify("Resumo comercial demonstrativo aberto.")}>Entender a regra demonstrativa</button>
-        </section>
+        <FinancialSandboxPanel key={role} role={role} notify={notify} />
       </div>
     </>
   );
+}
+
+const sandboxPaymentStatusLabel: Record<SandboxPaymentStatus, string> = {
+  sandbox_authorized: "Previsto",
+  sandbox_settled: "Reconhecido",
+  sandbox_refunded: "Estornado",
+};
+
+const financeRoleCopy: Record<Role, { title: string; recognized: string; pending: string; description: string }> = {
+  cliente: { title: "Cashback promocional", recognized: "Cashback reconhecido", pending: "Cashback previsto", description: "Benefício promocional vinculado ao serviço; não é saldo bancário, carteira ou valor sacável." },
+  prestador: { title: "Recebíveis simulados", recognized: "Valor reconhecido", pending: "Valor previsto", description: "Estimativa líquida após a regra demonstrativa, sem antecipação ou movimentação de dinheiro." },
+  parceiro: { title: "Comissões da rede", recognized: "Comissão reconhecida", pending: "Comissão prevista", description: "Somente serviços atribuídos à sua rede aparecem aqui; não existe conta de pagamento nesta demonstração." },
+  operacao: { title: "Conciliação do sandbox", recognized: "Taxa reconhecida", pending: "Taxa prevista", description: "Eventos assinados atualizam um ledger imutável. Nenhum PSP ou pagamento real está conectado." },
+};
+
+function FinancialSandboxPanel({ role, notify }: { role: Role; notify: (message: string) => void }) {
+  const [data, setData] = useState<FinanceDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const copy = financeRoleCopy[role];
+  const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/finance/dashboard?role=${encodeURIComponent(role)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as FinanceDashboardData & { error?: string; message?: string };
+        if (!response.ok || !payload.rule) throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar o resumo financeiro sandbox.");
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar o resumo financeiro sandbox.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [role, notify, refresh]);
+
+  const simulate = async (record: FinanceRecord) => {
+    const eventType = record.bookingStatus === "cancelled" ? "refund" : "settlement";
+    setProcessingId(record.id);
+    try {
+      const response = await fetch("/api/v1/finance/sandbox", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ intentId: record.id, eventType, amountCents: record.grossAmountCents }),
+      });
+      const payload = await response.json() as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível processar o evento sandbox.");
+      notify(eventType === "refund" ? "Estorno sandbox registrado e reconciliado." : "Liquidação sandbox registrada e reconciliada.");
+      setLoading(true);
+      setRefresh((value) => value + 1);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível processar o evento sandbox.");
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const canProcess = (record: FinanceRecord) => role === "operacao" && record.status === "sandbox_authorized" && (record.bookingStatus === "completed" || record.bookingStatus === "cancelled");
+  return <section className="dashboard-section financial-sandbox"><header><div><small>FINANCEIRO SANDBOX · {data?.rule.version ?? "REGRA VERSIONADA"}</small><h2>{copy.title}</h2><p>{copy.description}</p></div><span className="sandbox-badge">SEM DINHEIRO REAL</span></header><div className="financial-metrics"><article><small>{copy.recognized}</small><strong>{loading ? "…" : money(data?.summary.recognizedAmountCents ?? 0)}</strong><span>Lançamentos líquidos no ledger</span></article><article><small>{copy.pending}</small><strong>{loading ? "…" : money(data?.summary.pendingAmountCents ?? 0)}</strong><span>Enquanto o serviço não é liquidado</span></article><article><small>Volume relacionado</small><strong>{loading ? "…" : money(data?.summary.grossAmountCents ?? 0)}</strong><span>{data?.summary.recordCount ?? 0} intent(s) demonstrativo(s)</span></article><article><small>Regra aplicada</small><strong>12% + 2% + 2%</strong><span>Plataforma · parceiro · cashback</span></article></div>{role === "operacao" && data?.reconciliation && <div className={`reconciliation-strip ${data.reconciliation.matched ? "matched" : "warning"}`}><span>{data.reconciliation.matched ? "✓" : "!"}</span><div><strong>{data.reconciliation.matched ? "Ledger conciliado" : "Divergência encontrada"}</strong><small>Esperado {money(data.reconciliation.expectedLedgerCents)} · ledger {money(data.reconciliation.ledgerNetCents)} · diferença {money(data.reconciliation.differenceCents)}</small></div></div>}<div className="financial-records"><div className="financial-record-head"><span>Serviço</span><span>Valor do serviço</span><span>{role === "operacao" ? "Taxa Max" : "Sua parcela"}</span><span>Status</span></div>{loading && <div className="data-state">Carregando lançamentos...</div>}{!loading && data?.records.length === 0 && <div className="data-state"><strong>Nenhum lançamento neste perfil.</strong><span>Os registros surgem quando uma proposta é aceita.</span></div>}{data?.records.map((record) => <article key={record.id}><div><strong>{record.serviceTitle}</strong><small>{record.requestPublicCode} · {record.publicCode}</small></div><span>{money(record.grossAmountCents)}</span><span>{money(record.actorAmountCents)}</span><div><span className={`status-pill ${record.status === "sandbox_settled" ? "success" : "warning"}`}>{sandboxPaymentStatusLabel[record.status]}</span>{canProcess(record) && <button className="secondary-action" disabled={processingId === record.id} onClick={() => simulate(record)}>{processingId === record.id ? "Processando..." : record.bookingStatus === "cancelled" ? "Simular estorno" : "Simular liquidação"}</button>}</div></article>)}</div><footer><p><strong>Como funciona:</strong> o valor é congelado no aceite, dividido pela regra vigente e reconhecido apenas por evento sandbox assinado. Estornos geram lançamentos inversos; nada é apagado.</p><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar resumo ↻</button></footer></section>;
 }
 
 function Metric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone?: string }) {

@@ -16,8 +16,8 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
 | checklist de verificação | nenhum acesso | somente o próprio | nenhum | fila completa e decisão | excepcional e auditado |
-| afiliados/comissões | nenhum | própria atribuição | somente atribuídos | financeiro | auditado |
-| pagamentos/cashback | próprios | recebíveis próprios | comissões próprias | financeiro | auditado |
+| intents financeiros sandbox | próprios | próprios | somente rede atribuída | visão completa | auditado |
+| alocações e ledger | cashback próprio | recebível próprio | comissão própria | visão completa e conciliação | auditado |
 | auditoria | nenhum | nenhum | nenhum | recorte funcional | explícito e somente leitura |
 
 ## Contexto seguro de conexão
@@ -48,5 +48,8 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - prestador consulta somente a própria verificação e não altera decisões ou itens;
 - cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;
 - aprovação com item pendente e correção sem item marcado são bloqueadas;
+- cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
+- somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
+- evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;
 - query direta pela role de runtime continua sujeita a RLS;
 - cada migration preserva policies e grants.

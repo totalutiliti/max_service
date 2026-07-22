@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Role = "cliente" | "prestador" | "parceiro" | "operacao";
 type Section = "inicio" | "atividade" | "mensagens" | "conta";
@@ -12,10 +12,27 @@ interface PersistedRequest {
   id: string;
   publicCode: string;
   title: string;
+  description: string;
+  neighborhood: string;
+  city: string;
+  state: string;
   status: string;
   preferredWindow: string;
   categoryName: string;
+  categoryIcon: string;
   proposalCount: number;
+  hasActorProposal?: boolean;
+}
+
+interface PersistedProposal {
+  id: string;
+  requestId: string;
+  amountCents: number;
+  estimatedMinutes: number;
+  message: string;
+  status: string;
+  providerName: string;
+  providerCode: string;
 }
 
 const roleDetails: Record<Role, { label: string; short: string; name: string; email: string; description: string }> = {
@@ -310,20 +327,98 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
 }
 
 function ProviderView({ notify }: { notify: (message: string) => void }) {
+  const [opportunities, setOpportunities] = useState<PersistedRequest[]>([]);
+  const [selected, setSelected] = useState<PersistedRequest | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/provider/opportunities", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Não foi possível carregar as oportunidades.");
+        return response.json() as Promise<{ requests: PersistedRequest[] }>;
+      })
+      .then((payload) => setOpportunities(payload.requests))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar as oportunidades.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
   return (
     <>
       <DashboardHeader role="prestador" eyebrow="Área do profissional" title="Bom trabalho começa com boas oportunidades."><span className="status-pill success">● Perfil aprovado</span></DashboardHeader>
-      <div className="metric-grid"><Metric label="Novas oportunidades" value="8" detail="3 a menos de 5 km" tone="lime" /><Metric label="Propostas ativas" value="4" detail="2 visualizadas hoje" /><Metric label="Serviços no mês" value="12" detail="+20% desde junho" /><Metric label="Avaliação" value="4,9" detail="126 avaliações" /></div>
+      <div className="metric-grid"><Metric label="Novas oportunidades" value={loading ? "…" : String(opportunities.length)} detail="Pedidos disponíveis agora" tone="lime" /><Metric label="Propostas ativas" value={String(opportunities.filter((item) => item.hasActorProposal).length)} detail="Enviadas por você" /><Metric label="Serviços no mês" value="12" detail="+20% desde junho" /><Metric label="Avaliação" value="4,9" detail="126 avaliações" /></div>
       <div className="dashboard-columns wide-left">
-        <section className="dashboard-section"><div className="dashboard-section-title"><div><small>OPORTUNIDADES PRÓXIMAS</small><h2>Pedidos compatíveis</h2></div><button onClick={() => notify("Todas as oportunidades foram carregadas.")}>Ver todas →</button></div><div className="opportunity-list"><Opportunity icon="⚡" title="Instalação de ventilador" place="Vila Carvalho · 2,4 km" when="Hoje à tarde" notify={notify} /><Opportunity icon="⚡" title="Revisão de tomadas" place="Campolim · 4,1 km" when="A combinar" notify={notify} /><Opportunity icon="⌁" title="Fixação de suporte" place="Jardim Faculdade · 3,6 km" when="Amanhã" notify={notify} /></div></section>
+        <section className="dashboard-section"><div className="dashboard-section-title"><div><small>OPORTUNIDADES PRÓXIMAS</small><h2>Pedidos disponíveis</h2></div><button onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar ↻</button></div><div className="opportunity-list">{loading && <div className="data-state">Buscando oportunidades...</div>}{!loading && opportunities.length === 0 && <div className="data-state"><strong>Nenhum pedido disponível agora.</strong><span>Novos pedidos aparecerão aqui automaticamente.</span></div>}{opportunities.slice(0, 5).map((request) => <Opportunity key={request.id} request={request} onSelect={() => setSelected(request)} />)}</div></section>
         <section className="dashboard-section profile-progress"><small>SEU PERFIL</small><div className="progress-ring">86<sup>%</sup></div><h2>Falta pouco.</h2><p>Adicione mais duas fotos de trabalhos para aumentar a confiança no seu perfil.</p><button className="primary-action" onClick={() => notify("Checklist do perfil aberto.")}>Completar perfil</button></section>
       </div>
+      {selected && <ProposalDialog request={selected} onClose={() => setSelected(null)} onSaved={() => { setLoading(true); setRefresh((value) => value + 1); }} notify={notify} />}
     </>
   );
 }
 
-function Opportunity({ icon, title, place, when, notify }: { icon: string; title: string; place: string; when: string; notify: (message: string) => void }) {
-  return <article><span className="category-icon">{icon}</span><div><strong>{title}</strong><span>{place}</span></div><div><small>{when}</small><button onClick={() => notify(`Pedido “${title}” aberto.`)}>Ver pedido</button></div></article>;
+function Opportunity({ request, onSelect }: { request: PersistedRequest; onSelect: () => void }) {
+  return <article><span className="category-icon">{request.categoryIcon}</span><div><strong>{request.title}</strong><span>{request.neighborhood} · {request.city}</span></div><div><small>{request.preferredWindow}</small><button onClick={onSelect}>{request.hasActorProposal ? "Atualizar proposta" : "Enviar proposta"}</button></div></article>;
+}
+
+function ProposalDialog({ request, onClose, onSaved, notify }: { request: PersistedRequest; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+  const [amount, setAmount] = useState("125");
+  const [minutes, setMinutes] = useState("90");
+  const [message, setMessage] = useState("Posso realizar o serviço no período solicitado e levo as ferramentas necessárias.");
+  const [saving, setSaving] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { closeRef.current?.focus(); }, []);
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/provider/proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          requestId: request.id,
+          amountCents: Math.round(Number(amount) * 100),
+          estimatedMinutes: Number(minutes),
+          message: message.trim(),
+        }),
+      });
+      const payload = await response.json() as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível enviar a proposta.");
+      notify(request.hasActorProposal ? "Proposta atualizada com sucesso." : "Proposta enviada ao cliente.");
+      onSaved();
+      onClose();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível enviar a proposta.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog proposal-dialog" role="dialog" aria-modal="true" aria-labelledby="proposal-title">
+        <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
+        <div className="proposal-request-summary"><span>{request.categoryIcon}</span><div><small>{request.publicCode} · {request.categoryName}</small><h2 id="proposal-title">{request.title}</h2><p>{request.description}</p><em>⌖ {request.neighborhood}, {request.city} · {request.preferredWindow}</em></div></div>
+        <form className="proposal-form" onSubmit={submit}>
+          <div className="proposal-fields"><label className="field"><span>Valor da proposta</span><div className="money-input"><i>R$</i><input type="number" min="1" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></div></label><label className="field"><span>Tempo estimado</span><select value={minutes} onChange={(event) => setMinutes(event.target.value)}><option value="60">Até 1 hora</option><option value="90">Até 1h30</option><option value="120">Até 2 horas</option><option value="240">Até 4 horas</option><option value="480">Até 1 dia</option></select></label></div>
+          <label className="field"><span>Mensagem para o cliente</span><textarea rows={4} maxLength={500} value={message} onChange={(event) => setMessage(event.target.value)} required /><small>{message.length}/500 caracteres</small></label>
+          <div className="commercial-preview"><span>i</span><p><strong>Simulação transparente</strong>Este ambiente não realiza cobrança. Taxas e repasses serão apresentados antes do aceite em produção.</p></div>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || Number(amount) <= 0 || message.trim().length < 5}>{saving ? "Enviando..." : request.hasActorProposal ? "Atualizar proposta" : "Enviar proposta →"}</button></footer>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function PartnerView({ notify }: { notify: (message: string) => void }) {
@@ -360,6 +455,8 @@ function OperationRow({ type, reference, reason, wait, status, notify }: { type:
 
 function ActivityView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   const [persistedRequests, setPersistedRequests] = useState<PersistedRequest[]>([]);
+  const [selectedRequest, setSelectedRequest] = useState<PersistedRequest | null>(null);
+  const [refreshRequests, setRefreshRequests] = useState(0);
 
   useEffect(() => {
     if (role !== "cliente") return;
@@ -375,7 +472,7 @@ function ActivityView({ role, notify }: { role: Role; notify: (message: string) 
         setPersistedRequests([]);
       });
     return () => controller.abort();
-  }, [role]);
+  }, [role, refreshRequests]);
 
   const content = {
     cliente: { eyebrow: "HISTÓRICO DE SERVIÇOS", title: "Seus pedidos, todos no lugar certo.", metric: ["3", "Pedidos ativos"], rows: [["SV-1048", "Troca de chuveiro", "Agendado", "Amanhã, 09:30"], ["SV-1039", "Pintura do quarto", "Propostas", "3 recebidas"], ["SV-0981", "Montagem de armário", "Concluído", "18 de julho"]] },
@@ -407,10 +504,76 @@ function ActivityView({ role, notify }: { role: Role; notify: (message: string) 
       <section className="dashboard-section records-card">
         <div className="records-toolbar"><label><span>Buscar</span><input placeholder="Código, serviço ou pessoa" /></label><button className="secondary-action" onClick={() => notify("Relatório demonstrativo preparado.")}>Exportar</button></div>
         <div className="record-list">
-          {rows.map(([code, title, status, detail]) => <button key={code} onClick={() => notify(`${code}: detalhes carregados.`)}><span className="record-code">{code}</span><span><strong>{title}</strong><small>{detail}</small></span><span className={`status-pill ${status === "Prioridade" ? "warning" : "success"}`}>{status}</span><i>→</i></button>)}
+          {rows.map(([code, title, status, detail]) => <button key={code} onClick={() => { const request = persistedRequests.find((item) => item.publicCode === code); if (role === "cliente" && request) setSelectedRequest(request); else notify(`${code}: detalhes carregados.`); }}><span className="record-code">{code}</span><span><strong>{title}</strong><small>{detail}</small></span><span className={`status-pill ${status === "Prioridade" ? "warning" : "success"}`}>{status}</span><i>→</i></button>)}
         </div>
       </section>
+      {selectedRequest && <ProposalComparisonDialog request={selectedRequest} onClose={() => setSelectedRequest(null)} onChanged={() => setRefreshRequests((value) => value + 1)} notify={notify} />}
     </>
+  );
+}
+
+function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { request: PersistedRequest; onClose: () => void; onChanged: () => void; notify: (message: string) => void }) {
+  const [proposals, setProposals] = useState<PersistedProposal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [accepting, setAccepting] = useState("");
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  const fetchProposals = useCallback(async () => {
+    const response = await fetch(`/api/v1/customer/proposals?requestId=${encodeURIComponent(request.id)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Não foi possível carregar as propostas.");
+    const payload = await response.json() as { proposals: PersistedProposal[] };
+    return payload.proposals;
+  }, [request.id]);
+
+  useEffect(() => {
+    closeRef.current?.focus();
+    void fetchProposals()
+      .then(setProposals)
+      .catch((error: unknown) => notify(error instanceof Error ? error.message : "Não foi possível carregar as propostas."))
+      .finally(() => setLoading(false));
+  }, [fetchProposals, notify]);
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  const accept = async (proposal: PersistedProposal) => {
+    setAccepting(proposal.id);
+    try {
+      const response = await fetch("/api/v1/customer/proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ proposalId: proposal.id }),
+      });
+      const payload = await response.json() as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível aceitar a proposta.");
+      notify(`Proposta de ${proposal.providerName} aceita. Serviço agendado.`);
+      setProposals(await fetchProposals());
+      onChanged();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível aceitar a proposta.");
+    } finally {
+      setAccepting("");
+    }
+  };
+
+  const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  const hasAccepted = proposals.some((proposal) => proposal.status === "accepted") || request.status === "booked";
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog comparison-dialog" role="dialog" aria-modal="true" aria-labelledby="comparison-title">
+        <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
+        <header className="comparison-header"><p className="dialog-kicker">{request.publicCode} · {request.categoryName}</p><h2 id="comparison-title">Compare as propostas</h2><p>{request.title} · {request.neighborhood}, {request.city}</p></header>
+        <div className="comparison-list">
+          {loading && <div className="data-state">Carregando propostas...</div>}
+          {!loading && proposals.length === 0 && <div className="data-state"><strong>Aguardando propostas.</strong><span>Você receberá uma notificação quando um profissional responder.</span></div>}
+          {proposals.map((proposal) => <article key={proposal.id} className={`comparison-card ${proposal.status === "accepted" ? "accepted" : proposal.status === "declined" ? "declined" : ""}`}><div className="comparison-provider"><span className="mini-avatar">{proposal.providerName.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><div><strong>{proposal.providerName}</strong><small>{proposal.providerCode} · ★ 4,9</small></div><span className={`status-pill ${proposal.status === "accepted" ? "success" : proposal.status === "declined" ? "warning" : "success"}`}>{proposal.status === "accepted" ? "✓ Escolhida" : proposal.status === "declined" ? "Não escolhida" : "Nova proposta"}</span></div><p>{proposal.message}</p><div className="comparison-offer"><div><small>VALOR</small><strong>{currency.format(proposal.amountCents / 100)}</strong></div><div><small>PREVISÃO</small><strong>{proposal.estimatedMinutes < 120 ? `${proposal.estimatedMinutes} min` : `${Math.round(proposal.estimatedMinutes / 60)} h`}</strong></div><button className="primary-action" disabled={hasAccepted || accepting === proposal.id || proposal.status !== "sent"} onClick={() => accept(proposal)}>{accepting === proposal.id ? "Confirmando..." : proposal.status === "accepted" ? "Proposta aceita" : "Escolher profissional"}</button></div></article>)}
+        </div>
+        <footer className="comparison-footer"><span>✓ Você só confirma depois de comparar.</span><button className="secondary-action" onClick={onClose}>Fechar</button></footer>
+      </section>
+    </div>
   );
 }
 

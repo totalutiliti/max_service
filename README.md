@@ -9,6 +9,8 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - A demonstração inclui entrada por perfil, painéis, atividades, mensagens e área de conta/plano com dados fictícios.
 - API NestJS versionada e PostgreSQL 16 já sustentam categorias, solicitações, propostas e aceite.
 - Solicitações criadas pelo painel do cliente são persistidas e reaparecem após recarregar a aplicação.
+- O profissional recebe oportunidades do banco, envia ou atualiza sua proposta e o cliente compara valores e prazos antes de aceitar.
+- Pedidos agendados bloqueiam novas propostas e aceite duplicado; cada mudança relevante gera histórico e auditoria.
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
 - Nenhum pagamento real, carteira, crédito, biometria ou consulta de antecedentes está ativo.
 - O nome **Max Service** e a regra comercial **12% + 2% + 2%** são hipóteses pendentes de aprovação.

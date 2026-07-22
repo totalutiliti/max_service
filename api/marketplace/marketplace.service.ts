@@ -18,6 +18,7 @@ interface ServiceRequestRow {
   categoryName: string;
   categoryIcon: string;
   proposalCount: number;
+  hasActorProposal: boolean;
 }
 
 @Injectable()
@@ -50,14 +51,20 @@ export class MarketplaceService {
           r.created_at AS "createdAt",
           c.name AS "categoryName",
           c.icon AS "categoryIcon",
-          COUNT(p.id)::int AS "proposalCount"
+          COUNT(p.id)::int AS "proposalCount",
+          EXISTS (
+            SELECT 1 FROM proposals own_proposal
+            WHERE own_proposal.request_id = r.id
+              AND own_proposal.provider_id = $2::uuid
+          ) AS "hasActorProposal"
         FROM service_requests r
         JOIN service_categories c ON c.id = r.category_id
         LEFT JOIN proposals p ON p.request_id = r.id
+        WHERE ($1::text <> 'provider' OR r.status IN ('open', 'proposals_received'))
         GROUP BY r.id, c.id
         ORDER BY r.created_at DESC
         LIMIT 50
-      `);
+      `, [actor.role, actor.id]);
       return result.rows;
     });
   }
@@ -122,7 +129,10 @@ export class MarketplaceService {
   async createProposal(actor: Actor, requestId: string, input: CreateProposalDto) {
     if (actor.role !== "provider") throw new ForbiddenException("Somente profissionais podem enviar propostas.");
     return this.database.withActor(actor, async (client) => {
-      const request = await client.query<{ id: string }>("SELECT id FROM service_requests WHERE id = $1", [requestId]);
+      const request = await client.query<{ id: string; status: string }>(
+        "SELECT id, status FROM service_requests WHERE id = $1 AND status IN ('open', 'proposals_received')",
+        [requestId],
+      );
       if (!request.rows[0]) throw new NotFoundException("Solicitação não encontrada ou indisponível.");
 
       const result = await client.query(`
@@ -135,6 +145,21 @@ export class MarketplaceService {
           updated_at = now()
         RETURNING id, request_id AS "requestId", amount_cents AS "amountCents", status, created_at AS "createdAt"
       `, [randomUUID(), requestId, actor.id, input.amountCents, input.estimatedMinutes, input.message]);
+
+      const moved = await client.query(
+        "UPDATE service_requests SET status = 'proposals_received', updated_at = now() WHERE id = $1 AND status = 'open' RETURNING id",
+        [requestId],
+      );
+      if (moved.rowCount) {
+        await client.query(
+          "INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'proposals_received', $2, 'Primeira proposta recebida.')",
+          [requestId, actor.id],
+        );
+      }
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'proposal.upserted', 'proposal', $3, $4::jsonb)",
+        [actor.id, actor.role, result.rows[0].id, JSON.stringify({ requestId, amountCents: input.amountCents })],
+      );
       return result.rows[0];
     });
   }
@@ -146,7 +171,13 @@ export class MarketplaceService {
         UPDATE proposals p
         SET status = 'accepted', updated_at = now()
         WHERE p.id = $1
-          AND EXISTS (SELECT 1 FROM service_requests r WHERE r.id = p.request_id AND r.customer_id = $2)
+          AND p.status = 'sent'
+          AND EXISTS (
+            SELECT 1 FROM service_requests r
+            WHERE r.id = p.request_id
+              AND r.customer_id = $2
+              AND r.status = 'proposals_received'
+          )
         RETURNING p.id, p.request_id AS "requestId"
       `, [proposalId, actor.id]);
       if (!accepted.rows[0]) throw new NotFoundException("Proposta não encontrada.");
@@ -154,6 +185,10 @@ export class MarketplaceService {
       await client.query("UPDATE proposals SET status = 'declined', updated_at = now() WHERE request_id = $1 AND id <> $2", [accepted.rows[0].requestId, proposalId]);
       await client.query("UPDATE service_requests SET status = 'booked', updated_at = now() WHERE id = $1", [accepted.rows[0].requestId]);
       await client.query("INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'booked', $2, 'Proposta aceita pelo cliente.')", [accepted.rows[0].requestId, actor.id]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'proposal.accepted', 'proposal', $3, $4::jsonb)",
+        [actor.id, actor.role, proposalId, JSON.stringify({ requestId: accepted.rows[0].requestId })],
+      );
       return { proposalId, requestId: accepted.rows[0].requestId, status: "booked" };
     });
   }

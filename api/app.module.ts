@@ -2,6 +2,8 @@ import { Controller, Get, Module } from "@nestjs/common";
 import { DatabaseService } from "./database/database.service.js";
 import { MarketplaceController } from "./marketplace/marketplace.controller.js";
 import { MarketplaceService } from "./marketplace/marketplace.service.js";
+import { MessagingController } from "./messaging/messaging.controller.js";
+import { MessagingService } from "./messaging/messaging.service.js";
 
 @Controller()
 class HealthController {
@@ -15,7 +17,7 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, MarketplaceController],
-  providers: [DatabaseService, MarketplaceService],
+  controllers: [HealthController, MarketplaceController, MessagingController],
+  providers: [DatabaseService, MarketplaceService, MessagingService],
 })
 export class AppModule {}

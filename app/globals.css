@@ -351,6 +351,14 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .message-composer input { min-width: 0; border: 1px solid var(--line); border-radius: 11px; padding: .7rem; }
 .message-composer button { border: 0; border-radius: 10px; padding: .7rem 1rem; background: var(--ink); color: var(--white); font-weight: 750; cursor: pointer; }
 .message-composer button:first-child { background: #edf1eb; color: var(--ink); font-size: 1.15rem; }
+.message-composer button:disabled { cursor: not-allowed; opacity: .45; }
+.empty-chat { place-items: center; }
+.non-transactional-message { min-height: 360px; display: grid; grid-template-columns: auto minmax(0, 620px); align-content: center; justify-content: center; gap: 1.2rem; }
+.non-transactional-message > span { width: 54px; height: 54px; border-radius: 16px; background: var(--lime); display: grid; place-items: center; color: var(--ink); font-size: 1.35rem; }
+.non-transactional-message > div { display: grid; justify-items: start; }
+.non-transactional-message small { color: #538a18; font-size: .62rem; font-weight: 850; letter-spacing: .12em; }
+.non-transactional-message h2 { margin: .45rem 0 .7rem; font-size: clamp(1.5rem, 3vw, 2.2rem); letter-spacing: -.04em; }
+.non-transactional-message p { margin: 0 0 1.1rem; color: var(--muted); font-size: .76rem; line-height: 1.6; }
 
 .account-layout { display: grid; grid-template-columns: 1.15fr .85fr; gap: 1rem; }
 .account-profile { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 1rem; }
@@ -526,8 +534,13 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .access-proof { display: none; }
   .access-form-panel { padding: 1.3rem 1rem 2.5rem; }
   .access-form-wrap h2 { font-size: 2rem; }
-  .messages-layout { min-height: 560px; grid-template-columns: 1fr; }
-  .conversation-list { display: none; }
+  .messages-layout { min-height: 640px; grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .conversation-list { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid #e4e8e2; }
+  .conversation-search { display: none; }
+  .conversation-list > button { min-width: 260px; border-right: 1px solid #edf0eb; border-bottom: 0; }
+  .conversation-list > button.active { box-shadow: inset 0 -3px var(--lime); }
+  .conversation-list .data-state { min-width: 100%; min-height: 110px; }
+  .chat-panel { min-height: 0; }
   .activity-overview { grid-template-columns: 1fr 1fr; }
   .activity-overview article:last-child { grid-column: 1 / -1; }
   .record-list > button { grid-template-columns: 70px 1fr auto; }
@@ -584,6 +597,10 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .account-profile { grid-template-columns: auto 1fr; }
   .account-profile > button { grid-column: 1 / -1; }
   .message { max-width: 88%; }
+  .conversation-list > button { min-width: 230px; }
+  .message-composer { grid-template-columns: 1fr auto; }
+  .message-composer button:first-child { display: none; }
+  .non-transactional-message { min-height: 420px; grid-template-columns: 1fr; justify-items: start; }
   .proposal-request-summary { grid-template-columns: 1fr; }
   .proposal-request-summary > span { width: 46px; height: 46px; }
   .proposal-fields { grid-template-columns: 1fr; gap: 0; }

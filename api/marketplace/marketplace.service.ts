@@ -167,7 +167,7 @@ export class MarketplaceService {
   async acceptProposal(actor: Actor, proposalId: string) {
     if (actor.role !== "customer") throw new ForbiddenException("Somente o cliente pode aceitar uma proposta.");
     return this.database.withActor(actor, async (client) => {
-      const accepted = await client.query<{ id: string; requestId: string }>(`
+      const accepted = await client.query<{ id: string; requestId: string; providerId: string }>(`
         UPDATE proposals p
         SET status = 'accepted', updated_at = now()
         WHERE p.id = $1
@@ -178,18 +178,38 @@ export class MarketplaceService {
               AND r.customer_id = $2
               AND r.status = 'proposals_received'
           )
-        RETURNING p.id, p.request_id AS "requestId"
+        RETURNING p.id, p.request_id AS "requestId", p.provider_id AS "providerId"
       `, [proposalId, actor.id]);
       if (!accepted.rows[0]) throw new NotFoundException("Proposta não encontrada.");
 
       await client.query("UPDATE proposals SET status = 'declined', updated_at = now() WHERE request_id = $1 AND id <> $2", [accepted.rows[0].requestId, proposalId]);
       await client.query("UPDATE service_requests SET status = 'booked', updated_at = now() WHERE id = $1", [accepted.rows[0].requestId]);
       await client.query("INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'booked', $2, 'Proposta aceita pelo cliente.')", [accepted.rows[0].requestId, actor.id]);
+      const bookingId = randomUUID();
+      const conversationId = randomUUID();
+      const booking = await client.query<{ scheduledFor: Date }>(`
+        INSERT INTO bookings (id, request_id, proposal_id, customer_id, provider_id, status, scheduled_for)
+        VALUES (
+          $1, $2, $3, $4, $5, 'scheduled',
+          (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day 9 hours')
+            AT TIME ZONE 'America/Sao_Paulo'
+        )
+        RETURNING scheduled_for AS "scheduledFor"
+      `, [bookingId, accepted.rows[0].requestId, proposalId, actor.id, accepted.rows[0].providerId]);
+      await client.query(
+        "INSERT INTO booking_status_history (booking_id, status, actor_id, note) VALUES ($1, 'scheduled', $2, 'Agendamento criado a partir da proposta aceita.')",
+        [bookingId, actor.id],
+      );
+      await client.query("INSERT INTO conversations (id, booking_id) VALUES ($1, $2)", [conversationId, bookingId]);
+      await client.query(
+        "INSERT INTO conversation_members (conversation_id, user_id, member_role) VALUES ($1, $2, 'customer'), ($1, $3, 'provider')",
+        [conversationId, actor.id, accepted.rows[0].providerId],
+      );
       await client.query(
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'proposal.accepted', 'proposal', $3, $4::jsonb)",
         [actor.id, actor.role, proposalId, JSON.stringify({ requestId: accepted.rows[0].requestId })],
       );
-      return { proposalId, requestId: accepted.rows[0].requestId, status: "booked" };
+      return { proposalId, requestId: accepted.rows[0].requestId, bookingId, conversationId, scheduledFor: booking.rows[0].scheduledFor, status: "booked" };
     });
   }
 }

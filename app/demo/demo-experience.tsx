@@ -35,6 +35,34 @@ interface PersistedProposal {
   providerCode: string;
 }
 
+interface PersistedConversation {
+  id: string;
+  bookingId: string;
+  bookingStatus: string;
+  scheduledFor: string | null;
+  requestCode: string;
+  requestTitle: string;
+  otherName: string;
+  otherCode: string;
+  latestMessage: string | null;
+  latestMessageAt: string | null;
+}
+
+interface PersistedMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  senderCode?: string;
+  body: string;
+  createdAt: string;
+}
+
+const demoUiActorIds = {
+  cliente: "00000000-0000-4000-8000-000000000101",
+  prestador: "00000000-0000-4000-8000-000000000201",
+} as const;
+
 const roleDetails: Record<Role, { label: string; short: string; name: string; email: string; description: string }> = {
   cliente: {
     label: "Cliente",
@@ -578,25 +606,110 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
 }
 
 function MessagesView({ role, notify }: { role: Role; notify: (message: string) => void }) {
-  const otherName = role === "cliente" ? "Rafael Santos" : role === "prestador" ? "Marina Alves" : role === "parceiro" ? "Ana Prado" : "Marina Alves";
-  const context = role === "operacao" ? "Atendimento CS-4N8R" : role === "parceiro" ? "Cadastro profissional" : "Serviço SV-1048";
+  if (role !== "cliente" && role !== "prestador") return <NonTransactionalMessages role={role} notify={notify} />;
+  return <PersistentMessages role={role} notify={notify} />;
+}
+
+function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; notify: (message: string) => void }) {
+  const [conversations, setConversations] = useState<PersistedConversation[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [messages, setMessages] = useState<PersistedMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/messaging?role=${role}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Não foi possível carregar as conversas.");
+        return response.json() as Promise<{ conversations: PersistedConversation[] }>;
+      })
+      .then((payload) => {
+        setConversations(payload.conversations);
+        setSelectedId((current) => payload.conversations.some((item) => item.id === current) ? current : payload.conversations[0]?.id ?? "");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar as conversas.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, role]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const controller = new AbortController();
+    fetch(`/api/v1/messaging?role=${role}&conversationId=${encodeURIComponent(selectedId)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Não foi possível carregar as mensagens.");
+        return response.json() as Promise<{ messages: PersistedMessage[] }>;
+      })
+      .then((payload) => setMessages(payload.messages))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar as mensagens.");
+      });
+    return () => controller.abort();
+  }, [notify, role, selectedId]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages]);
+
+  const selected = conversations.find((item) => item.id === selectedId);
+  const actorId = demoUiActorIds[role];
+  const time = (value: string) => new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+  const schedule = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(value));
+
+  const send = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const body = draft.trim();
+    if (!body || !selectedId) return;
+    setSending(true);
+    try {
+      const response = await fetch("/api/v1/messaging", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role, conversationId: selectedId, body }),
+      });
+      const payload = await response.json() as { message?: PersistedMessage | string; error?: string };
+      if (!response.ok || typeof payload.message !== "object") throw new Error(payload.error ?? (typeof payload.message === "string" ? payload.message : "Não foi possível enviar a mensagem."));
+      const sent = { ...payload.message, senderName: roleDetails[role].name };
+      setMessages((current) => [...current, sent]);
+      setConversations((current) => current.map((conversation) => conversation.id === selectedId ? { ...conversation, latestMessage: body, latestMessageAt: sent.createdAt } : conversation));
+      setDraft("");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível enviar a mensagem.");
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <>
       <DashboardHeader role={role} eyebrow="CENTRAL DE MENSAGENS" title="Conversa organizada, serviço tranquilo." />
       <section className="messages-layout">
         <aside className="conversation-list">
           <div className="conversation-search"><input aria-label="Buscar conversa" placeholder="Buscar conversa" /></div>
-          <button className="active"><span className="mini-avatar">{otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><span><strong>{otherName}</strong><small>{context}</small><em>Perfeito, combinado!</em></span><i>2</i></button>
-          <button><span className="mini-avatar neutral">MS</span><span><strong>Suporte Max</strong><small>Central de ajuda</small><em>Como podemos ajudar?</em></span></button>
+          {loading && <div className="data-state">Carregando conversas...</div>}
+          {!loading && conversations.length === 0 && <div className="data-state"><strong>Nenhuma conversa ainda.</strong><span>Ela será criada quando uma proposta for aceita.</span></div>}
+          {conversations.map((conversation) => <button key={conversation.id} onClick={() => setSelectedId(conversation.id)} className={conversation.id === selectedId ? "active" : ""}><span className="mini-avatar">{conversation.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><span><strong>{conversation.otherName}</strong><small>{conversation.requestCode} · {conversation.requestTitle}</small><em>{conversation.latestMessage ?? "Conversa liberada"}</em></span>{conversation.bookingStatus === "scheduled" && <i>✓</i>}</button>)}
         </aside>
-        <div className="chat-panel">
-          <header><span className="mini-avatar">{otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><strong>{otherName}</strong><small><span className="live-dot" /> Online agora · {context}</small></div><button aria-label="Mais opções">•••</button></header>
-          <div className="chat-messages"><div className="chat-date">HOJE</div><p className="message received">Olá! Vi os detalhes e consigo realizar o serviço amanhã pela manhã.<small>10:18</small></p><p className="message sent">Ótimo. O horário das 09:30 funciona para mim.<small>10:20 · ✓✓</small></p><p className="message received">Perfeito, combinado! Levo todo o material necessário.<small>10:21</small></p></div>
-          <form className="message-composer" onSubmit={(event) => { event.preventDefault(); notify("Mensagem enviada na demonstração."); }}><button type="button" aria-label="Anexar arquivo">＋</button><input aria-label="Mensagem" placeholder="Escreva uma mensagem..." /><button type="submit">Enviar</button></form>
-        </div>
+        {selected ? <div className="chat-panel"><header><span className="mini-avatar">{selected.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><strong>{selected.otherName}</strong><small><span className="live-dot" /> {selected.requestCode} · {selected.scheduledFor ? `Agendado: ${schedule(selected.scheduledFor)}` : selected.bookingStatus}</small></div><button aria-label="Mais opções">•••</button></header><div className="chat-messages"><div className="chat-date">CONVERSA DO SERVIÇO</div>{messages.length === 0 && <div className="data-state"><strong>Conversa liberada.</strong><span>Envie a primeira mensagem para combinar os detalhes.</span></div>}{messages.map((message) => <p key={message.id} className={`message ${message.senderId === actorId ? "sent" : "received"}`}>{message.body}<small>{time(message.createdAt)}{message.senderId === actorId ? " · ✓" : ""}</small></p>)}<div ref={endRef} /></div><form className="message-composer" onSubmit={send}><button type="button" aria-label="Anexos disponíveis em uma próxima fase" onClick={() => notify("Anexos privados serão habilitados em uma próxima fase.")}>＋</button><input aria-label="Mensagem" value={draft} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder="Escreva uma mensagem..." /><button type="submit" disabled={sending || !draft.trim()}>{sending ? "Enviando..." : "Enviar"}</button></form></div> : <div className="chat-panel empty-chat"><div className="data-state"><strong>Selecione uma conversa.</strong><span>As mensagens ficam vinculadas ao serviço contratado.</span></div></div>}
       </section>
     </>
   );
+}
+
+function NonTransactionalMessages({ role, notify }: { role: "parceiro" | "operacao"; notify: (message: string) => void }) {
+  return <><DashboardHeader role={role} eyebrow={role === "operacao" ? "CENTRAL DE ATENDIMENTOS" : "MENSAGENS DA REDE"} title="Comunicação com contexto e responsabilidade." /><section className="dashboard-section non-transactional-message"><span>◉</span><div><small>PRÓXIMO MÓDULO</small><h2>{role === "operacao" ? "Atendimentos e ocorrências serão vinculados aos casos." : "Conversas com afiliados serão liberadas na gestão da rede."}</h2><p>A conversa transacional já está ativa para clientes e profissionais. Este perfil receberá um canal próprio, com permissões e histórico específicos.</p><button className="secondary-action" onClick={() => notify("Módulo registrado no backlog da plataforma.")}>Ver próxima etapa</button></div></section></>;
 }
 
 function AccountView({ role, notify }: { role: Role; notify: (message: string) => void }) {

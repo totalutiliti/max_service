@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { createNotification } from "../notifications/notification-writer.js";
 
 @Injectable()
 export class MessagingService {
@@ -41,7 +42,16 @@ export class MessagingService {
 
   async messages(actor: Actor, conversationId: string) {
     return this.database.withActor(actor, async (client) => {
-      const conversation = await client.query("SELECT id FROM conversations WHERE id = $1", [conversationId]);
+      const conversation = await client.query<{ id: string; otherUserId: string; requestCode: string }>(`
+        SELECT
+          c.id,
+          CASE WHEN b.customer_id = $2 THEN b.provider_id ELSE b.customer_id END AS "otherUserId",
+          r.public_code AS "requestCode"
+        FROM conversations c
+        JOIN bookings b ON b.id = c.booking_id
+        JOIN service_requests r ON r.id = b.request_id
+        WHERE c.id = $1
+      `, [conversationId, actor.id]);
       if (!conversation.rows[0]) throw new NotFoundException("Conversa não encontrada.");
       const result = await client.query(`
         SELECT
@@ -68,7 +78,16 @@ export class MessagingService {
     }
 
     return this.database.withActor(actor, async (client) => {
-      const conversation = await client.query("SELECT id FROM conversations WHERE id = $1", [conversationId]);
+      const conversation = await client.query<{ id: string; otherUserId: string; requestCode: string }>(`
+        SELECT
+          c.id,
+          CASE WHEN b.customer_id = $2 THEN b.provider_id ELSE b.customer_id END AS "otherUserId",
+          r.public_code AS "requestCode"
+        FROM conversations c
+        JOIN bookings b ON b.id = c.booking_id
+        JOIN service_requests r ON r.id = b.request_id
+        WHERE c.id = $1
+      `, [conversationId, actor.id]);
       if (!conversation.rows[0]) throw new NotFoundException("Conversa não encontrada.");
 
       const id = randomUUID();
@@ -81,6 +100,15 @@ export class MessagingService {
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'message.sent', 'message', $3, $4::jsonb)",
         [actor.id, actor.role, id, JSON.stringify({ conversationId })],
       );
+      await createNotification(client, {
+        userId: conversation.rows[0].otherUserId,
+        actorId: actor.id,
+        type: "message_received",
+        title: `Nova mensagem · ${conversation.rows[0].requestCode}`,
+        body: body.trim().slice(0, 180),
+        entityType: "conversation",
+        entityId: conversationId,
+      });
       return result.rows[0];
     });
   }

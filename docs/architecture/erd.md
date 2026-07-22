@@ -21,6 +21,7 @@ erDiagram
   USERS ||--o{ SUPPORT_CASES : comunica
   SUPPORT_CASES ||--o{ SUPPORT_CASE_EVENTS : registra
   USERS ||--o{ SUPPORT_CASE_EVENTS : executa
+  USERS ||--o{ NOTIFICATIONS : recebe
   BOOKINGS ||--|| CONVERSATIONS : possui
   CONVERSATIONS ||--o{ CONVERSATION_MEMBERS : autoriza
   CONVERSATIONS ||--o{ MESSAGES : contém

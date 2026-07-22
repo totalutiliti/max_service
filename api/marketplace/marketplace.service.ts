@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { createNotification } from "../notifications/notification-writer.js";
 import type { CreateProposalDto, CreateServiceRequestDto } from "./marketplace.dto.js";
 
 interface ServiceRequestRow {
@@ -129,8 +130,8 @@ export class MarketplaceService {
   async createProposal(actor: Actor, requestId: string, input: CreateProposalDto) {
     if (actor.role !== "provider") throw new ForbiddenException("Somente profissionais podem enviar propostas.");
     return this.database.withActor(actor, async (client) => {
-      const request = await client.query<{ id: string; status: string }>(
-        "SELECT id, status FROM service_requests WHERE id = $1 AND status IN ('open', 'proposals_received')",
+      const request = await client.query<{ id: string; status: string; customerId: string; publicCode: string }>(
+        "SELECT id, status, customer_id AS \"customerId\", public_code AS \"publicCode\" FROM service_requests WHERE id = $1 AND status IN ('open', 'proposals_received')",
         [requestId],
       );
       if (!request.rows[0]) throw new NotFoundException("Solicitação não encontrada ou indisponível.");
@@ -160,6 +161,16 @@ export class MarketplaceService {
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'proposal.upserted', 'proposal', $3, $4::jsonb)",
         [actor.id, actor.role, result.rows[0].id, JSON.stringify({ requestId, amountCents: input.amountCents })],
       );
+      const provider = await client.query<{ displayName: string }>("SELECT display_name AS \"displayName\" FROM users WHERE id = $1", [actor.id]);
+      await createNotification(client, {
+        userId: request.rows[0].customerId,
+        actorId: actor.id,
+        type: "proposal_received",
+        title: `Nova proposta para ${request.rows[0].publicCode}`,
+        body: `${provider.rows[0]?.displayName ?? "Um profissional"} enviou uma proposta para o seu pedido.`,
+        entityType: "proposal",
+        entityId: result.rows[0].id,
+      });
       return result.rows[0];
     });
   }
@@ -209,6 +220,21 @@ export class MarketplaceService {
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'proposal.accepted', 'proposal', $3, $4::jsonb)",
         [actor.id, actor.role, proposalId, JSON.stringify({ requestId: accepted.rows[0].requestId })],
       );
+      const notificationContext = await client.query<{ publicCode: string; customerName: string }>(`
+        SELECT r.public_code AS "publicCode", customer.display_name AS "customerName"
+        FROM service_requests r
+        JOIN users customer ON customer.id = r.customer_id
+        WHERE r.id = $1
+      `, [accepted.rows[0].requestId]);
+      await createNotification(client, {
+        userId: accepted.rows[0].providerId,
+        actorId: actor.id,
+        type: "proposal_accepted",
+        title: `Proposta aceita · ${notificationContext.rows[0].publicCode}`,
+        body: `${notificationContext.rows[0].customerName} confirmou sua proposta. O serviço já está na agenda.`,
+        entityType: "proposal",
+        entityId: proposalId,
+      });
       return { proposalId, requestId: accepted.rows[0].requestId, bookingId, conversationId, scheduledFor: booking.rows[0].scheduledFor, status: "booked" };
     });
   }

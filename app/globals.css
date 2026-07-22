@@ -158,6 +158,27 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .dashboard-actions { display: flex; align-items: center; gap: .7rem; }
 .location-chip, .notification-button { min-height: 42px; border: 1px solid var(--line); background: var(--white); border-radius: 11px; padding: .6rem .8rem; cursor: pointer; font-weight: 700; font-size: .78rem; }
 .notification-button { width: 42px; padding: 0; border-radius: 50%; position: relative; color: #366c00; }
+.notification-button.has-unread { border-color: #74b82d; background: #efffdf; box-shadow: 0 0 0 3px rgba(117,230,0,.12); }
+.notification-center { position: relative; }
+.notifications-panel { position: absolute; z-index: 60; top: calc(100% + .7rem); right: 0; width: min(390px, calc(100vw - 2rem)); max-height: min(620px, calc(100vh - 110px)); overflow: hidden; border: 1px solid #dce2da; border-radius: 18px; background: var(--white); box-shadow: 0 24px 65px rgba(12,24,13,.2); display: grid; grid-template-rows: auto auto minmax(0,1fr); }
+.notifications-panel > header { padding: 1rem 1rem .8rem; background: radial-gradient(circle at 85% 15%, rgba(117,230,0,.16), transparent 30%), var(--ink); color: var(--white); display: flex; align-items: center; justify-content: space-between; }
+.notifications-panel > header div { display: grid; gap: .2rem; }
+.notifications-panel > header small { color: var(--lime); font-size: .54rem; font-weight: 850; letter-spacing: .11em; }
+.notifications-panel > header h2 { margin: 0; font-size: 1.2rem; letter-spacing: -.035em; }
+.notifications-panel > header button { width: 32px; height: 32px; border: 1px solid #455047; border-radius: 50%; background: #202721; color: var(--white); font-size: 1.2rem; cursor: pointer; }
+.notifications-toolbar { min-height: 44px; padding: .55rem .8rem; border-bottom: 1px solid #e5eae3; display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
+.notifications-toolbar span { color: var(--muted); font-size: .62rem; }
+.notifications-toolbar button { border: 0; background: transparent; color: #4c8413; font-size: .62rem; font-weight: 800; cursor: pointer; }
+.notifications-list { overflow-y: auto; }
+.notifications-list > button { width: 100%; min-height: 90px; padding: .8rem; border: 0; border-bottom: 1px solid #ebefea; background: var(--white); display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: .7rem; text-align: left; cursor: pointer; }
+.notifications-list > button.unread { background: #f5fbea; }
+.notifications-list > button.read { cursor: default; opacity: .72; }
+.notifications-list > button > i { width: 34px; height: 34px; border-radius: 10px; background: #e1fac9; color: #3e720d; display: grid; place-items: center; font: 850 .65rem var(--font-geist-mono), monospace; font-style: normal; }
+.notifications-list > button > span { display: grid; gap: .24rem; }
+.notifications-list strong { font-size: .72rem; }
+.notifications-list p { margin: 0; color: #68736a; font-size: .65rem; line-height: 1.45; }
+.notifications-list small { color: #939c95; font-size: .55rem; }
+.notifications-list em { width: 8px; height: 8px; margin-top: .25rem; border-radius: 50%; background: #69b51d; }
 .mini-avatar { width: 42px; height: 42px; background: #315c4a; font-size: .72rem; }
 .mini-avatar.neutral { width: 36px; height: 36px; background: #dfe5dc; color: #3b463e; }
 .dashboard-hero { min-height: 250px; padding: clamp(1.6rem, 4vw, 3rem); background: linear-gradient(115deg, #101511 20%, #172316); color: var(--white); border-radius: 24px; display: grid; grid-template-columns: 1.1fr .9fr; align-items: center; overflow: hidden; box-shadow: 0 18px 45px rgba(18,27,19,.11); }
@@ -628,6 +649,7 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .dashboard-header p { display: none; }
   .dashboard-header h1 { font-size: 1.45rem; max-width: 280px; }
   .dashboard-actions .location-chip, .dashboard-actions .status-pill, .dashboard-actions .button { display: none; }
+  .notifications-panel { position: fixed; top: 72px; right: .8rem; left: .8rem; width: auto; max-height: calc(100vh - 150px); }
   .dashboard-hero { grid-template-columns: 1fr; min-height: 330px; }
   .dashboard-hero-mark { display: none; }
   .quick-categories { grid-template-columns: repeat(3,1fr); }

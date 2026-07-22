@@ -155,6 +155,18 @@ interface SupportCaseDetail extends SupportCase {
   events: SupportCaseEvent[];
 }
 
+interface UserNotification {
+  id: string;
+  type: "system" | "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated";
+  title: string;
+  body: string;
+  entityType: string;
+  entityId: string;
+  readAt: string | null;
+  createdAt: string;
+  actorName: string | null;
+}
+
 const demoUiActorIds = {
   cliente: "00000000-0000-4000-8000-000000000101",
   prestador: "00000000-0000-4000-8000-000000000201",
@@ -354,9 +366,64 @@ function DashboardHeader({ role, eyebrow, title, children }: { role: Role; eyebr
   return (
     <header className="dashboard-header">
       <div><p>{eyebrow}</p><h1>{title}</h1></div>
-      <div className="dashboard-actions">{children}<button className="notification-button" aria-label="Notificações, duas não lidas">2</button><div className="mini-avatar">{roleDetails[role].short}</div></div>
+      <div className="dashboard-actions">{children}<NotificationCenter role={role} /><div className="mini-avatar">{roleDetails[role].short}</div></div>
     </header>
   );
+}
+
+const notificationIcon: Record<UserNotification["type"], string> = {
+  system: "M",
+  proposal_received: "✦",
+  proposal_accepted: "✓",
+  message_received: "◉",
+  booking_started: "→",
+  booking_completed: "✓",
+  booking_cancelled: "!",
+  review_received: "★",
+  case_opened: "!",
+  case_updated: "CS",
+};
+
+function NotificationCenter({ role }: { role: Role }) {
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/notifications?role=${encodeURIComponent(role)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { notifications?: UserNotification[]; unreadCount?: number };
+        if (!response.ok || !payload.notifications) throw new Error("Não foi possível carregar as notificações.");
+        return payload;
+      })
+      .then((payload) => {
+        setNotifications(payload.notifications ?? []);
+        setUnreadCount(payload.unreadCount ?? 0);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setNotifications([]);
+        setUnreadCount(0);
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [role, refresh]);
+
+  const updateRead = async (action: "read" | "read-all", notificationId?: string) => {
+    const response = await fetch("/api/v1/notifications", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role, action, notificationId }),
+    });
+    if (!response.ok) return;
+    setRefresh((value) => value + 1);
+  };
+
+  const formatDate = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+  return <div className="notification-center"><button className={`notification-button ${unreadCount > 0 ? "has-unread" : ""}`} onClick={() => setOpen((value) => !value)} aria-label={`Notificações, ${unreadCount} não lida${unreadCount === 1 ? "" : "s"}`} aria-expanded={open}>{unreadCount > 0 ? unreadCount > 9 ? "9+" : unreadCount : "✓"}</button>{open && <section className="notifications-panel" role="dialog" aria-label="Central de notificações"><header><div><small>CENTRAL MAX</small><h2>Notificações</h2></div><button onClick={() => setOpen(false)} aria-label="Fechar notificações">×</button></header><div className="notifications-toolbar"><span>{unreadCount} não lida{unreadCount === 1 ? "" : "s"}</span>{unreadCount > 0 && <button onClick={() => updateRead("read-all")}>Marcar todas como lidas</button>}</div><div className="notifications-list">{loading && <div className="data-state">Carregando avisos...</div>}{!loading && notifications.length === 0 && <div className="data-state"><strong>Tudo tranquilo por aqui.</strong><span>Novos avisos aparecerão nesta central.</span></div>}{notifications.map((item) => <button key={item.id} className={item.readAt ? "read" : "unread"} onClick={() => !item.readAt && updateRead("read", item.id)}><i>{notificationIcon[item.type]}</i><span><strong>{item.title}</strong><p>{item.body}</p><small>{formatDate(item.createdAt)}{item.actorName ? ` · ${item.actorName}` : ""}</small></span>{!item.readAt && <em aria-label="Não lida" />}</button>)}</div></section>}</div>;
 }
 
 function CustomerView({ notify }: { notify: (message: string) => void }) {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { createNotification } from "../notifications/notification-writer.js";
 
 type BookingStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
 
@@ -120,10 +121,11 @@ export class BookingsService {
     const rule = transitionRules[status];
 
     return this.database.withActor(actor, async (client) => {
-      const current = await client.query<{ id: string; requestId: string; status: BookingStatus }>(`
-        SELECT id, request_id AS "requestId", status
-        FROM bookings
-        WHERE id = $1 AND provider_id = $2
+      const current = await client.query<{ id: string; requestId: string; status: BookingStatus; customerId: string; requestCode: string }>(`
+        SELECT b.id, b.request_id AS "requestId", b.status, b.customer_id AS "customerId", r.public_code AS "requestCode"
+        FROM bookings b
+        JOIN service_requests r ON r.id = b.request_id
+        WHERE b.id = $1 AND b.provider_id = $2
       `, [bookingId, actor.id]);
       if (!current.rows[0]) throw new NotFoundException("Agendamento não encontrado.");
       if (current.rows[0].status !== rule.from) {
@@ -159,6 +161,15 @@ export class BookingsService {
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'booking.status_changed', 'booking', $3, $4::jsonb)",
         [actor.id, actor.role, bookingId, JSON.stringify({ from: rule.from, to: status, requestId: current.rows[0].requestId })],
       );
+      await createNotification(client, {
+        userId: current.rows[0].customerId,
+        actorId: actor.id,
+        type: status === "in_progress" ? "booking_started" : "booking_completed",
+        title: status === "in_progress" ? `Serviço iniciado · ${current.rows[0].requestCode}` : `Serviço concluído · ${current.rows[0].requestCode}`,
+        body: status === "in_progress" ? "O profissional informou que o atendimento começou." : "O profissional concluiu o atendimento. Sua avaliação já está disponível.",
+        entityType: "booking",
+        entityId: bookingId,
+      });
 
       return updated.rows[0];
     });
@@ -172,10 +183,11 @@ export class BookingsService {
     if (normalizedComment.length < 10) throw new BadRequestException("O comentário deve ter pelo menos 10 caracteres.");
 
     return this.database.withActor(actor, async (client) => {
-      const booking = await client.query<{ id: string; status: BookingStatus; customerId: string; providerId: string }>(`
-        SELECT id, status, customer_id AS "customerId", provider_id AS "providerId"
-        FROM bookings
-        WHERE id = $1
+      const booking = await client.query<{ id: string; status: BookingStatus; customerId: string; providerId: string; requestCode: string }>(`
+        SELECT b.id, b.status, b.customer_id AS "customerId", b.provider_id AS "providerId", r.public_code AS "requestCode"
+        FROM bookings b
+        JOIN service_requests r ON r.id = b.request_id
+        WHERE b.id = $1
       `, [bookingId]);
       if (!booking.rows[0]) throw new NotFoundException("Agendamento não encontrado.");
       if (booking.rows[0].status !== "completed") {
@@ -198,6 +210,15 @@ export class BookingsService {
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_review.created', 'service_review', $3, $4::jsonb)",
         [actor.id, actor.role, reviewId, JSON.stringify({ bookingId, subjectId, rating })],
       );
+      await createNotification(client, {
+        userId: subjectId,
+        actorId: actor.id,
+        type: "review_received",
+        title: `Nova avaliação · ${booking.rows[0].requestCode}`,
+        body: `Você recebeu uma avaliação de ${rating} estrela${rating === 1 ? "" : "s"}.`,
+        entityType: "service_review",
+        entityId: reviewId,
+      });
       return result.rows[0];
     });
   }
@@ -215,8 +236,9 @@ export class BookingsService {
     if (normalizedDetails.length < 10) throw new BadRequestException("Descreva o motivo com pelo menos 10 caracteres.");
 
     return this.database.withActor(actor, async (client) => {
-      const current = await client.query<{ id: string; requestId: string; requestCode: string; status: BookingStatus }>(`
-        SELECT b.id, b.request_id AS "requestId", r.public_code AS "requestCode", b.status
+      const current = await client.query<{ id: string; requestId: string; requestCode: string; status: BookingStatus; customerId: string; providerId: string }>(`
+        SELECT b.id, b.request_id AS "requestId", r.public_code AS "requestCode", b.status,
+          b.customer_id AS "customerId", b.provider_id AS "providerId"
         FROM bookings b
         JOIN service_requests r ON r.id = b.request_id
         WHERE b.id = $1
@@ -265,6 +287,25 @@ export class BookingsService {
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'booking.cancelled', 'booking', $3, $4::jsonb)",
         [actor.id, actor.role, bookingId, JSON.stringify({ from: current.rows[0].status, reasonCode, caseId })],
       );
+      const otherParticipantId = actor.role === "customer" ? current.rows[0].providerId : current.rows[0].customerId;
+      await createNotification(client, {
+        userId: otherParticipantId,
+        actorId: actor.id,
+        type: "booking_cancelled",
+        title: `Serviço cancelado · ${current.rows[0].requestCode}`,
+        body: normalizedDetails,
+        entityType: "booking",
+        entityId: bookingId,
+      });
+      await createNotification(client, {
+        userId: "00000000-0000-4000-8000-000000000401",
+        actorId: actor.id,
+        type: "case_opened",
+        title: `Novo chamado · ${caseCode}`,
+        body: `${current.rows[0].requestCode}: ${normalizedDetails}`,
+        entityType: "support_case",
+        entityId: caseId,
+      });
 
       return { cancellation: cancellation.rows[0], case: supportCase.rows[0] };
     });

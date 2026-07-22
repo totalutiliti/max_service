@@ -13,7 +13,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - cancelamento estruturado e avaliações;
 - indicação por link/QR;
 - moderação manual de prestador;
-- notificações internas e e-mail;
+- notificações internas persistentes; e-mail permanece como integração posterior;
 - PSP fake e visualização de divisão financeira, sem transação real;
 - dados 100% fictícios.
 

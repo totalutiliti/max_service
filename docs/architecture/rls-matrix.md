@@ -12,6 +12,7 @@ Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Oper
 | cancelamento | solicita e consulta no booking próprio | solicita e consulta no booking próprio | nenhum | consulta operacional | auditado |
 | chamado operacional | consulta estado dos próprios | consulta estado dos próprios | nenhum | fila completa e tratamento | auditado |
 | notas/eventos internos | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
+| notificações | somente próprias | somente próprias | somente próprias | somente próprias | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
 | documentos | nenhum acesso direto | próprios | nenhum | fila de moderação | excepcional |
 | afiliados/comissões | nenhum | própria atribuição | somente atribuídos | financeiro | auditado |
@@ -39,5 +40,7 @@ Princípio: sem `app.user_id` válido, dados privados retornam zero linhas. Oper
 - parceiro não abre chamado e a operação enxerga a fila sem obter acesso de escrita transacional;
 - notas internas de chamados retornam zero linhas para cliente, prestador e parceiro;
 - chamado resolvido bloqueia novas notas e transições duplicadas;
+- destinatário não lê nem marca notificação de outro usuário;
+- emissão transacional exige vínculo comprovado com a entidade de origem;
 - query direta pela role de runtime continua sujeita a RLS;
 - cada migration preserva policies e grants.

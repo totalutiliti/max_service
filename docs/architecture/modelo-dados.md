@@ -46,6 +46,8 @@
 - cada cancelamento abre exatamente um `support_case`; interrupções em execução recebem prioridade alta;
 - notas e transições do chamado são append-only em `support_case_events`, visíveis apenas para a operação;
 - resolver um chamado exige justificativa, responsável e instante de resolução;
+- cada notificação pertence a um destinatário e só pode ser emitida a partir de uma relação transacional comprovada;
+- leitura de notificação altera apenas `read_at`; conteúdo, origem e destinatário permanecem imutáveis;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;
 - cada avaliação tem como alvo a outra parte do booking e não pode ser editada ou apagada pelo fluxo da aplicação;
 - um evento de PSP tem chave idempotente única;

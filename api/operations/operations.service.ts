@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { randomUUID } from "node:crypto";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { createNotification } from "../notifications/notification-writer.js";
 
 const caseSelect = `
   SELECT
@@ -87,8 +88,8 @@ export class OperationsService {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
-      const current = await client.query<{ id: string; status: "open" | "in_review" | "resolved" }>(
-        "SELECT id, status FROM support_cases WHERE id = $1 FOR UPDATE",
+      const current = await client.query<{ id: string; status: "open" | "in_review" | "resolved"; openedBy: string; publicCode: string }>(
+        "SELECT id, status, opened_by AS \"openedBy\", public_code AS \"publicCode\" FROM support_cases WHERE id = $1 FOR UPDATE",
         [caseId],
       );
       if (!current.rows[0]) throw new NotFoundException("Chamado não encontrado.");
@@ -121,6 +122,15 @@ export class OperationsService {
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'support_case.status_changed', 'support_case', $3, $4::jsonb)",
         [actor.id, actor.role, caseId, JSON.stringify({ from: fromStatus, to: status, eventId })],
       );
+      await createNotification(client, {
+        userId: current.rows[0].openedBy,
+        actorId: actor.id,
+        type: "case_updated",
+        title: status === "resolved" ? `Chamado resolvido · ${current.rows[0].publicCode}` : `Chamado em análise · ${current.rows[0].publicCode}`,
+        body: normalizedNote,
+        entityType: "support_case",
+        entityId: caseId,
+      });
       return updated.rows[0];
     });
   }

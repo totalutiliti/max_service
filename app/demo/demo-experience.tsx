@@ -394,6 +394,42 @@ interface OperationReportData {
     verificationApprovedCount: number;
     verificationPendingCount: number;
   };
+  goals: {
+    periodDays: ReportPeriodDays;
+    proposalCoverageTarget: number;
+    bookingConversionTarget: number;
+    firstProposalTargetMinutes: number;
+    overdueCaseLimit: number;
+    unreconciledLimit: number;
+    version: number;
+    updatedAt: string;
+  };
+  alerts: Array<{
+    id: string;
+    severity: "warning" | "critical";
+    title: string;
+    detail: string;
+  }>;
+  comparison: {
+    period: { from: string; to: string };
+    previous: {
+      requestCount: number;
+      proposedRequestCount: number;
+      bookingCount: number;
+      completedCount: number;
+      averageFirstProposalMinutes: number;
+      netVolumeCents: number;
+      proposalCoverageRate: number;
+      bookingConversionRate: number;
+    };
+    changes: {
+      requestCountPercent: number | null;
+      proposalCoveragePoints: number;
+      bookingConversionPoints: number;
+      firstProposalMinutesPercent: number | null;
+      netVolumePercent: number | null;
+    };
+  };
   categories: Array<{
     id: string;
     slug: string;
@@ -1635,9 +1671,13 @@ function OperationReportsPanel({ notify }: { notify: (message: string) => void }
   const [data, setData] = useState<OperationReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
+  const [goalsOpen, setGoalsOpen] = useState(false);
   const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
   const compactMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 }).format(cents / 100);
   const date = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(new Date(value));
+  const variation = (value: number | null, suffix = "%") => value === null
+    ? "sem base anterior"
+    : `${value > 0 ? "+" : ""}${value.toLocaleString("pt-BR")}${suffix} vs. período anterior`;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1697,16 +1737,30 @@ function OperationReportsPanel({ notify }: { notify: (message: string) => void }
     <section className="dashboard-section operation-reports">
       <header className="report-header">
         <div><small>INTELIGÊNCIA DO PILOTO</small><h2>Relatório operacional</h2><p>Funil, categorias, aquisição e reconciliação em uma visão sem dados pessoais.</p></div>
-        <div className="report-actions"><div className="period-switch" aria-label="Período do relatório">{([7, 30, 90] as ReportPeriodDays[]).map((days) => <button key={days} className={period === days ? "active" : ""} onClick={() => { if (period !== days) { setLoading(true); setPeriod(days); } }}>{days} dias</button>)}</div><button className="secondary-action" onClick={exportCsv} disabled={!data || loading}>Exportar CSV ↓</button><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }} disabled={loading}>Atualizar ↻</button></div>
+        <div className="report-actions"><div className="period-switch" aria-label="Período do relatório">{([7, 30, 90] as ReportPeriodDays[]).map((days) => <button key={days} className={period === days ? "active" : ""} onClick={() => { if (period !== days) { setLoading(true); setPeriod(days); } }}>{days} dias</button>)}</div><button className="secondary-action" onClick={() => setGoalsOpen(true)} disabled={!data || loading}>Editar metas</button><button className="secondary-action" onClick={exportCsv} disabled={!data || loading}>Exportar CSV ↓</button><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }} disabled={loading}>Atualizar ↻</button></div>
       </header>
       {loading && !data && <div className="data-state">Consolidando indicadores...</div>}
       {data && <>
         <div className="report-scorecards">
-          <article><small>CONVERSÃO EM AGENDAMENTO</small><strong>{data.funnel.bookingConversionRate.toLocaleString("pt-BR")}%</strong><span>{data.funnel.bookingCount} de {data.funnel.requestCount} pedidos</span></article>
-          <article><small>TEMPO ATÉ 1ª PROPOSTA</small><strong>{data.funnel.averageFirstProposalMinutes} min</strong><span>{data.funnel.averageProposalsPerRequest.toLocaleString("pt-BR")} proposta(s) por pedido</span></article>
-          <article><small>VOLUME LÍQUIDO</small><strong>{money(data.financial.netVolumeCents)}</strong><span>{money(data.financial.discountAmountCents)} concedidos em cupons</span></article>
+          <article><small>CONVERSÃO EM AGENDAMENTO</small><strong>{data.funnel.bookingConversionRate.toLocaleString("pt-BR")}%</strong><span>{variation(data.comparison.changes.bookingConversionPoints, " p.p.")}</span></article>
+          <article><small>TEMPO ATÉ 1ª PROPOSTA</small><strong>{data.funnel.averageFirstProposalMinutes} min</strong><span>{variation(data.comparison.changes.firstProposalMinutesPercent)}</span></article>
+          <article><small>VOLUME LÍQUIDO</small><strong>{money(data.financial.netVolumeCents)}</strong><span>{variation(data.comparison.changes.netVolumePercent)}</span></article>
           <article className={data.financial.reconciled ? "healthy" : "attention"}><small>RECONCILIAÇÃO</small><strong>{data.financial.reconciled ? "Conciliada" : "Atenção"}</strong><span>{data.financial.unreconciledCount} pendência(s) · diferença {money(data.financial.reconciliationDifferenceCents)}</span></article>
         </div>
+        <section className="report-goal-strip">
+          <div><small>METAS · {data.period.days} DIAS · V{data.goals.version}</small><strong>Cobertura ≥ {data.goals.proposalCoverageTarget.toLocaleString("pt-BR")}%</strong></div>
+          <div><small>CONVERSÃO</small><strong>≥ {data.goals.bookingConversionTarget.toLocaleString("pt-BR")}%</strong></div>
+          <div><small>1ª PROPOSTA</small><strong>≤ {data.goals.firstProposalTargetMinutes} min</strong></div>
+          <div><small>CASOS VENCIDOS</small><strong>≤ {data.goals.overdueCaseLimit}</strong></div>
+          <div><small>PEDIDOS</small><strong>{variation(data.comparison.changes.requestCountPercent)}</strong></div>
+        </section>
+        <section className={`report-alerts ${data.alerts.length === 0 ? "clear" : ""}`}>
+          <header><div><small>MONITOR DE DESVIOS</small><h3>{data.alerts.length === 0 ? "Operação dentro das metas." : `${data.alerts.length} desvio(s) exigem leitura.`}</h3></div><span>Comparação: {date(data.comparison.period.from)} — {date(data.comparison.period.to)}</span></header>
+          <div>{data.alerts.length === 0
+            ? <article className="clear"><i>✓</i><div><strong>Nenhum alerta ativo</strong><p>As métricas do período respeitam os limites configurados.</p></div></article>
+            : data.alerts.map((alert) => <article key={alert.id} className={alert.severity}><i>{alert.severity === "critical" ? "!" : "↗"}</i><div><strong>{alert.title}</strong><p>{alert.detail}</p></div><span>{alert.severity === "critical" ? "Crítico" : "Atenção"}</span></article>)}
+          </div>
+        </section>
         <div className="report-grid">
           <section className="report-funnel">
             <header><div><small>FUNIL DO MARKETPLACE</small><h3>Da necessidade ao serviço concluído</h3></div><span>{date(data.period.from)} — {date(data.period.to)}</span></header>
@@ -1730,7 +1784,91 @@ function OperationReportsPanel({ notify }: { notify: (message: string) => void }
         </section>
         <footer className="report-footnote"><span>i</span><p><strong>Leitura de gestão:</strong> indicadores são agregados no servidor com acesso exclusivo da Operação. O CSV contém somente categorias e métricas, sem nomes, contatos, descrições ou identificadores internos.</p><small>Gerado em {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(data.financial.generatedAt))}</small></footer>
       </>}
+      {data && goalsOpen && <OperationReportGoalsDialog goals={data.goals} onClose={() => setGoalsOpen(false)} onSaved={() => { setLoading(true); setRefresh((value) => value + 1); }} notify={notify} />}
     </section>
+  );
+}
+
+function OperationReportGoalsDialog({
+  goals,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  goals: OperationReportData["goals"];
+  onClose: () => void;
+  onSaved: () => void;
+  notify: (message: string) => void;
+}) {
+  const [proposalCoverage, setProposalCoverage] = useState(String(goals.proposalCoverageTarget));
+  const [bookingConversion, setBookingConversion] = useState(String(goals.bookingConversionTarget));
+  const [firstProposalMinutes, setFirstProposalMinutes] = useState(String(goals.firstProposalTargetMinutes));
+  const [overdueCaseLimit, setOverdueCaseLimit] = useState(String(goals.overdueCaseLimit));
+  const [unreconciledLimit, setUnreconciledLimit] = useState(String(goals.unreconciledLimit));
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { closeRef.current?.focus(); }, []);
+
+  const percent = (value: string) => Number(value.replace(",", "."));
+  const integer = (value: string) => Number.parseInt(value, 10);
+  const valid = [percent(proposalCoverage), percent(bookingConversion)].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)
+    && Number.isInteger(integer(firstProposalMinutes)) && integer(firstProposalMinutes) >= 1 && integer(firstProposalMinutes) <= 10080
+    && Number.isInteger(integer(overdueCaseLimit)) && integer(overdueCaseLimit) >= 0 && integer(overdueCaseLimit) <= 10000
+    && Number.isInteger(integer(unreconciledLimit)) && integer(unreconciledLimit) >= 0 && integer(unreconciledLimit) <= 10000
+    && note.trim().length >= 10;
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!valid) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/reports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          periodDays: goals.periodDays,
+          proposalCoverageTargetBps: Math.round(percent(proposalCoverage) * 100),
+          bookingConversionTargetBps: Math.round(percent(bookingConversion) * 100),
+          firstProposalTargetMinutes: integer(firstProposalMinutes),
+          overdueCaseLimit: integer(overdueCaseLimit),
+          unreconciledLimit: integer(unreconciledLimit),
+          note: note.trim(),
+        }),
+      });
+      const payload = await response.json() as { goals?: OperationReportData["goals"]; error?: string; message?: string };
+      if (!response.ok || !payload.goals) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar as metas.");
+      }
+      notify(`Metas de ${payload.goals.periodDays} dias atualizadas na versão ${payload.goals.version}.`);
+      onSaved();
+      onClose();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar as metas.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog report-goals-dialog" role="dialog" aria-modal="true" aria-labelledby="report-goals-title">
+        <button ref={closeRef} className="dialog-close" onClick={onClose} aria-label="Fechar">×</button>
+        <header><span>◎</span><div><p className="dialog-kicker">METAS DE {goals.periodDays} DIAS</p><h2 id="report-goals-title">Defina os limites do piloto.</h2><p>Cada mudança cria uma nova versão e exige justificativa auditável.</p></div></header>
+        <form onSubmit={submit}>
+          <div className="report-goal-fields">
+            <label className="field"><span>Cobertura de propostas (%)</span><input type="number" min="0" max="100" step="0.1" value={proposalCoverage} onChange={(event) => setProposalCoverage(event.target.value)} required /></label>
+            <label className="field"><span>Conversão em agendamento (%)</span><input type="number" min="0" max="100" step="0.1" value={bookingConversion} onChange={(event) => setBookingConversion(event.target.value)} required /></label>
+            <label className="field"><span>Tempo até primeira proposta (min)</span><input type="number" min="1" max="10080" value={firstProposalMinutes} onChange={(event) => setFirstProposalMinutes(event.target.value)} required /></label>
+            <label className="field"><span>Limite de casos com SLA vencido</span><input type="number" min="0" max="10000" value={overdueCaseLimit} onChange={(event) => setOverdueCaseLimit(event.target.value)} required /></label>
+            <label className="field"><span>Limite de itens não conciliados</span><input type="number" min="0" max="10000" value={unreconciledLimit} onChange={(event) => setUnreconciledLimit(event.target.value)} required /></label>
+          </div>
+          <label className="field"><span>Justificativa da alteração</span><textarea minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explique a decisão e o contexto operacional." required /><small>{note.trim().length}/1000</small></label>
+          <div className="commercial-preview"><span>i</span><p><strong>Escopo controlado</strong>A meta vale somente para a janela de {goals.periodDays} dias. Nenhuma mensagem externa será disparada.</p></div>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || !valid}>{saving ? "Salvando..." : "Salvar nova versão →"}</button></footer>
+        </form>
+      </section>
+    </div>
   );
 }
 

@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
-import { normalizeReportDays, percentage } from "./reporting.js";
+import type { UpdateOperationReportGoalsDto } from "./operations.dto.js";
+import {
+  normalizeReportDays,
+  percentage,
+  percentagePointChange,
+  relativeChange,
+} from "./reporting.js";
 
 const caseSelect = `
   SELECT
@@ -103,6 +109,7 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "marketing_campaign.status_changed": { category: "growth", title: "Campanha atualizada", detail: "Disponibilidade da campanha alterada com justificativa." },
   "marketing_campaign.reserved": { category: "growth", title: "Cupom reservado", detail: "Benefício promocional vinculado a um pedido." },
   "operation_report.generated": { category: "operation", title: "Relatório consolidado", detail: "Indicadores agregados consultados pela Operação." },
+  "operation_report_goals.updated": { category: "operation", title: "Metas do relatório atualizadas", detail: "Limites operacionais alterados com justificativa." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -125,6 +132,7 @@ const auditEntityPrefix: Record<string, string> = {
   marketing_campaign: "CP",
   campaign_reservation: "CR",
   operation_report: "RP",
+  operation_report_goal: "MG",
 };
 
 @Injectable()
@@ -527,6 +535,8 @@ export class OperationsService {
     const from = new Date();
     from.setUTCHours(0, 0, 0, 0);
     from.setUTCDate(from.getUTCDate() - (days - 1));
+    const previousFrom = new Date(from);
+    previousFrom.setUTCDate(previousFrom.getUTCDate() - days);
     return this.database.withActor(actor, async (client) => {
       const funnelResult = await client.query<{
         requestCount: number;
@@ -661,6 +671,66 @@ export class OperationsService {
             WHERE verification.status IN ('submitted', 'in_review')) AS "verificationPendingCount"
       `, [from]);
 
+      const previousResult = await client.query<{
+        requestCount: number;
+        proposedRequestCount: number;
+        bookingCount: number;
+        completedCount: number;
+        averageFirstProposalMinutes: number;
+        netVolumeCents: number;
+      }>(`
+        WITH cohort AS (
+          SELECT request.id, request.created_at
+          FROM service_requests request
+          WHERE request.created_at >= $1 AND request.created_at < $2
+        )
+        SELECT
+          count(*)::int AS "requestCount",
+          count(*) FILTER (WHERE first_proposal.created_at IS NOT NULL)::int AS "proposedRequestCount",
+          count(*) FILTER (WHERE booking.id IS NOT NULL)::int AS "bookingCount",
+          count(*) FILTER (WHERE booking.status = 'completed')::int AS "completedCount",
+          COALESCE(round(avg(
+            extract(epoch FROM (first_proposal.created_at - cohort.created_at)) / 60
+          ) FILTER (WHERE first_proposal.created_at IS NOT NULL)), 0)::int AS "averageFirstProposalMinutes",
+          COALESCE((
+            SELECT sum(intent.gross_amount_cents)::int
+            FROM payment_intents intent
+            WHERE intent.created_at >= $1 AND intent.created_at < $2
+          ), 0) AS "netVolumeCents"
+        FROM cohort
+        LEFT JOIN LATERAL (
+          SELECT min(proposal.created_at) AS created_at
+          FROM proposals proposal
+          WHERE proposal.request_id = cohort.id
+        ) first_proposal ON true
+        LEFT JOIN bookings booking ON booking.request_id = cohort.id
+      `, [previousFrom, from]);
+
+      const goalsResult = await client.query<{
+        periodDays: 7 | 30 | 90;
+        proposalCoverageTargetBps: number;
+        bookingConversionTargetBps: number;
+        firstProposalTargetMinutes: number;
+        overdueCaseLimit: number;
+        unreconciledLimit: number;
+        version: number;
+        updatedAt: string;
+      }>(`
+        SELECT
+          goals.period_days AS "periodDays",
+          goals.proposal_coverage_target_bps AS "proposalCoverageTargetBps",
+          goals.booking_conversion_target_bps AS "bookingConversionTargetBps",
+          goals.first_proposal_target_minutes AS "firstProposalTargetMinutes",
+          goals.overdue_case_limit AS "overdueCaseLimit",
+          goals.unreconciled_limit AS "unreconciledLimit",
+          goals.version,
+          goals.updated_at AS "updatedAt"
+        FROM operation_report_goals goals
+        WHERE goals.period_days = $1
+      `, [days]);
+      const storedGoals = goalsResult.rows[0];
+      if (!storedGoals) throw new NotFoundException("Metas operacionais não configuradas.");
+
       const categoriesResult = await client.query<{
         id: string;
         slug: string;
@@ -741,6 +811,87 @@ export class OperationsService {
       const bookingCount = funnel.bookingCount;
       const expectedLedgerCents = financial.expectedLedgerCents;
       const ledgerNetCents = financial.ledgerNetCents;
+      const proposalCoverageRate = percentage(proposedRequestCount, requestCount);
+      const bookingConversionRate = percentage(bookingCount, requestCount);
+      const previous = previousResult.rows[0];
+      const previousProposalCoverageRate = percentage(previous.proposedRequestCount, previous.requestCount);
+      const previousBookingConversionRate = percentage(previous.bookingCount, previous.requestCount);
+      const goals = {
+        periodDays: storedGoals.periodDays,
+        proposalCoverageTarget: storedGoals.proposalCoverageTargetBps / 100,
+        bookingConversionTarget: storedGoals.bookingConversionTargetBps / 100,
+        firstProposalTargetMinutes: storedGoals.firstProposalTargetMinutes,
+        overdueCaseLimit: storedGoals.overdueCaseLimit,
+        unreconciledLimit: storedGoals.unreconciledLimit,
+        version: storedGoals.version,
+        updatedAt: storedGoals.updatedAt,
+      };
+      const alerts: Array<{
+        id: string;
+        severity: "warning" | "critical";
+        title: string;
+        detail: string;
+      }> = [];
+      if (requestCount === 0) {
+        alerts.push({
+          id: "no-demand",
+          severity: "warning",
+          title: "Nenhum pedido no período",
+          detail: "Revise aquisição, disponibilidade regional e comunicação do catálogo.",
+        });
+      } else {
+        if (proposalCoverageRate < goals.proposalCoverageTarget) {
+          alerts.push({
+            id: "proposal-coverage",
+            severity: goals.proposalCoverageTarget - proposalCoverageRate >= 10 ? "critical" : "warning",
+            title: "Cobertura de propostas abaixo da meta",
+            detail: `${proposalCoverageRate}% realizados para uma meta de ${goals.proposalCoverageTarget}%.`,
+          });
+        }
+        if (bookingConversionRate < goals.bookingConversionTarget) {
+          alerts.push({
+            id: "booking-conversion",
+            severity: goals.bookingConversionTarget - bookingConversionRate >= 10 ? "critical" : "warning",
+            title: "Conversão em agendamento abaixo da meta",
+            detail: `${bookingConversionRate}% realizados para uma meta de ${goals.bookingConversionTarget}%.`,
+          });
+        }
+        if (funnel.averageFirstProposalMinutes > goals.firstProposalTargetMinutes) {
+          alerts.push({
+            id: "first-proposal",
+            severity: funnel.averageFirstProposalMinutes > goals.firstProposalTargetMinutes * 2 ? "critical" : "warning",
+            title: "Primeira proposta acima do tempo-alvo",
+            detail: `${funnel.averageFirstProposalMinutes} minutos para uma meta de até ${goals.firstProposalTargetMinutes}.`,
+          });
+        }
+      }
+      if (operationsResult.rows[0].overduePartnerCaseCount > goals.overdueCaseLimit) {
+        alerts.push({
+          id: "partner-support-sla",
+          severity: "critical",
+          title: "SLA da central do parceiro vencido",
+          detail: `${operationsResult.rows[0].overduePartnerCaseCount} caso(s) vencido(s); limite configurado em ${goals.overdueCaseLimit}.`,
+        });
+      }
+      if (
+        financial.unreconciledCount > goals.unreconciledLimit
+        || ledgerNetCents !== expectedLedgerCents
+      ) {
+        alerts.push({
+          id: "financial-reconciliation",
+          severity: "critical",
+          title: "Reconciliação financeira exige atenção",
+          detail: `${financial.unreconciledCount} pendência(s) e diferença de ${ledgerNetCents - expectedLedgerCents} centavo(s).`,
+        });
+      }
+      if (financial.staleAuthorizedCount > 0) {
+        alerts.push({
+          id: "stale-authorizations",
+          severity: "warning",
+          title: "Autorizações antigas no sandbox",
+          detail: `${financial.staleAuthorizedCount} autorização(ões) aguardam desfecho há mais de sete dias.`,
+        });
+      }
       const reportId = randomUUID();
       await client.query(
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'operation_report.generated', 'operation_report', $3, $4::jsonb)",
@@ -761,8 +912,8 @@ export class OperationsService {
         },
         funnel: {
           ...funnel,
-          proposalCoverageRate: percentage(proposedRequestCount, requestCount),
-          bookingConversionRate: percentage(bookingCount, requestCount),
+          proposalCoverageRate,
+          bookingConversionRate,
           completionRate: percentage(funnel.completedCount, bookingCount),
           averageProposalsPerRequest: requestCount > 0
             ? Math.round((funnel.proposalCount / requestCount) * 100) / 100
@@ -782,12 +933,168 @@ export class OperationsService {
           ),
         },
         operations: operationsResult.rows[0],
+        goals,
+        alerts,
+        comparison: {
+          period: {
+            from: previousFrom.toISOString(),
+            to: from.toISOString(),
+          },
+          previous: {
+            ...previous,
+            proposalCoverageRate: previousProposalCoverageRate,
+            bookingConversionRate: previousBookingConversionRate,
+          },
+          changes: {
+            requestCountPercent: relativeChange(requestCount, previous.requestCount),
+            proposalCoveragePoints: percentagePointChange(
+              proposalCoverageRate,
+              previousProposalCoverageRate,
+            ),
+            bookingConversionPoints: percentagePointChange(
+              bookingConversionRate,
+              previousBookingConversionRate,
+            ),
+            firstProposalMinutesPercent: relativeChange(
+              funnel.averageFirstProposalMinutes,
+              previous.averageFirstProposalMinutes,
+            ),
+            netVolumePercent: relativeChange(
+              financial.netVolumeCents,
+              previous.netVolumeCents,
+            ),
+          },
+        },
         categories: categoriesResult.rows.map((category) => ({
           ...category,
           proposalCoverageRate: percentage(category.proposedRequestCount, category.requestCount),
           bookingConversionRate: percentage(category.bookingCount, category.requestCount),
         })),
         timeline: timelineResult.rows,
+      };
+    });
+  }
+
+  async updateReportGoals(actor: Actor, input: UpdateOperationReportGoalsDto) {
+    this.ensureOperation(actor);
+    const note = this.normalizeNote(input.note);
+    return this.database.withActor(actor, async (client) => {
+      const currentResult = await client.query<{
+        periodDays: 7 | 30 | 90;
+        proposalCoverageTargetBps: number;
+        bookingConversionTargetBps: number;
+        firstProposalTargetMinutes: number;
+        overdueCaseLimit: number;
+        unreconciledLimit: number;
+        version: number;
+      }>(`
+        SELECT
+          period_days AS "periodDays",
+          proposal_coverage_target_bps AS "proposalCoverageTargetBps",
+          booking_conversion_target_bps AS "bookingConversionTargetBps",
+          first_proposal_target_minutes AS "firstProposalTargetMinutes",
+          overdue_case_limit AS "overdueCaseLimit",
+          unreconciled_limit AS "unreconciledLimit",
+          version
+        FROM operation_report_goals
+        WHERE period_days = $1
+        FOR UPDATE
+      `, [input.periodDays]);
+      const current = currentResult.rows[0];
+      if (!current) throw new NotFoundException("Metas operacionais não configuradas.");
+
+      const nextValues = {
+        proposalCoverageTargetBps: input.proposalCoverageTargetBps,
+        bookingConversionTargetBps: input.bookingConversionTargetBps,
+        firstProposalTargetMinutes: input.firstProposalTargetMinutes,
+        overdueCaseLimit: input.overdueCaseLimit,
+        unreconciledLimit: input.unreconciledLimit,
+      };
+      const previousValues = {
+        proposalCoverageTargetBps: current.proposalCoverageTargetBps,
+        bookingConversionTargetBps: current.bookingConversionTargetBps,
+        firstProposalTargetMinutes: current.firstProposalTargetMinutes,
+        overdueCaseLimit: current.overdueCaseLimit,
+        unreconciledLimit: current.unreconciledLimit,
+      };
+      if (JSON.stringify(previousValues) === JSON.stringify(nextValues)) {
+        throw new ConflictException("As metas informadas já estão vigentes.");
+      }
+
+      const updatedResult = await client.query<{
+        periodDays: 7 | 30 | 90;
+        proposalCoverageTargetBps: number;
+        bookingConversionTargetBps: number;
+        firstProposalTargetMinutes: number;
+        overdueCaseLimit: number;
+        unreconciledLimit: number;
+        version: number;
+        updatedAt: string;
+      }>(`
+        WITH updated AS (
+          UPDATE operation_report_goals
+          SET
+            proposal_coverage_target_bps = $2,
+            booking_conversion_target_bps = $3,
+            first_proposal_target_minutes = $4,
+            overdue_case_limit = $5,
+            unreconciled_limit = $6,
+            version = version + 1,
+            updated_by = $7,
+            updated_at = now()
+          WHERE period_days = $1
+          RETURNING *
+        )
+        SELECT
+          updated.period_days AS "periodDays",
+          updated.proposal_coverage_target_bps AS "proposalCoverageTargetBps",
+          updated.booking_conversion_target_bps AS "bookingConversionTargetBps",
+          updated.first_proposal_target_minutes AS "firstProposalTargetMinutes",
+          updated.overdue_case_limit AS "overdueCaseLimit",
+          updated.unreconciled_limit AS "unreconciledLimit",
+          updated.version,
+          updated.updated_at AS "updatedAt"
+        FROM updated
+      `, [
+        input.periodDays,
+        input.proposalCoverageTargetBps,
+        input.bookingConversionTargetBps,
+        input.firstProposalTargetMinutes,
+        input.overdueCaseLimit,
+        input.unreconciledLimit,
+        actor.id,
+      ]);
+      const updated = updatedResult.rows[0];
+      const eventId = randomUUID();
+      await client.query(`
+        INSERT INTO operation_report_goal_events (
+          id, period_days, actor_id, previous_values, next_values, note
+        ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+      `, [
+        eventId,
+        input.periodDays,
+        actor.id,
+        JSON.stringify(previousValues),
+        JSON.stringify(nextValues),
+        note,
+      ]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'operation_report_goals.updated', 'operation_report_goal', $3, $4::jsonb)",
+        [actor.id, actor.role, eventId, JSON.stringify({
+          periodDays: input.periodDays,
+          fromVersion: current.version,
+          toVersion: updated.version,
+        })],
+      );
+      return {
+        periodDays: updated.periodDays,
+        proposalCoverageTarget: updated.proposalCoverageTargetBps / 100,
+        bookingConversionTarget: updated.bookingConversionTargetBps / 100,
+        firstProposalTargetMinutes: updated.firstProposalTargetMinutes,
+        overdueCaseLimit: updated.overdueCaseLimit,
+        unreconciledLimit: updated.unreconciledLimit,
+        version: updated.version,
+        updatedAt: updated.updatedAt,
       };
     });
   }
@@ -846,7 +1153,8 @@ export class OperationsService {
                   'service_category.reordered',
                   'partner_support_case.triaged',
                   'partner_support_case.status_changed',
-                  'marketing_campaign.status_changed'
+                  'marketing_campaign.status_changed',
+                  'operation_report_goals.updated'
                 )
                 OR action LIKE 'finance.sandbox_%'
               )

@@ -5,6 +5,7 @@ import {
   ChangePartnerReferralStatusDto,
   ChangeSupportCaseStatusDto,
   ManageServiceCategoryDto,
+  UpdateOperationReportGoalsDto,
 } from "./operations.dto.js";
 import { OperationsService } from "./operations.service.js";
 
@@ -35,6 +36,20 @@ export class OperationsController {
     @Query("days") days: string | undefined,
   ) {
     return this.operations.reports(actorFromHeaders(role, id), days);
+  }
+
+  @Post("reports/goals")
+  async updateReportGoals(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() input: UpdateOperationReportGoalsDto,
+  ) {
+    return {
+      goals: await this.operations.updateReportGoals(
+        actorFromHeaders(role, id),
+        input,
+      ),
+    };
   }
 
   @Get("categories")

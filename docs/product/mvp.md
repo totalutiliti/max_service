@@ -17,6 +17,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - moderação manual de prestador;
 - atividade operacional real, pesquisável por área, referência, ação ou responsável;
 - relatório operacional agregado por período, com funil, categorias, crescimento, suporte, reconciliação e exportação CSV sem dados pessoais;
+- metas operacionais versionadas, comparação com o período anterior e monitor de desvios com limites ajustáveis e justificativa;
 - gestão operacional do catálogo compartilhado por cliente, parceiro e captura pública, sem apagar histórico ao desativar uma categoria;
 - campanhas e cupons persistentes, com criação e pausa pela Operação, limites de uso, reserva transacional no pedido e desconto congelado no aceite;
 - mensagens transacionais e notificações internas persistentes, contadores reais de não lidas e sincronização incremental automática;

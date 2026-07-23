@@ -5,7 +5,12 @@ import { calculateCampaignDiscount, isValidCouponCode, normalizeCouponCode } fro
 import { computeInternalSignature, verifyInternalSignature } from "../auth/internal-signature.js";
 import { computeSandboxSignature, verifySandboxSignature } from "../finance/finance-signature.js";
 import { maximumRequestAttachmentBytes, validateRequestAttachment } from "../marketplace/request-attachment-validation.js";
-import { normalizeReportDays, percentage } from "../operations/reporting.js";
+import {
+  normalizeReportDays,
+  percentage,
+  percentagePointChange,
+  relativeChange,
+} from "../operations/reporting.js";
 import {
   maximumPartnerSupportAttachmentBytes,
   validatePartnerSupportAttachment,
@@ -166,4 +171,7 @@ test("limita períodos e percentuais dos relatórios operacionais", () => {
   assert.equal(normalizeReportDays("texto"), 30);
   assert.equal(percentage(3, 8), 37.5);
   assert.equal(percentage(1, 0), 0);
+  assert.equal(percentagePointChange(42.5, 38), 4.5);
+  assert.equal(relativeChange(125, 100), 25);
+  assert.equal(relativeChange(0, 0), null);
 });

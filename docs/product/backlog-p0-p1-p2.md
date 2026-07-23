@@ -18,7 +18,7 @@
 - ampliar a central de suporte, que já possui SLA, atribuição entre múltiplos operadores e anexos privados, com escalonamento externo e fluxo formal de disputa;
 - segmentação consentida, monitoramento de abuso e relatórios avançados para as campanhas e cupons já materializados;
 - anúncios contextuais moderados;
-- alertas, metas comparativas e agendamento externo para os relatórios operacionais e a reconciliação já materializados;
+- agendamento e entrega externa consentida para os relatórios, cujos alertas e metas comparativas já estão materializados;
 - antifraude de indicação;
 - expansão controlada de categorias não reguladas;
 - integração com provedor de e-mail/SMS e PSP homologado em sandbox.

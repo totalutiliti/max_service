@@ -25,6 +25,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - A operação consulta a linha do tempo do chamado, registra notas internas, assume a análise e resolve com justificativa auditável.
 - A aba **Atividade** da Operação apresenta a trilha real e pesquisável de ações do marketplace, atendimentos, moderação, parceiros e financeiro sandbox, sem expor o payload bruto da auditoria.
 - A Visão geral da Operação consolida relatórios de 7, 30 ou 90 dias com funil, ritmo de aquisição, desempenho por categoria, campanhas, suporte e reconciliação; a exportação CSV contém somente agregados sem PII.
+- Cada período possui metas versionadas de cobertura, conversão, primeira proposta, SLA e reconciliação; o cockpit compara a janela anterior e abre alertas automáticos, enquanto alterações exigem justificativa auditável.
 - A área **Configurações** da Operação controla a ordem e a disponibilidade das categorias; cada mudança exige justificativa, preserva o histórico e gera evento append-only e auditoria.
 - A Operação cria, agenda, pausa e acompanha campanhas promocionais com validade, limite total e por cliente; o cliente valida e reserva o cupom no pedido.
 - O cupom é recalculado no aceite da proposta, e o financeiro sandbox preserva valor original, desconto, valor final e campanha em um snapshot conciliável.

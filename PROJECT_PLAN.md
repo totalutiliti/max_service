@@ -34,7 +34,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - Mensagens da central aceitam um anexo privado sintético PDF/JPEG/PNG de até 2 MB, guardado no object storage com metadados relacionais, hash de integridade, RLS e auditoria de cada acesso.
 - O catálogo piloto é persistente e único para cliente, parceiro e captura pública; a Operação pode ordenar, ativar ou desativar categorias com justificativa, RLS, evento append-only e proteção contra catálogo vazio.
 - Campanhas e cupons do P1 já são persistentes: a Operação controla janela, tipo de desconto, pedido mínimo e limites de uso; a reserva ocorre no pedido e o desconto é congelado no aceite.
-- Relatórios operacionais do P1 já consolidam coortes de 7, 30 e 90 dias, funil do marketplace, categorias, crescimento, suporte e saúde financeira em projeção exclusiva da Operação e exportação agregada.
+- Relatórios operacionais do P1 já consolidam coortes de 7, 30 e 90 dias, funil do marketplace, categorias, crescimento, suporte e saúde financeira em projeção exclusiva da Operação e exportação agregada; metas versionadas, comparação com a janela anterior e alertas de desvio já estão materializados.
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.
 - A verificação possui cofre S3 local para documentos sintéticos, versões append-only, validação de assinatura/MIME/tamanho, hash SHA-256, download privado e auditoria por ator.

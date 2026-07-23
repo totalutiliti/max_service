@@ -313,7 +313,7 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .report-header { padding: 1.25rem 1.35rem; border-bottom: 1px solid #e2e7e0; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .report-header h2 { margin: .28rem 0; font-size: 1.55rem; letter-spacing: -.04em; }
 .report-header p { margin: 0; color: var(--muted); font-size: .7rem; }
-.report-actions { display: flex; align-items: center; gap: .5rem; }
+.report-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }
 .period-switch { padding: .25rem; border: 1px solid #dce3d9; border-radius: 10px; background: #f3f6f1; display: flex; gap: .2rem; }
 .period-switch button { min-height: 32px; border: 0; border-radius: 7px; background: transparent; color: #69736b; padding: .35rem .55rem; font-size: .6rem; font-weight: 800; cursor: pointer; }
 .period-switch button.active { background: var(--ink); color: var(--lime); }
@@ -328,6 +328,27 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .report-scorecards article.healthy strong { color: #376d0f; }
 .report-scorecards article.attention { background: #fff7e8; }
 .report-scorecards article.attention strong { color: #956214; }
+.report-goal-strip { padding: .75rem 1.1rem; border-bottom: 1px solid #e2e7e0; background: #fbfcfa; display: grid; grid-template-columns: 1.25fr repeat(4,1fr); gap: .6rem; }
+.report-goal-strip > div { min-width: 0; padding: .65rem .75rem; border: 1px solid #e1e7de; border-radius: 10px; background: var(--white); display: grid; gap: .22rem; }
+.report-goal-strip small { color: #7c877d; font-size: .48rem; font-weight: 850; letter-spacing: .06em; }
+.report-goal-strip strong { overflow: hidden; color: #435045; font-size: .63rem; text-overflow: ellipsis; white-space: nowrap; }
+.report-alerts { padding: 1rem 1.1rem; border-bottom: 1px solid #e2e7e0; background: #fffaf0; }
+.report-alerts.clear { background: #f6fce9; }
+.report-alerts > header { margin-bottom: .7rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.report-alerts h3 { margin: .24rem 0 0; font-size: .95rem; letter-spacing: -.025em; }
+.report-alerts > header > span { color: #7a847c; font-size: .52rem; }
+.report-alerts > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .55rem; }
+.report-alerts article { min-width: 0; padding: .7rem .75rem; border: 1px solid #efd7a5; border-radius: 10px; background: #fff; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .6rem; }
+.report-alerts article > i { width: 28px; height: 28px; border-radius: 8px; background: #fff1cf; color: #9a6512; display: grid; place-items: center; font-style: normal; font-weight: 900; }
+.report-alerts article > div { min-width: 0; }
+.report-alerts article strong { font-size: .63rem; }
+.report-alerts article p { margin: .15rem 0 0; color: #748077; font-size: .54rem; line-height: 1.4; }
+.report-alerts article > span { color: #966213; font-size: .5rem; font-weight: 850; text-transform: uppercase; }
+.report-alerts article.critical { border-color: #efc4bd; background: #fff8f6; }
+.report-alerts article.critical > i { background: #fee2dc; color: #a33a2c; }
+.report-alerts article.critical > span { color: #a33a2c; }
+.report-alerts article.clear { grid-column: 1 / -1; border-color: #cfe9ae; background: #fff; }
+.report-alerts article.clear > i { background: #e7f8d1; color: #3d7610; }
 .report-grid { padding: 1rem 1.1rem; display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; background: #f5f7f3; }
 .report-funnel, .report-timeline { min-width: 0; min-height: 330px; padding: 1rem; border: 1px solid #e0e6de; border-radius: 14px; background: var(--white); }
 .report-funnel > header, .report-timeline > header, .report-categories > header { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; }
@@ -374,6 +395,16 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .report-footnote p { margin: 0; color: var(--muted); font-size: .58rem; line-height: 1.45; }
 .report-footnote strong { color: #465248; }
 .report-footnote > small { color: #7f8a81; font-size: .52rem; white-space: nowrap; }
+.report-goals-dialog { width: min(100%, 720px); }
+.report-goals-dialog > header { padding: 1.4rem 4rem 1.1rem 1.5rem; border-bottom: 1px solid #e3e8e1; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: .8rem; }
+.report-goals-dialog > header > span { width: 42px; height: 42px; border-radius: 12px; background: var(--ink); color: var(--lime); display: grid; place-items: center; font-size: 1.2rem; }
+.report-goals-dialog .dialog-kicker { padding: 0; }
+.report-goals-dialog h2 { margin: .25rem 0; font-size: 1.35rem; letter-spacing: -.04em; }
+.report-goals-dialog header p:last-child { margin: 0; color: var(--muted); font-size: .65rem; }
+.report-goals-dialog > form { padding: 1.2rem 1.5rem 0; }
+.report-goal-fields { display: grid; grid-template-columns: repeat(2,1fr); column-gap: .8rem; }
+.report-goal-fields .field:last-child { grid-column: 1 / -1; }
+.report-goals-dialog .dialog-footer { margin: 0 -1.5rem; }
 .operations-table { padding-bottom: .5rem; }
 .table-head, .table-row { display: grid; grid-template-columns: .8fr .8fr 1.5fr .7fr .75fr; align-items: center; gap: .75rem; padding: .7rem .5rem; }
 .table-head { color: var(--muted); font-size: .62rem; font-weight: 750; text-transform: uppercase; letter-spacing: .07em; border-bottom: 1px solid #e6ebe4; }
@@ -1063,6 +1094,7 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .plan-card, .account-profile { grid-column: 1; }
   .report-scorecards { grid-template-columns: repeat(2,1fr); }
   .report-scorecards article:nth-child(2) { border-right: 0; }
+  .report-goal-strip { grid-template-columns: repeat(3,1fr); }
   .report-grid { grid-template-columns: 1fr; }
   .campaign-list > article { grid-template-columns: 1fr 1fr 1.2fr auto; }
   .campaign-period { display: none; }
@@ -1134,6 +1166,8 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .operation-action-buttons .danger-action { grid-column: 1 / -1; }
   .report-header { align-items: stretch; flex-direction: column; }
   .report-actions { flex-wrap: wrap; }
+  .report-goal-strip { grid-template-columns: repeat(2,1fr); }
+  .report-alerts > div { grid-template-columns: 1fr; }
   .report-finance { grid-template-columns: 1fr; }
   .report-categories { overflow-x: auto; }
   .report-category-head, .report-categories > article { min-width: 670px; }
@@ -1256,6 +1290,12 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .report-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .period-switch { grid-column: 1 / -1; }
   .period-switch button { flex: 1; }
+  .report-goal-strip { grid-template-columns: 1fr; }
+  .report-alerts > header { flex-direction: column; }
+  .report-alerts article { grid-template-columns: auto 1fr; }
+  .report-alerts article > span { grid-column: 2; }
+  .report-goal-fields { grid-template-columns: 1fr; }
+  .report-goal-fields .field:last-child { grid-column: 1; }
   .report-funnel article { grid-template-columns: 1fr; gap: .3rem; }
   .report-funnel article > small { text-align: left; }
   .report-finance-values { grid-template-columns: 1fr; }

@@ -4,10 +4,10 @@ import type { PoolClient } from "pg";
 export interface NotificationInput {
   userId: string;
   actorId: string;
-  type: "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated";
+  type: "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated" | "referral_reviewed";
   title: string;
   body: string;
-  entityType: "proposal" | "booking" | "conversation" | "service_review" | "support_case";
+  entityType: "proposal" | "booking" | "conversation" | "service_review" | "support_case" | "partner_referral";
   entityId: string;
 }
 

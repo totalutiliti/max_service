@@ -33,6 +33,41 @@ const caseSelect = `
   LEFT JOIN users assignee ON assignee.id = sc.assigned_to
 `;
 
+const referralSelect = `
+  SELECT
+    referral.id,
+    referral.public_code AS "publicCode",
+    referral.professional_name AS "professionalName",
+    referral.email,
+    referral.status,
+    referral.source,
+    referral.consent_at AS "consentAt",
+    referral.privacy_notice_version AS "privacyNoticeVersion",
+    referral.created_at AS "createdAt",
+    referral.activated_at AS "activatedAt",
+    partner.display_name AS "partnerName",
+    partner.public_code AS "partnerCode",
+    category.name AS "categoryName",
+    category.icon AS "categoryIcon",
+    provider.public_code AS "providerCode",
+    reviewer.display_name AS "reviewedByName",
+    latest_event.note AS "latestReviewNote",
+    latest_event.created_at AS "latestReviewAt",
+    (SELECT count(*)::int FROM partner_referral_events event WHERE event.referral_id = referral.id) AS "eventCount"
+  FROM partner_referrals referral
+  JOIN users partner ON partner.id = referral.partner_id
+  JOIN service_categories category ON category.id = referral.service_category_id
+  LEFT JOIN users provider ON provider.id = referral.provider_id
+  LEFT JOIN LATERAL (
+    SELECT event.actor_id, event.note, event.created_at
+    FROM partner_referral_events event
+    WHERE event.referral_id = referral.id
+    ORDER BY event.created_at DESC, event.id DESC
+    LIMIT 1
+  ) latest_event ON true
+  LEFT JOIN users reviewer ON reviewer.id = latest_event.actor_id
+`;
+
 @Injectable()
 export class OperationsService {
   constructor(private readonly database: DatabaseService) {}
@@ -158,6 +193,124 @@ export class OperationsService {
         [actor.id, actor.role, caseId, JSON.stringify({ eventId })],
       );
       return event.rows[0];
+    });
+  }
+
+  async referrals(actor: Actor) {
+    this.ensureOperation(actor);
+    return this.database.withActor(actor, async (client) => {
+      const result = await client.query(`${referralSelect}
+        ORDER BY
+          CASE referral.status
+            WHEN 'invited' THEN 0
+            WHEN 'in_review' THEN 1
+            WHEN 'approved' THEN 2
+            WHEN 'rejected' THEN 3
+            ELSE 4
+          END,
+          referral.created_at DESC,
+          referral.id DESC
+      `);
+      return result.rows;
+    });
+  }
+
+  async referralDetail(actor: Actor, referralId: string) {
+    this.ensureOperation(actor);
+    return this.database.withActor(actor, async (client) => {
+      const record = await client.query(`${referralSelect} WHERE referral.id = $1`, [referralId]);
+      if (!record.rows[0]) throw new NotFoundException("Indicação não encontrada.");
+      const events = await client.query(`
+        SELECT
+          event.id,
+          event.event_type AS "eventType",
+          event.from_status AS "fromStatus",
+          event.to_status AS "toStatus",
+          event.note,
+          event.created_at AS "createdAt",
+          actor.display_name AS "actorName"
+        FROM partner_referral_events event
+        JOIN users actor ON actor.id = event.actor_id
+        WHERE event.referral_id = $1
+        ORDER BY event.created_at DESC, event.id DESC
+      `, [referralId]);
+      return { ...record.rows[0], events: events.rows };
+    });
+  }
+
+  async changeReferralStatus(
+    actor: Actor,
+    referralId: string,
+    status: "in_review" | "approved" | "rejected",
+    note: string,
+  ) {
+    this.ensureOperation(actor);
+    const normalizedNote = this.normalizeNote(note);
+    return this.database.withActor(actor, async (client) => {
+      const current = await client.query<{
+        id: string;
+        status: "invited" | "in_review" | "approved" | "active" | "rejected";
+        partnerId: string;
+        publicCode: string;
+        professionalName: string;
+      }>(`
+        SELECT
+          id,
+          status,
+          partner_id AS "partnerId",
+          public_code AS "publicCode",
+          professional_name AS "professionalName"
+        FROM partner_referrals
+        WHERE id = $1
+        FOR UPDATE
+      `, [referralId]);
+      if (!current.rows[0]) throw new NotFoundException("Indicação não encontrada.");
+
+      const referral = current.rows[0];
+      if (referral.status === status) throw new ConflictException("A indicação já está neste estado.");
+      if (referral.status === "active") throw new ConflictException("Profissionais ativos não passam por uma nova triagem.");
+      if (referral.status === "approved" || referral.status === "rejected") {
+        throw new ConflictException("Esta indicação já possui uma decisão final.");
+      }
+      if (status === "in_review" && referral.status !== "invited") {
+        throw new ConflictException("Somente indicações convidadas podem entrar em análise.");
+      }
+      if ((status === "approved" || status === "rejected") && referral.status !== "in_review") {
+        throw new ConflictException("Inicie a análise antes de registrar a decisão.");
+      }
+
+      const eventType = status === "in_review" ? "review_started" : status;
+      const eventId = randomUUID();
+      const updated = await client.query(`
+        UPDATE partner_referrals
+        SET status = $2
+        WHERE id = $1
+        RETURNING id, public_code AS "publicCode", status
+      `, [referralId, status]);
+      await client.query(`
+        INSERT INTO partner_referral_events (
+          id, referral_id, actor_id, event_type, from_status, to_status, note
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [eventId, referralId, actor.id, eventType, referral.status, status, normalizedNote]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_referral.status_changed', 'partner_referral', $3, $4::jsonb)",
+        [actor.id, actor.role, referralId, JSON.stringify({ from: referral.status, to: status, eventId })],
+      );
+
+      if (status === "approved" || status === "rejected") {
+        await createNotification(client, {
+          userId: referral.partnerId,
+          actorId: actor.id,
+          type: "referral_reviewed",
+          title: status === "approved"
+            ? `Indicação aprovada · ${referral.publicCode}`
+            : `Indicação não aprovada · ${referral.publicCode}`,
+          body: normalizedNote.slice(0, 500),
+          entityType: "partner_referral",
+          entityId: referralId,
+        });
+      }
+      return updated.rows[0];
     });
   }
 }

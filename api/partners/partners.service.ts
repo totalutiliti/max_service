@@ -45,7 +45,7 @@ export class PartnersService {
         SELECT
           count(*)::int AS "totalCount",
           count(*) FILTER (WHERE status = 'active')::int AS "activeCount",
-          count(*) FILTER (WHERE status IN ('invited', 'in_review'))::int AS "pendingCount",
+          count(*) FILTER (WHERE status IN ('invited', 'in_review', 'approved'))::int AS "pendingCount",
           CASE WHEN count(*) = 0 THEN 0 ELSE round(100.0 * count(*) FILTER (WHERE status = 'active') / count(*))::int END AS "activationRate"
         FROM partner_referrals
         WHERE partner_id = $1

@@ -18,6 +18,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | notas/eventos internos | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
 | notificações | somente próprias | somente próprias | somente próprias | somente próprias | auditado |
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
+| eventos de revisão da indicação | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
 | cursor de leitura da conversa | somente o próprio | somente o próprio | nenhum | nenhum no piloto | excepcional e auditado |
 | anexo da conversa | membro | membro | nenhum | nenhum no piloto | excepcional e auditado |
@@ -53,6 +54,8 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - parceiro não consulta nem registra convite na rede de outro parceiro;
 - contexto público sem link validado retorna zero indicações; consentimento ausente, código pausado, origem inválida e tentativa de gravar em outra rede são bloqueados;
 - cliente não enxerga dados de indicação e prestador vê somente seu vínculo convertido;
+- parceiro enxerga zero eventos internos e atualiza zero estados da triagem; somente a operação executa `invited → in_review → approved | rejected`;
+- decisão sem análise, justificativa curta, repetição de estado e nova transição após decisão final são bloqueadas;
 - prestador consulta somente a própria verificação e não altera decisões ou itens;
 - cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;
 - aprovação com item pendente e correção sem item marcado são bloqueadas;

@@ -29,7 +29,7 @@
 
 ### Crescimento e receita
 
-`partner_referral_links`, `partner_referrals`, `commercial_rules`, `payment_intents`, `payment_allocations`, `payment_transactions`, `financial_ledger_entries`; comissões, cashback e recebíveis são tipos de alocação/ledger. Publicidade permanece como evolução posterior.
+`partner_referral_links`, `partner_referrals`, `partner_referral_events`, `commercial_rules`, `payment_intents`, `payment_allocations`, `payment_transactions`, `financial_ledger_entries`; comissões, cashback e recebíveis são tipos de alocação/ledger. Publicidade permanece como evolução posterior.
 
 ### Operação
 
@@ -51,6 +51,8 @@
 - um parceiro possui um código ativo e enxerga somente indicações vinculadas à própria rede;
 - convite manual nasce como `invited`; ativação exige um prestador convertido e instante de ativação;
 - captura por link ou QR exige código ativo, consentimento datado e versão do aviso de privacidade; repetição do mesmo e-mail na rede não cria nova indicação;
+- a triagem segue `invited → in_review → approved | rejected`; aprovação significa aptidão para onboarding e não cria conta nem ativa automaticamente o profissional;
+- cada mudança da triagem exige justificativa e gera `partner_referral_events` append-only e `audit_events`; o parceiro consulta o status, mas os eventos internos são exclusivos da operação;
 - uma verificação só sai de `submitted` para `in_review`; a decisão final é `approved` ou `changes_requested`;
 - aprovação exige todos os itens aceitos; correção exige ao menos um item marcado; cada ação gera evento e auditoria;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;

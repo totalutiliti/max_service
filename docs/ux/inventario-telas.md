@@ -47,7 +47,7 @@
 
 32. Visão operacional
 33. Usuários/perfis
-34. Fila de verificação
+34. Filas de indicações e verificação
 35. Solicitações/bookings
 36. Ocorrências/disputas
 37. Catálogo/regiões

@@ -176,7 +176,7 @@ interface SupportCaseDetail extends SupportCase {
 
 interface UserNotification {
   id: string;
-  type: "system" | "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated";
+  type: "system" | "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated" | "referral_reviewed";
   title: string;
   body: string;
   entityType: string;
@@ -191,13 +191,38 @@ interface PartnerReferral {
   publicCode: string;
   professionalName: string;
   email: string;
-  status: "invited" | "in_review" | "active" | "rejected";
+  status: "invited" | "in_review" | "approved" | "active" | "rejected";
   source: "link" | "qr" | "manual";
   createdAt: string;
   activatedAt: string | null;
   categoryName: string;
   categoryIcon: string;
   providerCode: string | null;
+}
+
+interface OperationReferral extends PartnerReferral {
+  consentAt: string | null;
+  privacyNoticeVersion: string | null;
+  partnerName: string;
+  partnerCode: string;
+  reviewedByName: string | null;
+  latestReviewNote: string | null;
+  latestReviewAt: string | null;
+  eventCount: number;
+}
+
+interface OperationReferralEvent {
+  id: string;
+  eventType: "review_started" | "approved" | "rejected";
+  fromStatus: "invited" | "in_review";
+  toStatus: "in_review" | "approved" | "rejected";
+  note: string;
+  createdAt: string;
+  actorName: string;
+}
+
+interface OperationReferralDetail extends OperationReferral {
+  events: OperationReferralEvent[];
 }
 
 interface PartnerDashboardData {
@@ -637,6 +662,7 @@ const notificationIcon: Record<UserNotification["type"], string> = {
   review_received: "★",
   case_opened: "!",
   case_updated: "CS",
+  referral_reviewed: "RF",
 };
 
 function NotificationCenter({ role }: { role: Role }) {
@@ -1002,8 +1028,15 @@ function usePartnerDashboard(notify: (message: string) => void) {
 const referralStatusLabel: Record<PartnerReferral["status"], string> = {
   invited: "Convidado",
   in_review: "Em análise",
+  approved: "Aprovado p/ onboarding",
   active: "Ativo",
   rejected: "Não aprovado",
+};
+
+const referralStatusTone = (status: PartnerReferral["status"]) => {
+  if (status === "active" || status === "approved") return "success";
+  if (status === "rejected") return "neutral";
+  return "warning";
 };
 
 function PartnerView({ notify }: { notify: (message: string) => void }) {
@@ -1031,7 +1064,7 @@ function PartnerView({ notify }: { notify: (message: string) => void }) {
 
 function Affiliate({ referral }: { referral: PartnerReferral }) {
   const initials = referral.professionalName.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase();
-  return <div><span className="mini-avatar neutral">{initials}</span><p><strong>{referral.professionalName}</strong><small>{referral.categoryIcon} {referral.categoryName} · {referral.publicCode}</small></p><span className={`status-pill ${referral.status === "active" ? "success" : "warning"}`}>{referralStatusLabel[referral.status]}</span></div>;
+  return <div><span className="mini-avatar neutral">{initials}</span><p><strong>{referral.professionalName}</strong><small>{referral.categoryIcon} {referral.categoryName} · {referral.publicCode}</small></p><span className={`status-pill ${referralStatusTone(referral.status)}`}>{referralStatusLabel[referral.status]}</span></div>;
 }
 
 function ReferralInviteDialog({ onClose, onSaved, notify }: { onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
@@ -1069,26 +1102,31 @@ function ReferralInviteDialog({ onClose, onSaved, notify }: { onClose: () => voi
 function OperationsView({ notify }: { notify: (message: string) => void }) {
   const [cases, setCases] = useState<SupportCase[]>([]);
   const [verifications, setVerifications] = useState<ProviderVerification[]>([]);
+  const [referrals, setReferrals] = useState<OperationReferral[]>([]);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
   const [refreshedAt, setRefreshedAt] = useState(0);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedVerificationId, setSelectedVerificationId] = useState<string | null>(null);
+  const [selectedReferralId, setSelectedReferralId] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
       fetch("/api/v1/operation/cases", { cache: "no-store", signal: controller.signal }),
       fetch("/api/v1/operation/verifications", { cache: "no-store", signal: controller.signal }),
+      fetch("/api/v1/operation/referrals", { cache: "no-store", signal: controller.signal }),
     ])
-      .then(async ([casesResponse, verificationsResponse]) => {
+      .then(async ([casesResponse, verificationsResponse, referralsResponse]) => {
         const casesPayload = await casesResponse.json() as { cases?: SupportCase[]; error?: string; message?: string };
         const verificationsPayload = await verificationsResponse.json() as { verifications?: ProviderVerification[]; error?: string; message?: string };
+        const referralsPayload = await referralsResponse.json() as { referrals?: OperationReferral[]; error?: string; message?: string };
         if (!casesResponse.ok || !casesPayload.cases) throw new Error(casesPayload.error ?? casesPayload.message ?? "Não foi possível carregar as ocorrências.");
         if (!verificationsResponse.ok || !verificationsPayload.verifications) throw new Error(verificationsPayload.error ?? verificationsPayload.message ?? "Não foi possível carregar as verificações.");
-        return { cases: casesPayload.cases, verifications: verificationsPayload.verifications };
+        if (!referralsResponse.ok || !referralsPayload.referrals) throw new Error(referralsPayload.error ?? referralsPayload.message ?? "Não foi possível carregar as indicações.");
+        return { cases: casesPayload.cases, verifications: verificationsPayload.verifications, referrals: referralsPayload.referrals };
       })
-      .then((payload) => { setCases(payload.cases); setVerifications(payload.verifications); setRefreshedAt(Date.now()); })
+      .then((payload) => { setCases(payload.cases); setVerifications(payload.verifications); setReferrals(payload.referrals); setRefreshedAt(Date.now()); })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         notify(error instanceof Error ? error.message : "Não foi possível carregar a fila operacional.");
@@ -1101,7 +1139,7 @@ function OperationsView({ notify }: { notify: (message: string) => void }) {
   const highPriority = openCases.filter((item) => item.priority === "high").length;
   const profilesInReview = verifications.filter((item) => item.status === "submitted" || item.status === "in_review");
   const documentsRequiringAttention = verifications.reduce((total, item) => total + item.attentionDocumentCount, 0);
-  const approvedProfiles = verifications.filter((item) => item.status === "approved").length;
+  const referralsInReview = referrals.filter((item) => item.status === "invited" || item.status === "in_review");
   const waiting = (value: string) => {
     const minutes = Math.max(0, Math.floor((refreshedAt - new Date(value).getTime()) / 60_000));
     if (minutes < 1) return "agora";
@@ -1112,13 +1150,123 @@ function OperationsView({ notify }: { notify: (message: string) => void }) {
   return (
     <>
       <DashboardHeader role="operacao" eyebrow="Operação e moderação" title="O que precisa de atenção hoje?" />
-      <div className="metric-grid"><Metric label="Perfis na fila" value={loading ? "…" : String(profilesInReview.length)} detail="Enviados ou em análise" tone={profilesInReview.length > 0 ? "warning" : undefined} /><Metric label="Itens com atenção" value={loading ? "…" : String(documentsRequiringAttention)} detail="Pendentes ou para correção" /><Metric label="Ocorrências abertas" value={loading ? "…" : String(openCases.length)} detail={`${highPriority} em alta prioridade`} tone={highPriority > 0 ? "warning" : undefined} /><Metric label="Perfis aprovados" value={loading ? "…" : String(approvedProfiles)} detail="Na amostra demonstrativa" /></div>
+      <div className="metric-grid"><Metric label="Perfis na fila" value={loading ? "…" : String(profilesInReview.length)} detail="Enviados ou em análise" tone={profilesInReview.length > 0 ? "warning" : undefined} /><Metric label="Indicações na fila" value={loading ? "…" : String(referralsInReview.length)} detail="Convites aguardando decisão" tone={referralsInReview.length > 0 ? "warning" : undefined} /><Metric label="Itens com atenção" value={loading ? "…" : String(documentsRequiringAttention)} detail="Pendentes ou para correção" /><Metric label="Ocorrências abertas" value={loading ? "…" : String(openCases.length)} detail={`${highPriority} em alta prioridade`} tone={highPriority > 0 ? "warning" : undefined} /></div>
+      <section className="dashboard-section operations-table referral-review-table"><div className="dashboard-section-title"><div><small>AQUISIÇÃO DE PROFISSIONAIS</small><h2>Indicações de parceiros</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Referência</span><span>Profissional</span><span>Parceiro</span><span>Origem</span><span>Status</span></div>{loading && <div className="data-state">Carregando indicações...</div>}{!loading && referrals.length === 0 && <div className="data-state"><strong>Nenhuma indicação encontrada.</strong><span>Cadastros vindos dos links e QR Codes aparecerão nesta fila.</span></div>}{referrals.map((item) => <OperationReferralRow key={item.id} item={item} onOpen={() => setSelectedReferralId(item.id)} />)}</section>
       <section className="dashboard-section operations-table verification-table"><div className="dashboard-section-title"><div><small>MODERAÇÃO DE CADASTROS</small><h2>Verificação de profissionais</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Referência</span><span>Profissional</span><span>Documentos</span><span>Prioridade</span><span>Status</span></div>{loading && <div className="data-state">Carregando verificações...</div>}{!loading && verifications.length === 0 && <div className="data-state"><strong>Nenhuma verificação encontrada.</strong><span>Novos cadastros enviados aparecerão automaticamente nesta fila.</span></div>}{verifications.map((item) => <VerificationRow key={item.id} item={item} onOpen={() => setSelectedVerificationId(item.id)} />)}</section>
       <section className="dashboard-section operations-table"><div className="dashboard-section-title"><div><small>FILA PRIORITÁRIA</small><h2>Cancelamentos e ocorrências</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Tipo</span><span>Referência</span><span>Motivo</span><span>Espera</span><span>Status</span></div>{loading && <div className="data-state">Carregando ocorrências...</div>}{!loading && cases.length === 0 && <div className="data-state"><strong>Nenhuma ocorrência aberta.</strong><span>Cancelamentos registrados aparecerão automaticamente nesta fila.</span></div>}{cases.map((item) => <OperationRow key={item.id} item={item} wait={waiting(item.createdAt)} onOpen={() => setSelectedCaseId(item.id)} />)}</section>
       <div className="operations-note"><span>!</span><p><strong>Ações críticas exigem justificativa.</strong> Aprovações, rejeições, suspensões e mudanças de regra ficam registradas com antes/depois na trilha de auditoria.</p></div>
+      {selectedReferralId && <OperationReferralDialog referralId={selectedReferralId} onClose={() => setSelectedReferralId(null)} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
       {selectedVerificationId && <OperationVerificationDialog verificationId={selectedVerificationId} onClose={() => setSelectedVerificationId(null)} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
       {selectedCaseId && <OperationCaseDialog caseId={selectedCaseId} onClose={() => setSelectedCaseId(null)} onChanged={() => setRefresh((value) => value + 1)} notify={notify} />}
     </>
+  );
+}
+
+function OperationReferralRow({ item, onOpen }: { item: OperationReferral; onOpen: () => void }) {
+  const closed = item.status === "approved" || item.status === "active" || item.status === "rejected";
+  const sourceLabel = item.source === "qr" ? "QR Code" : item.source === "link" ? "Link público" : "Manual";
+  return (
+    <article className={`table-row ${closed ? "resolved" : ""}`}>
+      <span data-label="Referência"><strong>{item.publicCode}</strong></span>
+      <span data-label="Profissional">{item.professionalName}<small>{item.categoryIcon} {item.categoryName}</small></span>
+      <span data-label="Parceiro">{item.partnerName}<small>{item.partnerCode}</small></span>
+      <span data-label="Origem">{sourceLabel}</span>
+      <span data-label="Status"><button onClick={onOpen} className={`operation-open-button ${item.status === "invited" ? "urgent" : ""}`}><span>{referralStatusLabel[item.status]}</span><i>→</i></button></span>
+    </article>
+  );
+}
+
+function OperationReferralDialog({ referralId, onClose, onChanged, notify }: { referralId: string; onClose: () => void; onChanged: () => void; notify: (message: string) => void }) {
+  const [detail, setDetail] = useState<OperationReferralDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [note, setNote] = useState("");
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/operation/referrals?referralId=${encodeURIComponent(referralId)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { referral?: OperationReferralDetail; error?: string; message?: string };
+        if (!response.ok || !payload.referral) throw new Error(payload.error ?? payload.message ?? "Não foi possível abrir a indicação.");
+        return payload.referral;
+      })
+      .then(setDetail)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível abrir a indicação.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [referralId, notify, reload]);
+
+  const submit = async (status: "in_review" | "approved" | "rejected") => {
+    if (note.trim().length < 10) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/v1/operation/referrals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ referralId, status, note: note.trim() }),
+      });
+      const payload = await response.json() as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a indicação.");
+      setNote("");
+      setReload((value) => value + 1);
+      onChanged();
+      notify(status === "in_review" ? "Análise da indicação iniciada." : status === "approved" ? "Indicação aprovada para onboarding." : "Indicação rejeitada com justificativa.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a indicação.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const formatDate = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+  const sourceLabel = detail?.source === "qr" ? "QR Code" : detail?.source === "link" ? "Link público" : "Cadastro manual";
+  const eventTitle: Record<OperationReferralEvent["eventType"], string> = {
+    review_started: "Análise iniciada",
+    approved: "Aprovado para onboarding",
+    rejected: "Indicação não aprovada",
+  };
+  const canReview = detail?.status === "invited" || detail?.status === "in_review";
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog operation-case-dialog referral-review-dialog" role="dialog" aria-modal="true" aria-labelledby="referral-review-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Fechar indicação">×</button>
+        {loading && !detail && <div className="data-state"><strong>Carregando indicação...</strong></div>}
+        {!loading && !detail && <div className="data-state"><strong>Indicação indisponível.</strong><button className="secondary-action" onClick={onClose}>Fechar</button></div>}
+        {detail && <>
+          <header className="operation-case-header">
+            <span>RF</span>
+            <div><p className="dialog-kicker">{detail.publicCode} · {sourceLabel}</p><h2 id="referral-review-title">{detail.professionalName}</h2><p>{detail.email} · recebido em {formatDate(detail.createdAt)}</p></div>
+            <strong className={`status-pill ${referralStatusTone(detail.status)}`}>{referralStatusLabel[detail.status]}</strong>
+          </header>
+          <div className="operation-case-body">
+            <section className="operation-case-facts">
+              <article><small>PARCEIRO</small><strong>{detail.partnerName}</strong><span>{detail.partnerCode}</span></article>
+              <article><small>CATEGORIA</small><strong>{detail.categoryIcon} {detail.categoryName}</strong><span>Área principal informada</span></article>
+              <article><small>CONSENTIMENTO</small><strong>{detail.consentAt ? "Registrado" : "Cadastro manual"}</strong><span>{detail.consentAt ? `${formatDate(detail.consentAt)} · ${detail.privacyNoticeVersion}` : "Originado pelo parceiro"}</span></article>
+            </section>
+            {detail.latestReviewNote && (detail.status === "approved" || detail.status === "rejected") && <section className="operation-resolution"><span>{detail.status === "approved" ? "✓" : "!"}</span><div><small>DECISÃO REGISTRADA</small><strong>{detail.latestReviewNote}</strong><p>{detail.reviewedByName}{detail.latestReviewAt ? ` · ${formatDate(detail.latestReviewAt)}` : ""}</p></div></section>}
+            <section className="operation-timeline">
+              <small>TRILHA DE REVISÃO · {detail.events.length} EVENTO(S)</small>
+              {detail.events.length === 0 && <div className="data-state"><span>A indicação ainda aguarda a primeira análise.</span></div>}
+              {detail.events.map((event) => <article key={event.id}><i>{event.eventType === "review_started" ? "→" : event.eventType === "approved" ? "✓" : "!"}</i><div><header><strong>{eventTitle[event.eventType]}</strong><small>{formatDate(event.createdAt)}</small></header><p>{event.note}</p><span>{event.actorName}</span></div></article>)}
+            </section>
+            {canReview && <section className="operation-case-actions">
+              <div><small>JUSTIFICATIVA OBRIGATÓRIA</small><strong>Cada mudança fica vinculada ao operador e preservada no histórico.</strong></div>
+              <label><span>Nota da análise</span><textarea minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Registre a conferência realizada e o motivo da decisão." /><small>{note.trim().length}/1000</small></label>
+              <div className="operation-action-buttons">
+                {detail.status === "invited" && <button className="primary-action" disabled={submitting || note.trim().length < 10} onClick={() => submit("in_review")}>{submitting ? "Salvando..." : "Iniciar análise"}</button>}
+                {detail.status === "in_review" && <><button className="danger-action" disabled={submitting || note.trim().length < 10} onClick={() => submit("rejected")}>Não aprovar</button><button className="primary-action" disabled={submitting || note.trim().length < 10} onClick={() => submit("approved")}>{submitting ? "Salvando..." : "Aprovar para onboarding"}</button></>}
+              </div>
+            </section>}
+          </div>
+        </>}
+      </section>
+    </div>
   );
 }
 
@@ -1344,7 +1492,7 @@ function PartnerActivityView({ notify }: { notify: (message: string) => void }) 
   const referrals = data?.referrals.filter((referral) => !normalizedQuery || [referral.publicCode, referral.professionalName, referral.email, referral.categoryName, referralStatusLabel[referral.status]].some((value) => value.toLocaleLowerCase("pt-BR").includes(normalizedQuery))) ?? [];
   const date = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
 
-  return <><DashboardHeader role="parceiro" eyebrow="REDE DE PROFISSIONAIS" title="Acompanhe cada indicação com transparência."><button className="button button-small" onClick={refresh}>Atualizar rede</button></DashboardHeader><div className="activity-overview"><article><small>Afiliados ativos</small><strong>{loading ? "…" : data?.metrics.activeCount ?? 0}</strong><span>Vínculo confirmado</span></article><article><small>Taxa de ativação</small><strong>{loading ? "…" : `${data?.metrics.activationRate ?? 0}%`}</strong><span>Sem estimativa financeira</span></article><article><small>Em andamento</small><strong>{loading ? "…" : data?.metrics.pendingCount ?? 0}</strong><span>Convites e análises</span></article></div><section className="dashboard-section records-card"><div className="records-toolbar"><label><span>Buscar na rede</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, profissional, e-mail ou categoria" /></label><span className="records-counter">{referrals.length} indicação(ões)</span></div><div className="record-list">{loading && <div className="data-state">Carregando rede...</div>}{!loading && referrals.length === 0 && <div className="data-state"><strong>Nenhuma indicação encontrada.</strong><span>Ajuste a busca ou registre um novo profissional.</span></div>}{referrals.map((referral) => <button key={referral.id} onClick={() => notify(`${referral.publicCode}: origem ${referral.source} em ${date(referral.createdAt)}.`)}><span className="record-code">{referral.publicCode}</span><span><strong>{referral.professionalName} · {referral.categoryName}</strong><small>{referral.email} · registrado em {date(referral.createdAt)}</small></span><span className={`status-pill ${referral.status === "active" ? "success" : "warning"}`}>{referralStatusLabel[referral.status]}</span><i>→</i></button>)}</div></section></>;
+  return <><DashboardHeader role="parceiro" eyebrow="REDE DE PROFISSIONAIS" title="Acompanhe cada indicação com transparência."><button className="button button-small" onClick={refresh}>Atualizar rede</button></DashboardHeader><div className="activity-overview"><article><small>Afiliados ativos</small><strong>{loading ? "…" : data?.metrics.activeCount ?? 0}</strong><span>Vínculo confirmado</span></article><article><small>Taxa de ativação</small><strong>{loading ? "…" : `${data?.metrics.activationRate ?? 0}%`}</strong><span>Sem estimativa financeira</span></article><article><small>Em andamento</small><strong>{loading ? "…" : data?.metrics.pendingCount ?? 0}</strong><span>Convites, análises e onboarding</span></article></div><section className="dashboard-section records-card"><div className="records-toolbar"><label><span>Buscar na rede</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, profissional, e-mail ou categoria" /></label><span className="records-counter">{referrals.length} indicação(ões)</span></div><div className="record-list">{loading && <div className="data-state">Carregando rede...</div>}{!loading && referrals.length === 0 && <div className="data-state"><strong>Nenhuma indicação encontrada.</strong><span>Ajuste a busca ou registre um novo profissional.</span></div>}{referrals.map((referral) => <button key={referral.id} onClick={() => notify(`${referral.publicCode}: origem ${referral.source} em ${date(referral.createdAt)}.`)}><span className="record-code">{referral.publicCode}</span><span><strong>{referral.professionalName} · {referral.categoryName}</strong><small>{referral.email} · registrado em {date(referral.createdAt)}</small></span><span className={`status-pill ${referralStatusTone(referral.status)}`}>{referralStatusLabel[referral.status]}</span><i>→</i></button>)}</div></section></>;
 }
 
 function StaticActivityView({ role, notify }: { role: "operacao"; notify: (message: string) => void }) {

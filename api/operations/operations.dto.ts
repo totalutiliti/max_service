@@ -16,3 +16,13 @@ export class AddSupportCaseNoteDto {
   @MaxLength(1000)
   note!: string;
 }
+
+export class ChangePartnerReferralStatusDto {
+  @IsIn(["in_review", "approved", "rejected"])
+  status!: "in_review" | "approved" | "rejected";
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  note!: string;
+}

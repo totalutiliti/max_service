@@ -299,6 +299,11 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .verification-table .table-head, .verification-table .table-row { grid-template-columns: .8fr 1.15fr .85fr .7fr 1fr; }
 .verification-table .table-row > span:nth-child(2) { font-family: inherit; display: grid; gap: .12rem; }
 .verification-table .table-row > span:nth-child(2) small { color: var(--muted); font: .58rem var(--font-geist-mono), monospace; }
+.referral-review-table { margin-bottom: 1rem; }
+.referral-review-table .table-head, .referral-review-table .table-row { grid-template-columns: .7fr 1.2fr 1fr .7fr 1.15fr; }
+.referral-review-table .table-row > span:nth-child(2), .referral-review-table .table-row > span:nth-child(3) { font-family: inherit; display: grid; gap: .12rem; }
+.referral-review-table .table-row > span:nth-child(2) small, .referral-review-table .table-row > span:nth-child(3) small { color: var(--muted); font: .58rem var(--font-geist-mono), monospace; }
+.referral-review-dialog .operation-case-header > span { background: #eaffd4; }
 .operations-note { margin-top: 1rem; background: #fff5df; border: 1px solid #f0d69e; border-radius: 14px; padding: 1rem; display: flex; align-items: center; gap: .8rem; }
 .operations-note > span { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; background: #f1c45f; display: grid; place-items: center; font-weight: 900; }
 .operations-note p { margin: 0; color: #765d27; font-size: .75rem; line-height: 1.5; }
@@ -836,6 +841,7 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .table-head { display: none; }
   .table-row { grid-template-columns: 1fr 1fr; gap: .5rem; padding: .9rem 0; }
   .verification-table .table-row { grid-template-columns: 1fr 1fr; }
+  .referral-review-table .table-row { grid-template-columns: 1fr 1fr; }
   .table-row span { display: grid; gap: .15rem; }
   .table-row span::before { content: attr(data-label); color: var(--muted); font-family: var(--font-geist-sans), sans-serif; font-size: .58rem; text-transform: uppercase; }
   .table-row span:nth-child(3) { grid-column: 1 / -1; }

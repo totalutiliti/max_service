@@ -7,7 +7,7 @@
 - catálogo piloto e regiões;
 - solicitação, propostas, chat, agenda e estados;
 - cancelamentos, avaliações e notificações;
-- parceiro, atribuição, painel e captura pública por link/QR;
+- parceiro, atribuição, painel, captura pública por link/QR e triagem operacional;
 - moderação, documentos privados e administração;
 - PSP sandbox, regra 12/2/2 configurável e ledger;
 - testes de RLS, autorização, idempotência e E2E.

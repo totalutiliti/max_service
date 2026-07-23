@@ -41,6 +41,8 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - Sorocaba e seus bairros piloto já possuem catálogo regional persistente; a Operação controla ativações com justificativa, e RLS limita oportunidades à cobertura ativa do profissional.
 - O matching profissional já combina categoria principal, cobertura, verificação, disponibilidade e capacidade; preferências e limites são versionados, o ranking apresenta motivos objetivos e a Operação acompanha bloqueios agregados.
 - A inclusão de propostas é protegida no serviço, na policy de RLS e em gatilho transacional, evitando que chamadas diretas contornem elegibilidade ou capacidade.
+- A agenda profissional possui jornada semanal versionada, bloqueios pontuais, slots de 30 minutos e escolha obrigatória do horário no aceite; exclusion constraints e advisory locks impedem sobreposição mesmo sob concorrência.
+- Cliente e profissional enxergam somente os participantes do próprio booking; a projeção de agenda preserva o isolamento por RLS sem ocultar o compromisso contratado.
 - A verificação possui cofre S3 local para documentos sintéticos, versões append-only, validação de assinatura/MIME/tamanho, hash SHA-256, download privado e auditoria por ator.
 - A solicitação de serviço aceita até três imagens sintéticas privadas, com limite compatível com a borda local, hash, RLS, auditoria e visualização pelo profissional autorizado.
 - A conversa transacional aceita uma imagem sintética privada por mensagem, com legenda opcional, validação de conteúdo, hash, isolamento entre membros e auditoria de envio/download.

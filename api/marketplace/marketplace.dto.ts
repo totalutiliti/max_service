@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
+import { IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 
 export class CreateServiceRequestDto {
   @IsString()
@@ -67,4 +67,9 @@ export class UpdateProviderMatchingDto {
   @Min(1)
   @Max(20)
   activeJobLimit!: number;
+}
+
+export class AcceptProposalDto {
+  @IsISO8601({ strict: true })
+  scheduledFor!: string;
 }

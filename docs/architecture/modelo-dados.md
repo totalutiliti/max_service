@@ -25,7 +25,7 @@
 
 ### Marketplace
 
-`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `booking_cancellations`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`. `service_request_attachments` e `message_attachments` estão materializadas no piloto com metadados no PostgreSQL e bytes no object storage privado.
+`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `booking_cancellations`, `provider_schedule_settings`, `provider_weekly_availability`, `provider_schedule_blocks`, `provider_schedule_events`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`. `service_request_attachments` e `message_attachments` estão materializadas no piloto com metadados no PostgreSQL e bytes no object storage privado.
 
 ### Crescimento e receita
 
@@ -43,6 +43,11 @@
 - toda alteração do perfil de matching incrementa a versão e gera evento append-only e auditoria no mesmo fluxo transacional;
 - apenas o cliente proprietário aceita proposta;
 - um booking nasce de exatamente uma proposta aceita;
+- o aceite usa somente um slot futuro calculado pelo servidor a partir da jornada semanal, dos bookings ativos e dos bloqueios do prestador;
+- `scheduled_for` e `scheduled_until` formam um intervalo positivo e alinhado a 30 minutos, dentro de um único dia da jornada local;
+- bookings `scheduled`/`in_progress` do mesmo prestador não se sobrepõem; um bloqueio ativo também não se sobrepõe a outro bloqueio nem a booking ativo;
+- confirmação e bloqueio serializam pelo mesmo advisory lock do prestador, fechando a janela de corrida entre tabelas;
+- toda alteração da jornada ou de bloqueio incrementa a versão e gera `provider_schedule_events` append-only e auditoria;
 - o ciclo básico de booking é `scheduled → in_progress → completed`; apenas o prestador vinculado executa essas transições;
 - toda transição de booking gera histórico no mesmo commit;
 - um booking só pode ter um cancelamento, solicitado por cliente ou prestador vinculado enquanto estiver agendado ou em execução;

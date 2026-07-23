@@ -95,6 +95,60 @@ interface ProviderMatchingData {
   }>;
 }
 
+interface ProviderScheduleData {
+  settings: {
+    providerId: string;
+    timeZone: "America/Sao_Paulo";
+    version: number;
+    updatedAt: string;
+  };
+  weekly: Array<{
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    active: boolean;
+  }>;
+  blocks: Array<{
+    id: string;
+    startsAt: string;
+    endsAt: string;
+    reason: string;
+    status: "active" | "cancelled";
+    createdAt: string;
+  }>;
+  appointments: Array<{
+    id: string;
+    requestCode: string;
+    requestTitle: string;
+    customerName: string;
+    status: BookingStatus;
+    scheduledFor: string;
+    scheduledUntil: string;
+  }>;
+  history: Array<{
+    id: string;
+    eventType: "weekly_updated" | "block_created" | "block_cancelled";
+    scheduleVersion: number;
+    createdAt: string;
+  }>;
+  metrics: {
+    openDayCount: number;
+    activeBlockCount: number;
+    upcomingAppointmentCount: number;
+  };
+}
+
+interface ProposalSlotsData {
+  proposal: {
+    id: string;
+    providerId: string;
+    providerName: string;
+    estimatedMinutes: number;
+  };
+  timeZone: "America/Sao_Paulo";
+  slots: Array<{ startsAt: string; endsAt: string }>;
+}
+
 interface PersistedProposal {
   id: string;
   requestId: string;
@@ -157,6 +211,7 @@ interface PersistedBooking {
   id: string;
   status: BookingStatus;
   scheduledFor: string | null;
+  scheduledUntil: string | null;
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -2552,6 +2607,186 @@ const cancellationReasonLabel: Record<CancellationReason, string> = {
   other: "Outro motivo",
 };
 
+const scheduleDayLabel: Record<number, string> = {
+  1: "Segunda",
+  2: "Terça",
+  3: "Quarta",
+  4: "Quinta",
+  5: "Sexta",
+  6: "Sábado",
+  7: "Domingo",
+};
+
+function brazilScheduleInput(dayOffset: number, hour: number) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(Date.now() + dayOffset * 86_400_000));
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}T${String(hour).padStart(2, "0")}:00`;
+}
+
+function brazilScheduleIso(value: string) {
+  return new Date(`${value}:00-03:00`).toISOString();
+}
+
+function ProviderSchedulePanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<ProviderScheduleData | null>(null);
+  const [weekly, setWeekly] = useState<ProviderScheduleData["weekly"]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [blocking, setBlocking] = useState(false);
+  const [cancellingBlockId, setCancellingBlockId] = useState("");
+  const [blockStart, setBlockStart] = useState(() => brazilScheduleInput(1, 12));
+  const [blockEnd, setBlockEnd] = useState(() => brazilScheduleInput(1, 13));
+  const [blockReason, setBlockReason] = useState("Compromisso pessoal");
+  const [refresh, setRefresh] = useState(0);
+  const [loadedAt, setLoadedAt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/provider/schedule", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as ProviderScheduleData & { error?: string; message?: string };
+        if (!response.ok || !payload.settings) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar sua agenda.");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setData(payload);
+        setWeekly(payload.weekly);
+        setLoadedAt(Date.now());
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar sua agenda.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const updateDay = (dayOfWeek: number, patch: Partial<ProviderScheduleData["weekly"][number]>) => {
+    setWeekly((current) => current.map((day) => day.dayOfWeek === dayOfWeek ? { ...day, ...patch } : day));
+  };
+
+  const saveWeekly = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/provider/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "update_weekly", weekly }),
+      });
+      const payload = await response.json() as ProviderScheduleData & { error?: string; message?: string };
+      if (!response.ok || !payload.settings) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível salvar a jornada semanal.");
+      }
+      setData(payload);
+      setWeekly(payload.weekly);
+      notify(`Agenda semanal atualizada na versão ${payload.settings.version}.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível salvar a jornada semanal.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createBlock = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (blockReason.trim().length < 5 || !blockStart || !blockEnd) return;
+    setBlocking(true);
+    try {
+      const response = await fetch("/api/v1/provider/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create_block",
+          startsAt: brazilScheduleIso(blockStart),
+          endsAt: brazilScheduleIso(blockEnd),
+          reason: blockReason.trim(),
+        }),
+      });
+      const payload = await response.json() as { block?: { id: string }; error?: string; message?: string };
+      if (!response.ok || !payload.block) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível bloquear o período.");
+      }
+      notify("Período bloqueado. Novos clientes não verão esse horário.");
+      setRefresh((value) => value + 1);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível bloquear o período.");
+    } finally {
+      setBlocking(false);
+    }
+  };
+
+  const cancelBlock = async (blockId: string) => {
+    setCancellingBlockId(blockId);
+    try {
+      const response = await fetch("/api/v1/provider/schedule", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "cancel_block", blockId }),
+      });
+      const payload = await response.json() as { status?: string; error?: string; message?: string };
+      if (!response.ok || payload.status !== "cancelled") {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível liberar o período.");
+      }
+      notify("Período liberado novamente para agendamentos.");
+      setRefresh((value) => value + 1);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível liberar o período.");
+    } finally {
+      setCancellingBlockId("");
+    }
+  };
+
+  if (loading && !data) return <section className="dashboard-section provider-schedule-panel"><div className="data-state">Montando sua agenda operacional...</div></section>;
+  if (!data) return <section className="dashboard-section provider-schedule-panel"><div className="data-state"><strong>Agenda indisponível.</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Tentar novamente</button></div></section>;
+  const dirty = JSON.stringify(weekly) !== JSON.stringify(data.weekly);
+  const activeBlocks = data.blocks.filter((block) => block.status === "active" && new Date(block.endsAt).getTime() >= loadedAt);
+  const dateTime = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: data.settings.timeZone,
+  }).format(new Date(value));
+
+  return (
+    <section className="dashboard-section provider-schedule-panel">
+      <header>
+        <div><small>AGENDA OPERACIONAL · V{data.settings.version}</small><h2>Defina quando você pode ser contratado.</h2><p>Os horários exibidos ao cliente já descontam serviços confirmados e períodos bloqueados.</p></div>
+        <div className="schedule-summary"><span><strong>{data.metrics.openDayCount}</strong><small>dias ativos</small></span><span><strong>{data.metrics.upcomingAppointmentCount}</strong><small>agendados</small></span><span><strong>{data.metrics.activeBlockCount}</strong><small>bloqueios</small></span></div>
+      </header>
+      <div className="provider-schedule-grid">
+        <section className="weekly-schedule-editor">
+          <header><div><small>JORNADA SEMANAL</small><strong>Horário padrão de atendimento</strong></div><button className="primary-action" disabled={saving || !dirty} onClick={saveWeekly}>{saving ? "Salvando..." : dirty ? "Salvar jornada" : "Jornada atualizada"}</button></header>
+          <div>{weekly.map((day) => <article key={day.dayOfWeek} className={day.active ? "active" : "inactive"}><label><input type="checkbox" checked={day.active} onChange={(event) => updateDay(day.dayOfWeek, { active: event.target.checked })} /><span>{scheduleDayLabel[day.dayOfWeek]}</span></label><div><input aria-label={`Início de ${scheduleDayLabel[day.dayOfWeek]}`} type="time" step="1800" value={day.startTime} disabled={!day.active} onChange={(event) => updateDay(day.dayOfWeek, { startTime: event.target.value })} /><i>até</i><input aria-label={`Fim de ${scheduleDayLabel[day.dayOfWeek]}`} type="time" step="1800" value={day.endTime} disabled={!day.active} onChange={(event) => updateDay(day.dayOfWeek, { endTime: event.target.value })} /></div><em>{day.active ? `${day.startTime}–${day.endTime}` : "Fechado"}</em></article>)}</div>
+        </section>
+        <section className="schedule-block-manager">
+          <header><small>BLOQUEAR PERÍODO</small><strong>Reserve compromissos sem cancelar sua jornada.</strong></header>
+          <form onSubmit={createBlock}>
+            <label><span>Início</span><input type="datetime-local" step="1800" value={blockStart} onChange={(event) => setBlockStart(event.target.value)} required /></label>
+            <label><span>Fim</span><input type="datetime-local" step="1800" value={blockEnd} onChange={(event) => setBlockEnd(event.target.value)} required /></label>
+            <label><span>Motivo interno</span><input minLength={5} maxLength={160} value={blockReason} onChange={(event) => setBlockReason(event.target.value)} required /></label>
+            <button className="secondary-action" disabled={blocking || blockReason.trim().length < 5}>{blocking ? "Bloqueando..." : "Bloquear horário"}</button>
+          </form>
+          <div className="schedule-block-list"><small>PRÓXIMOS BLOQUEIOS</small>{activeBlocks.length === 0 && <p>Nenhum período bloqueado.</p>}{activeBlocks.map((block) => <article key={block.id}><span>×</span><div><strong>{block.reason}</strong><small>{dateTime(block.startsAt)} → {dateTime(block.endsAt)}</small></div><button disabled={cancellingBlockId === block.id} onClick={() => cancelBlock(block.id)}>{cancellingBlockId === block.id ? "Liberando..." : "Liberar"}</button></article>)}</div>
+        </section>
+      </div>
+      <div className="schedule-appointments">
+        <header><small>PRÓXIMOS SERVIÇOS CONFIRMADOS</small><span>Conflitos são bloqueados no servidor</span></header>
+        {data.appointments.length === 0 && <p>Nenhum serviço futuro confirmado.</p>}
+        {data.appointments.map((appointment) => <article key={appointment.id}><span>{appointment.requestCode}</span><div><strong>{appointment.requestTitle}</strong><small>{appointment.customerName}</small></div><time>{dateTime(appointment.scheduledFor)} → {dateTime(appointment.scheduledUntil)}</time></article>)}
+      </div>
+      <footer><span>✓</span><p><strong>Proteção de agenda ativa:</strong> duas confirmações simultâneas não ocupam o mesmo período, e um bloqueio nunca pode encobrir um serviço já confirmado.</p></footer>
+    </section>
+  );
+}
+
 function BookingActivityView({ role, notify }: { role: "cliente" | "prestador"; notify: (message: string) => void }) {
   const [persistedRequests, setPersistedRequests] = useState<PersistedRequest[]>([]);
   const [bookings, setBookings] = useState<PersistedBooking[]>([]);
@@ -2596,6 +2831,7 @@ function BookingActivityView({ role, notify }: { role: "cliente" | "prestador"; 
   const activeCount = bookings.filter((booking) => booking.status === "scheduled" || booking.status === "in_progress").length;
   const completedCount = bookings.filter((booking) => booking.status === "completed").length;
   const completionRate = bookings.length > 0 ? Math.round((completedCount / bookings.length) * 100) : 0;
+  const nextBooking = bookings.find((booking) => booking.status === "scheduled" && booking.scheduledFor);
   const dateTime = (value: string | null) => value
     ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date(value))
     : "A combinar";
@@ -2603,7 +2839,8 @@ function BookingActivityView({ role, notify }: { role: "cliente" | "prestador"; 
   return (
     <>
       <DashboardHeader role={role} eyebrow={role === "cliente" ? "ACOMPANHAMENTO DE SERVIÇOS" : "MINHA AGENDA"} title={role === "cliente" ? "Do aceite à conclusão, tudo no mesmo lugar." : "Organize a execução e mantenha o cliente informado."}><button className="button button-small" onClick={() => setRefresh((value) => value + 1)}>Atualizar agenda</button></DashboardHeader>
-      <div className="activity-overview"><article><small>Serviços ativos</small><strong>{activeCount}</strong><span>Agenda persistente</span></article><article><small>Taxa de conclusão</small><strong>{completionRate}%</strong><span>{completedCount} concluído(s)</span></article><article><small>{role === "cliente" ? "Pedidos aguardando" : "Próximo serviço"}</small><strong>{role === "cliente" ? pendingRequests.length : bookings.find((booking) => booking.status === "scheduled") ? "09:00" : "—"}</strong><span>{role === "cliente" ? "Propostas em aberto" : "Horário local"}</span></article></div>
+      <div className="activity-overview"><article><small>Serviços ativos</small><strong>{activeCount}</strong><span>Agenda persistente</span></article><article><small>Taxa de conclusão</small><strong>{completionRate}%</strong><span>{completedCount} concluído(s)</span></article><article><small>{role === "cliente" ? "Pedidos aguardando" : "Próximo serviço"}</small><strong>{role === "cliente" ? pendingRequests.length : nextBooking?.scheduledFor ? new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date(nextBooking.scheduledFor)) : "—"}</strong><span>{role === "cliente" ? "Propostas em aberto" : "Horário local"}</span></article></div>
+      {role === "prestador" && <ProviderSchedulePanel notify={notify} />}
       <section className="dashboard-section records-card">
         <div className="records-toolbar"><label><span>Buscar</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, serviço ou pessoa" /></label><span className="records-counter">{filteredBookings.length + filteredRequests.length} registro(s)</span></div>
         <div className="record-list">
@@ -2830,6 +3067,10 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
   const [proposals, setProposals] = useState<PersistedProposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState("");
+  const [slotProposalId, setSlotProposalId] = useState("");
+  const [slotData, setSlotData] = useState<ProposalSlotsData | null>(null);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
 
   const fetchProposals = useCallback(async () => {
@@ -2852,17 +3093,53 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  const accept = async (proposal: PersistedProposal) => {
+  const chooseSchedule = async (proposal: PersistedProposal) => {
+    if (slotProposalId === proposal.id) {
+      setSlotProposalId("");
+      setSlotData(null);
+      setSelectedSlot("");
+      return;
+    }
+    setSlotProposalId(proposal.id);
+    setSlotData(null);
+    setSelectedSlot("");
+    setSlotsLoading(true);
+    try {
+      const response = await fetch(`/api/v1/customer/proposal-slots?proposalId=${encodeURIComponent(proposal.id)}`, { cache: "no-store" });
+      const payload = await response.json() as ProposalSlotsData & { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível consultar os horários.");
+      setSlotData(payload);
+      setSelectedSlot(payload.slots[0]?.startsAt ?? "");
+    } catch (error) {
+      setSlotProposalId("");
+      notify(error instanceof Error ? error.message : "Não foi possível consultar os horários.");
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
+  const accept = async (proposal: PersistedProposal, scheduledFor: string) => {
     setAccepting(proposal.id);
     try {
       const response = await fetch("/api/v1/customer/proposals", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ proposalId: proposal.id }),
+        body: JSON.stringify({ proposalId: proposal.id, scheduledFor }),
       });
       const payload = await response.json() as { error?: string; message?: string };
       if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível aceitar a proposta.");
-      notify(`Proposta de ${proposal.providerName} aceita. Serviço agendado.`);
+      const formatted = new Intl.DateTimeFormat("pt-BR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      }).format(new Date(scheduledFor));
+      notify(`Proposta de ${proposal.providerName} aceita para ${formatted}.`);
+      setSlotProposalId("");
+      setSlotData(null);
+      setSelectedSlot("");
       setProposals(await fetchProposals());
       onChanged();
     } catch (error) {
@@ -2874,6 +3151,35 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
 
   const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
   const hasAccepted = proposals.some((proposal) => proposal.status === "accepted") || request.status === "booked";
+  const groupedSlots = (slotData?.slots ?? []).reduce<Array<{ dateKey: string; label: string; slots: ProposalSlotsData["slots"] }>>((groups, slot) => {
+    const dateKey = new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "America/Sao_Paulo",
+    }).format(new Date(slot.startsAt));
+    const existing = groups.find((group) => group.dateKey === dateKey);
+    if (existing) {
+      existing.slots.push(slot);
+    } else {
+      groups.push({
+        dateKey,
+        label: new Intl.DateTimeFormat("pt-BR", {
+          weekday: "long",
+          day: "2-digit",
+          month: "short",
+          timeZone: "America/Sao_Paulo",
+        }).format(new Date(slot.startsAt)),
+        slots: [slot],
+      });
+    }
+    return groups;
+  }, []);
+  const slotTime = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(value));
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -2883,7 +3189,69 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
         <div className="comparison-list">
           {loading && <div className="data-state">Carregando propostas...</div>}
           {!loading && proposals.length === 0 && <div className="data-state"><strong>Aguardando propostas.</strong><span>Você receberá uma notificação quando um profissional responder.</span></div>}
-          {proposals.map((proposal) => <article key={proposal.id} className={`comparison-card ${proposal.status === "accepted" ? "accepted" : proposal.status === "declined" ? "declined" : ""}`}><div className="comparison-provider"><span className="mini-avatar">{proposal.providerName.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><div><strong>{proposal.providerName}</strong><small>{proposal.providerCode} · ★ 4,9</small></div><span className={`status-pill ${proposal.status === "accepted" ? "success" : proposal.status === "declined" ? "warning" : "success"}`}>{proposal.status === "accepted" ? "✓ Escolhida" : proposal.status === "declined" ? "Não escolhida" : "Nova proposta"}</span></div><p>{proposal.message}</p><div className="comparison-offer"><div><small>VALOR</small><strong>{currency.format(proposal.amountCents / 100)}</strong></div><div><small>PREVISÃO</small><strong>{proposal.estimatedMinutes < 120 ? `${proposal.estimatedMinutes} min` : `${Math.round(proposal.estimatedMinutes / 60)} h`}</strong></div><button className="primary-action" disabled={hasAccepted || accepting === proposal.id || proposal.status !== "sent"} onClick={() => accept(proposal)}>{accepting === proposal.id ? "Confirmando..." : proposal.status === "accepted" ? "Proposta aceita" : "Escolher profissional"}</button></div></article>)}
+          {proposals.map((proposal) => (
+            <article key={proposal.id} className={`comparison-card ${proposal.status === "accepted" ? "accepted" : proposal.status === "declined" ? "declined" : ""}`}>
+              <div className="comparison-provider">
+                <span className="mini-avatar">{proposal.providerName.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>
+                <div><strong>{proposal.providerName}</strong><small>{proposal.providerCode} · ★ 4,9</small></div>
+                <span className={`status-pill ${proposal.status === "accepted" ? "success" : proposal.status === "declined" ? "warning" : "success"}`}>{proposal.status === "accepted" ? "✓ Escolhida" : proposal.status === "declined" ? "Não escolhida" : "Nova proposta"}</span>
+              </div>
+              <p>{proposal.message}</p>
+              <div className="comparison-offer">
+                <div><small>VALOR</small><strong>{currency.format(proposal.amountCents / 100)}</strong></div>
+                <div><small>PREVISÃO</small><strong>{proposal.estimatedMinutes < 120 ? `${proposal.estimatedMinutes} min` : `${Math.round(proposal.estimatedMinutes / 60)} h`}</strong></div>
+                <button
+                  className="primary-action"
+                  disabled={hasAccepted || accepting === proposal.id || proposal.status !== "sent"}
+                  onClick={() => void chooseSchedule(proposal)}
+                >
+                  {proposal.status === "accepted" ? "Proposta aceita" : slotProposalId === proposal.id ? "Ocultar horários" : "Ver horários"}
+                </button>
+              </div>
+              {slotProposalId === proposal.id && (
+                <section className="proposal-slot-picker" aria-label={`Horários de ${proposal.providerName}`}>
+                  <header>
+                    <div><small>ESCOLHA O MELHOR HORÁRIO</small><strong>Disponibilidade confirmada em tempo real</strong></div>
+                    <span>{proposal.estimatedMinutes} min</span>
+                  </header>
+                  {slotsLoading && <div className="data-state">Consultando a agenda...</div>}
+                  {!slotsLoading && slotData && groupedSlots.length === 0 && (
+                    <div className="data-state"><strong>Agenda preenchida nos próximos dias.</strong><span>Compare outra proposta ou tente novamente mais tarde.</span></div>
+                  )}
+                  {!slotsLoading && groupedSlots.length > 0 && (
+                    <div className="proposal-slot-days">
+                      {groupedSlots.slice(0, 7).map((group) => (
+                        <div className="proposal-slot-day" key={group.dateKey}>
+                          <strong>{group.label}</strong>
+                          <div className="proposal-slot-grid">
+                            {group.slots.map((slot) => (
+                              <button
+                                key={slot.startsAt}
+                                type="button"
+                                className={selectedSlot === slot.startsAt ? "selected" : ""}
+                                aria-pressed={selectedSlot === slot.startsAt}
+                                onClick={() => setSelectedSlot(slot.startsAt)}
+                              >
+                                {slotTime(slot.startsAt)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!slotsLoading && slotData && slotData.slots.length > 0 && (
+                    <footer className="proposal-slot-confirm">
+                      <span>O horário fica reservado ao confirmar.</span>
+                      <button className="primary-action" disabled={!selectedSlot || accepting === proposal.id} onClick={() => void accept(proposal, selectedSlot)}>
+                        {accepting === proposal.id ? "Confirmando..." : "Confirmar profissional e horário"}
+                      </button>
+                    </footer>
+                  )}
+                </section>
+              )}
+            </article>
+          ))}
         </div>
         <footer className="comparison-footer"><span>✓ Você só confirma depois de comparar.</span><button className="secondary-action" onClick={onClose}>Fechar</button></footer>
       </section>

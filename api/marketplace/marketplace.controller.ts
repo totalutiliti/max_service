@@ -2,7 +2,7 @@ import { Body, Controller, Get, Headers, Param, Post, Req, Res, StreamableFile, 
 import type { IncomingMessage } from "node:http";
 import { parseDemoActor } from "../auth/demo-actor.js";
 import { decodeFileName, readLimitedBody, setPrivateFileHeaders, type HeaderResponse } from "../storage/private-file-http.js";
-import { CreateProposalDto, CreateServiceRequestDto, UpdateProviderMatchingDto } from "./marketplace.dto.js";
+import { AcceptProposalDto, CreateProposalDto, CreateServiceRequestDto, UpdateProviderMatchingDto } from "./marketplace.dto.js";
 import { MarketplaceService } from "./marketplace.service.js";
 import { maximumRequestAttachmentBytes } from "./request-attachment-validation.js";
 
@@ -104,6 +104,15 @@ export class MarketplaceController {
     return { proposals: await this.marketplace.listProposals(actorFromHeaders(role, id), requestId) };
   }
 
+  @Get("proposals/:proposalId/slots")
+  async proposalSlots(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("proposalId") proposalId: string,
+  ) {
+    return this.marketplace.proposalSlots(actorFromHeaders(role, id), proposalId);
+  }
+
   @Post("service-requests/:requestId/proposals")
   async createProposal(
     @Headers("x-demo-role") role: string | undefined,
@@ -119,7 +128,8 @@ export class MarketplaceController {
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
     @Param("proposalId") proposalId: string,
+    @Body() input: AcceptProposalDto,
   ) {
-    return { booking: await this.marketplace.acceptProposal(actorFromHeaders(role, id), proposalId) };
+    return { booking: await this.marketplace.acceptProposal(actorFromHeaders(role, id), proposalId, input.scheduledFor) };
   }
 }

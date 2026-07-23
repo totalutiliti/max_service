@@ -9,7 +9,12 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const payload = await request.json() as { proposalId?: string };
+  const payload = await request.json() as { proposalId?: string; scheduledFor?: string };
   if (!payload.proposalId) return Response.json({ error: "proposalId é obrigatório." }, { status: 400 });
-  return proxyCustomerRequest(`/api/v1/proposals/${encodeURIComponent(payload.proposalId)}/accept`, request, {});
+  if (!payload.scheduledFor) return Response.json({ error: "scheduledFor é obrigatório." }, { status: 400 });
+  return proxyCustomerRequest(
+    `/api/v1/proposals/${encodeURIComponent(payload.proposalId)}/accept`,
+    request,
+    { scheduledFor: payload.scheduledFor },
+  );
 }

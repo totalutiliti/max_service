@@ -7,12 +7,13 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | Recurso | Cliente | Prestador | Parceiro | Operação | Admin |
 |---|---|---|---|---|---|
 | sessão demonstrativa | somente token próprio | somente token próprio | somente token próprio | somente token próprio | nenhum acesso direto |
-| perfil do cliente | próprio | nenhum | nenhum | caso autorizado | auditado |
+| perfil do cliente | próprio | somente participante de booking próprio, campos mínimos | nenhum | caso autorizado | auditado |
 | perfil do prestador | dados públicos; privado só quando necessário ao booking | próprio | afiliados, campos mínimos | moderação | auditado |
 | solicitação | própria | oportunidade elegível sem PII excessiva | nenhum | caso autorizado | auditado |
 | imagens da solicitação | somente próprias | oportunidade elegível; após aceite, somente contratado | nenhum | caso autorizado | auditado |
 | proposta | das próprias solicitações | própria | nenhum | suporte/disputa | auditado |
 | booking | próprio | próprio | afiliado sem chat/PII | suporte/disputa | auditado |
+| jornada e bloqueios da agenda | nenhum; slots somente por função restrita da própria proposta | somente próprios | nenhum | visão operacional | auditado |
 | cancelamento | solicita e consulta no booking próprio | solicita e consulta no booking próprio | nenhum | consulta operacional | auditado |
 | chamado operacional | consulta estado dos próprios | consulta estado dos próprios | nenhum | fila completa e tratamento | auditado |
 | notas/eventos internos | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
@@ -78,6 +79,9 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - prestador vê somente pedidos de sua categoria em cobertura ativa quando está aprovado e disponível; pausa, categoria incompatível ou ausência de cobertura retornam zero oportunidades;
 - tentativa direta de inserir proposta incompatível, sem aprovação ou acima da capacidade é rejeitada pelo gatilho, mesmo que a interface seja contornada;
 - prestador altera somente o próprio perfil de matching; eventos preservam as versões e são visíveis apenas ao titular e à Operação;
+- cliente recebe slots somente para proposta enviada ao próprio pedido; não lê jornada, bloqueios ou compromissos brutos do prestador;
+- booking ou bloqueio sobreposto é rejeitado no PostgreSQL; duas confirmações concorrentes não ocupam o mesmo intervalo;
+- prestador consulta e altera apenas a própria jornada, e enxerga dados mínimos do cliente somente quando ambos participam do mesmo booking;
 - cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;
 - aprovação com item pendente e correção sem item marcado são bloqueadas;
 - profissional não associa arquivo à verificação de outro; cliente e parceiro enxergam zero metadados;

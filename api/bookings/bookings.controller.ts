@@ -1,6 +1,12 @@
 import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
-import { CancelBookingDto, ReviewBookingDto, TransitionBookingDto } from "./bookings.dto.js";
+import {
+  CancelBookingDto,
+  CreateProviderScheduleBlockDto,
+  ReviewBookingDto,
+  TransitionBookingDto,
+  UpdateProviderWeeklyScheduleDto,
+} from "./bookings.dto.js";
 import { BookingsService } from "./bookings.service.js";
 
 function actorFromHeaders(role: string | undefined, id: string | undefined) {
@@ -14,6 +20,41 @@ function actorFromHeaders(role: string | undefined, id: string | undefined) {
 @Controller("api/v1")
 export class BookingsController {
   constructor(private readonly bookings: BookingsService) {}
+
+  @Get("provider/schedule")
+  async providerSchedule(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.bookings.providerSchedule(actorFromHeaders(role, id));
+  }
+
+  @Post("provider/schedule/weekly")
+  async updateProviderWeeklySchedule(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() input: UpdateProviderWeeklyScheduleDto,
+  ) {
+    return this.bookings.updateWeeklySchedule(actorFromHeaders(role, id), input);
+  }
+
+  @Post("provider/schedule/blocks")
+  async createProviderScheduleBlock(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() input: CreateProviderScheduleBlockDto,
+  ) {
+    return this.bookings.createScheduleBlock(actorFromHeaders(role, id), input);
+  }
+
+  @Post("provider/schedule/blocks/:blockId/cancel")
+  async cancelProviderScheduleBlock(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("blockId") blockId: string,
+  ) {
+    return this.bookings.cancelScheduleBlock(actorFromHeaders(role, id), blockId);
+  }
 
   @Get("bookings")
   async list(

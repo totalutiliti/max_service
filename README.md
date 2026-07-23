@@ -13,11 +13,12 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - API NestJS versionada e PostgreSQL 16 já sustentam categorias, solicitações, propostas e aceite.
 - Solicitações criadas pelo painel do cliente são persistidas e reaparecem após recarregar a aplicação.
 - O cliente pode anexar até três imagens sintéticas JPEG/PNG de 512 KB ao pedido; os profissionais elegíveis ou contratados visualizam pelo BFF autenticado, sem URL pública.
-- O profissional recebe oportunidades do banco, envia ou atualiza sua proposta e o cliente compara valores e prazos antes de aceitar.
-- O aceite cria um agendamento e uma conversa persistente, acessível somente pelo cliente e pelo profissional vinculados.
+- O profissional recebe oportunidades do banco, envia ou atualiza sua proposta e o cliente compara valores, prazos e horários realmente disponíveis antes de aceitar.
+- O profissional configura uma jornada semanal e bloqueios pontuais; a agenda desconta compromissos confirmados e impede no PostgreSQL duas reservas ou bloqueios sobrepostos.
+- O aceite exige um horário retornado pelo servidor e cria agendamento com início/fim e conversa persistente, acessíveis somente pelo cliente e pelo profissional vinculados.
 - Cliente e profissional trocam mensagens pelo painel; a lista, o histórico, a última mensagem e os contadores reais de não lidas sobrevivem a reinícios e são sincronizados automaticamente por cursor enquanto a tela está ativa.
 - Cliente e profissional podem enviar uma imagem sintética JPEG/PNG de até 512 KB por mensagem, com legenda opcional, hash de integridade, download privado, RLS e auditoria.
-- A área **Atividade** apresenta a agenda persistente, detalhes do atendimento e a linha do tempo do serviço.
+- A área **Atividade** apresenta a agenda persistente, jornada semanal, bloqueios, próximos compromissos, detalhes do atendimento e a linha do tempo do serviço.
 - O profissional inicia e conclui o atendimento por transições validadas; o cliente acompanha cada atualização sem poder alterar o estado.
 - Após a conclusão, cliente e profissional avaliam a experiência uma única vez; notas e comentários permanecem vinculados ao atendimento.
 - Cliente e profissional podem cancelar atendimentos agendados ou em execução, com motivo obrigatório, histórico e auditoria.

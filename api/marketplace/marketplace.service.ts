@@ -196,6 +196,45 @@ export class MarketplaceService {
     return this.database.withActor(actor, (client) => this.loadProviderMatchingView(client, actor));
   }
 
+  async proposalSlots(actor: Actor, proposalId: string) {
+    if (actor.role !== "customer") {
+      throw new ForbiddenException("Somente o cliente pode consultar horários de uma proposta.");
+    }
+    return this.database.withActor(actor, async (client) => {
+      const proposal = await client.query<{
+        id: string;
+        providerId: string;
+        providerName: string;
+        estimatedMinutes: number;
+      }>(`
+        SELECT
+          proposal.id,
+          proposal.provider_id AS "providerId",
+          provider.display_name AS "providerName",
+          proposal.estimated_minutes AS "estimatedMinutes"
+        FROM proposals proposal
+        JOIN service_requests request ON request.id = proposal.request_id
+        JOIN users provider ON provider.id = proposal.provider_id
+        WHERE proposal.id = $1
+          AND proposal.status = 'sent'
+          AND request.customer_id = $2
+          AND request.status = 'proposals_received'
+      `, [proposalId, actor.id]);
+      if (!proposal.rows[0]) throw new NotFoundException("Proposta disponível não encontrada.");
+      const slots = await client.query<{ startsAt: Date; endsAt: Date }>(`
+        SELECT
+          starts_at AS "startsAt",
+          ends_at AS "endsAt"
+        FROM proposal_available_slots($1, $2)
+      `, [actor.id, proposalId]);
+      return {
+        proposal: proposal.rows[0],
+        timeZone: "America/Sao_Paulo",
+        slots: slots.rows,
+      };
+    });
+  }
+
   async updateProviderMatching(actor: Actor, input: UpdateProviderMatchingDto) {
     if (actor.role !== "provider") {
       throw new ForbiddenException("Somente profissionais podem configurar oportunidades.");
@@ -622,67 +661,139 @@ export class MarketplaceService {
     };
   }
 
-  async acceptProposal(actor: Actor, proposalId: string) {
+  async acceptProposal(actor: Actor, proposalId: string, scheduledForInput: string) {
     if (actor.role !== "customer") throw new ForbiddenException("Somente o cliente pode aceitar uma proposta.");
-    return this.database.withActor(actor, async (client) => {
-      const accepted = await client.query<{ id: string; requestId: string; providerId: string }>(`
-        UPDATE proposals p
-        SET status = 'accepted', updated_at = now()
-        WHERE p.id = $1
-          AND p.status = 'sent'
-          AND EXISTS (
-            SELECT 1 FROM service_requests r
-            WHERE r.id = p.request_id
-              AND r.customer_id = $2
-              AND r.status = 'proposals_received'
-          )
-        RETURNING p.id, p.request_id AS "requestId", p.provider_id AS "providerId"
-      `, [proposalId, actor.id]);
-      if (!accepted.rows[0]) throw new NotFoundException("Proposta não encontrada.");
+    const scheduledFor = new Date(scheduledForInput);
+    if (
+      !Number.isFinite(scheduledFor.getTime())
+      || scheduledFor.getUTCSeconds() !== 0
+      || scheduledFor.getUTCMilliseconds() !== 0
+      || ![0, 30].includes(scheduledFor.getUTCMinutes())
+    ) {
+      throw new BadRequestException("Escolha um horário válido em intervalo de 30 minutos.");
+    }
 
-      await client.query("UPDATE proposals SET status = 'declined', updated_at = now() WHERE request_id = $1 AND id <> $2", [accepted.rows[0].requestId, proposalId]);
-      await client.query("UPDATE service_requests SET status = 'booked', updated_at = now() WHERE id = $1", [accepted.rows[0].requestId]);
-      await client.query("INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'booked', $2, 'Proposta aceita pelo cliente.')", [accepted.rows[0].requestId, actor.id]);
-      const bookingId = randomUUID();
-      const conversationId = randomUUID();
-      const booking = await client.query<{ scheduledFor: Date }>(`
-        INSERT INTO bookings (id, request_id, proposal_id, customer_id, provider_id, status, scheduled_for)
-        VALUES (
-          $1, $2, $3, $4, $5, 'scheduled',
-          (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day 9 hours')
-            AT TIME ZONE 'America/Sao_Paulo'
-        )
-        RETURNING scheduled_for AS "scheduledFor"
-      `, [bookingId, accepted.rows[0].requestId, proposalId, actor.id, accepted.rows[0].providerId]);
-      await client.query(
-        "INSERT INTO booking_status_history (booking_id, status, actor_id, note) VALUES ($1, 'scheduled', $2, 'Agendamento criado a partir da proposta aceita.')",
-        [bookingId, actor.id],
-      );
-      await client.query("INSERT INTO conversations (id, booking_id) VALUES ($1, $2)", [conversationId, bookingId]);
-      await client.query(
-        "INSERT INTO conversation_members (conversation_id, user_id, member_role) VALUES ($1, $2, 'customer'), ($1, $3, 'provider')",
-        [conversationId, actor.id, accepted.rows[0].providerId],
-      );
-      await client.query(
-        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'proposal.accepted', 'proposal', $3, $4::jsonb)",
-        [actor.id, actor.role, proposalId, JSON.stringify({ requestId: accepted.rows[0].requestId })],
-      );
-      const notificationContext = await client.query<{ publicCode: string; customerName: string }>(`
-        SELECT r.public_code AS "publicCode", customer.display_name AS "customerName"
-        FROM service_requests r
-        JOIN users customer ON customer.id = r.customer_id
-        WHERE r.id = $1
-      `, [accepted.rows[0].requestId]);
-      await createNotification(client, {
-        userId: accepted.rows[0].providerId,
-        actorId: actor.id,
-        type: "proposal_accepted",
-        title: `Proposta aceita · ${notificationContext.rows[0].publicCode}`,
-        body: `${notificationContext.rows[0].customerName} confirmou sua proposta. O serviço já está na agenda.`,
-        entityType: "proposal",
-        entityId: proposalId,
+    try {
+      return await this.database.withActor(actor, async (client) => {
+        const availableSlot = await client.query<{ startsAt: Date; endsAt: Date }>(`
+          SELECT
+            starts_at AS "startsAt",
+            ends_at AS "endsAt"
+          FROM proposal_available_slots($1, $2)
+          WHERE starts_at = $3
+        `, [actor.id, proposalId, scheduledFor]);
+        if (!availableSlot.rows[0]) {
+          throw new ConflictException("Esse horário não está mais disponível. Escolha outro período.");
+        }
+
+        const accepted = await client.query<{
+          id: string;
+          requestId: string;
+          providerId: string;
+          estimatedMinutes: number;
+        }>(`
+          UPDATE proposals p
+          SET status = 'accepted', updated_at = now()
+          WHERE p.id = $1
+            AND p.status = 'sent'
+            AND EXISTS (
+              SELECT 1 FROM service_requests r
+              WHERE r.id = p.request_id
+                AND r.customer_id = $2
+                AND r.status = 'proposals_received'
+            )
+          RETURNING
+            p.id,
+            p.request_id AS "requestId",
+            p.provider_id AS "providerId",
+            p.estimated_minutes AS "estimatedMinutes"
+        `, [proposalId, actor.id]);
+        if (!accepted.rows[0]) throw new NotFoundException("Proposta não encontrada.");
+
+        await client.query("UPDATE proposals SET status = 'declined', updated_at = now() WHERE request_id = $1 AND id <> $2", [accepted.rows[0].requestId, proposalId]);
+        await client.query("UPDATE service_requests SET status = 'booked', updated_at = now() WHERE id = $1", [accepted.rows[0].requestId]);
+        await client.query("INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'booked', $2, 'Proposta aceita e horário confirmado pelo cliente.')", [accepted.rows[0].requestId, actor.id]);
+        const bookingId = randomUUID();
+        const conversationId = randomUUID();
+        const booking = await client.query<{ scheduledFor: Date; scheduledUntil: Date }>(`
+          INSERT INTO bookings (
+            id,
+            request_id,
+            proposal_id,
+            customer_id,
+            provider_id,
+            status,
+            scheduled_for,
+            scheduled_until
+          )
+          VALUES ($1, $2, $3, $4, $5, 'scheduled', $6, $7)
+          RETURNING
+            scheduled_for AS "scheduledFor",
+            scheduled_until AS "scheduledUntil"
+        `, [
+          bookingId,
+          accepted.rows[0].requestId,
+          proposalId,
+          actor.id,
+          accepted.rows[0].providerId,
+          scheduledFor,
+          availableSlot.rows[0].endsAt,
+        ]);
+        await client.query(
+          "INSERT INTO booking_status_history (booking_id, status, actor_id, note) VALUES ($1, 'scheduled', $2, 'Horário escolhido pelo cliente a partir da agenda disponível.')",
+          [bookingId, actor.id],
+        );
+        await client.query("INSERT INTO conversations (id, booking_id) VALUES ($1, $2)", [conversationId, bookingId]);
+        await client.query(
+          "INSERT INTO conversation_members (conversation_id, user_id, member_role) VALUES ($1, $2, 'customer'), ($1, $3, 'provider')",
+          [conversationId, actor.id, accepted.rows[0].providerId],
+        );
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'proposal.accepted', 'proposal', $3, $4::jsonb)",
+          [actor.id, actor.role, proposalId, JSON.stringify({
+            requestId: accepted.rows[0].requestId,
+            scheduledFor,
+            scheduledUntil: availableSlot.rows[0].endsAt,
+          })],
+        );
+        const notificationContext = await client.query<{ publicCode: string; customerName: string }>(`
+          SELECT r.public_code AS "publicCode", customer.display_name AS "customerName"
+          FROM service_requests r
+          JOIN users customer ON customer.id = r.customer_id
+          WHERE r.id = $1
+        `, [accepted.rows[0].requestId]);
+        await createNotification(client, {
+          userId: accepted.rows[0].providerId,
+          actorId: actor.id,
+          type: "proposal_accepted",
+          title: `Proposta aceita · ${notificationContext.rows[0].publicCode}`,
+          body: `${notificationContext.rows[0].customerName} confirmou a proposta e escolheu o horário do serviço.`,
+          entityType: "proposal",
+          entityId: proposalId,
+        });
+        return {
+          proposalId,
+          requestId: accepted.rows[0].requestId,
+          bookingId,
+          conversationId,
+          scheduledFor: booking.rows[0].scheduledFor,
+          scheduledUntil: booking.rows[0].scheduledUntil,
+          status: "booked",
+        };
       });
-      return { proposalId, requestId: accepted.rows[0].requestId, bookingId, conversationId, scheduledFor: booking.rows[0].scheduledFor, status: "booked" };
-    });
+    } catch (error) {
+      if (
+        typeof error === "object"
+        && error !== null
+        && "code" in error
+        && (error.code === "23514" || error.code === "23P01")
+      ) {
+        const message = "message" in error && typeof error.message === "string"
+          ? error.message
+          : "Esse horário não está mais disponível.";
+        throw new ConflictException(message);
+      }
+      throw error;
+    }
   }
 }

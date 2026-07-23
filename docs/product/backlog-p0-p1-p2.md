@@ -5,7 +5,7 @@
 - autenticação e confirmação reais sobre as sessões revogáveis já materializadas;
 - aprovação jurídica das minutas, enquanto onboarding, aceites e consentimentos de cliente/prestador já estão materializados;
 - expansão do catálogo e das regiões já persistentes, após validação do piloto em Sorocaba; matching por categoria, cobertura, verificação, disponibilidade e capacidade já está materializado;
-- solicitação, propostas, chat, agenda e estados;
+- solicitação, propostas, chat, agenda e estados já materializados; a agenda inclui jornada semanal, bloqueios, slots reais, seleção no aceite e proteção transacional contra sobreposição;
 - cancelamentos, avaliações e notificações;
 - parceiro, atribuição, painel, captura pública por link/QR e triagem operacional;
 - moderação, documentos privados e administração;

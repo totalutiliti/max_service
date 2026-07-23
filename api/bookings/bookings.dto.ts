@@ -1,4 +1,59 @@
-import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  Matches,
+  ValidateNested,
+} from "class-validator";
+
+export class WeeklyAvailabilityDto {
+  @IsInt()
+  @Min(1)
+  @Max(7)
+  dayOfWeek!: number;
+
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  startTime!: string;
+
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  endTime!: string;
+
+  @IsBoolean()
+  active!: boolean;
+}
+
+export class UpdateProviderWeeklyScheduleDto {
+  @IsArray()
+  @ArrayMinSize(7)
+  @ArrayMaxSize(7)
+  @ValidateNested({ each: true })
+  @Type(() => WeeklyAvailabilityDto)
+  weekly!: WeeklyAvailabilityDto[];
+}
+
+export class CreateProviderScheduleBlockDto {
+  @IsISO8601({ strict: true })
+  startsAt!: string;
+
+  @IsISO8601({ strict: true })
+  endsAt!: string;
+
+  @IsString()
+  @MinLength(5)
+  @MaxLength(160)
+  reason!: string;
+}
 
 export class TransitionBookingDto {
   @IsIn(["in_progress", "completed"])

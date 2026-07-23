@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
+import type { CreateProviderScheduleBlockDto, UpdateProviderWeeklyScheduleDto } from "./bookings.dto.js";
 
 type BookingStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
 
@@ -16,6 +18,7 @@ const bookingSelect = `
     b.id,
     b.status,
     b.scheduled_for AS "scheduledFor",
+    b.scheduled_until AS "scheduledUntil",
     b.started_at AS "startedAt",
     b.completed_at AS "completedAt",
     b.created_at AS "createdAt",
@@ -75,6 +78,306 @@ export class BookingsService {
       `);
       return result.rows;
     });
+  }
+
+  async providerSchedule(actor: Actor) {
+    if (actor.role !== "provider") {
+      throw new ForbiddenException("Somente profissionais podem consultar a própria agenda.");
+    }
+    return this.database.withActor(
+      actor,
+      (client) => this.providerScheduleWithinTransaction(client, actor.id),
+    );
+  }
+
+  async updateWeeklySchedule(actor: Actor, input: UpdateProviderWeeklyScheduleDto) {
+    if (actor.role !== "provider") {
+      throw new ForbiddenException("Somente profissionais podem alterar a própria agenda.");
+    }
+    const days = new Set(input.weekly.map((day) => day.dayOfWeek));
+    if (days.size !== 7 || ![1, 2, 3, 4, 5, 6, 7].every((day) => days.has(day))) {
+      throw new BadRequestException("Informe os sete dias da semana uma única vez.");
+    }
+    if (!input.weekly.some((day) => day.active)) {
+      throw new BadRequestException("Mantenha ao menos um dia disponível.");
+    }
+    for (const day of input.weekly) {
+      const start = clockMinutes(day.startTime);
+      const end = clockMinutes(day.endTime);
+      if (start % 30 !== 0 || end % 30 !== 0 || end - start < 60) {
+        throw new BadRequestException("Dias ativos ou pausados devem usar intervalos de 30 minutos e ao menos uma hora.");
+      }
+    }
+
+    return this.database.withActor(actor, async (client) => {
+      const settings = await client.query<{ version: number }>(`
+        SELECT version
+        FROM provider_schedule_settings
+        WHERE provider_id = $1
+        FOR UPDATE
+      `, [actor.id]);
+      if (!settings.rows[0]) throw new NotFoundException("Agenda profissional não configurada.");
+      const current = await client.query<{
+        dayOfWeek: number;
+        startTime: string;
+        endTime: string;
+        active: boolean;
+      }>(`
+        SELECT
+          day_of_week AS "dayOfWeek",
+          to_char(start_time, 'HH24:MI') AS "startTime",
+          to_char(end_time, 'HH24:MI') AS "endTime",
+          active
+        FROM provider_weekly_availability
+        WHERE provider_id = $1
+        ORDER BY day_of_week
+      `, [actor.id]);
+      const normalized = [...input.weekly].sort((left, right) => left.dayOfWeek - right.dayOfWeek);
+      const changed = JSON.stringify(current.rows) !== JSON.stringify(normalized);
+      if (!changed) return this.providerScheduleWithinTransaction(client, actor.id);
+
+      for (const day of normalized) {
+        await client.query(`
+          INSERT INTO provider_weekly_availability (
+            provider_id, day_of_week, start_time, end_time, active
+          ) VALUES ($1, $2, $3::time, $4::time, $5)
+          ON CONFLICT (provider_id, day_of_week) DO UPDATE SET
+            start_time = EXCLUDED.start_time,
+            end_time = EXCLUDED.end_time,
+            active = EXCLUDED.active,
+            updated_at = now()
+        `, [actor.id, day.dayOfWeek, day.startTime, day.endTime, day.active]);
+      }
+      const version = settings.rows[0].version + 1;
+      const eventId = randomUUID();
+      await client.query(
+        "UPDATE provider_schedule_settings SET version = $2, updated_at = now() WHERE provider_id = $1",
+        [actor.id, version],
+      );
+      await client.query(`
+        INSERT INTO provider_schedule_events (
+          id, provider_id, actor_id, event_type, schedule_version, snapshot
+        ) VALUES ($1, $2, $2, 'weekly_updated', $3, $4::jsonb)
+      `, [eventId, actor.id, version, JSON.stringify({ weekly: normalized })]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_schedule.weekly_updated', 'provider_schedule', $3, $4::jsonb)",
+        [actor.id, actor.role, actor.id, JSON.stringify({ version, eventId, openDayCount: normalized.filter((day) => day.active).length })],
+      );
+      return this.providerScheduleWithinTransaction(client, actor.id);
+    });
+  }
+
+  async createScheduleBlock(actor: Actor, input: CreateProviderScheduleBlockDto) {
+    if (actor.role !== "provider") {
+      throw new ForbiddenException("Somente profissionais podem bloquear a própria agenda.");
+    }
+    const startsAt = new Date(input.startsAt);
+    const endsAt = new Date(input.endsAt);
+    const reason = input.reason.trim();
+    if (startsAt.getTime() < Date.now() + 30 * 60_000) {
+      throw new BadRequestException("O bloqueio deve começar com pelo menos 30 minutos de antecedência.");
+    }
+    if (endsAt <= startsAt || endsAt.getTime() - startsAt.getTime() > 14 * 86_400_000) {
+      throw new BadRequestException("O bloqueio deve terminar depois do início e durar no máximo 14 dias.");
+    }
+    if (startsAt.getTime() > Date.now() + 180 * 86_400_000) {
+      throw new BadRequestException("Crie bloqueios dentro dos próximos 180 dias.");
+    }
+
+    try {
+      return await this.database.withActor(actor, async (client) => {
+        const settings = await client.query<{ version: number }>(`
+          SELECT version
+          FROM provider_schedule_settings
+          WHERE provider_id = $1
+          FOR UPDATE
+        `, [actor.id]);
+        if (!settings.rows[0]) throw new NotFoundException("Agenda profissional não configurada.");
+        const blockId = randomUUID();
+        const block = await client.query(`
+          INSERT INTO provider_schedule_blocks (
+            id, provider_id, starts_at, ends_at, reason
+          ) VALUES ($1, $2, $3, $4, $5)
+          RETURNING
+            id,
+            starts_at AS "startsAt",
+            ends_at AS "endsAt",
+            reason,
+            status,
+            created_at AS "createdAt"
+        `, [blockId, actor.id, startsAt, endsAt, reason]);
+        const version = settings.rows[0].version + 1;
+        const eventId = randomUUID();
+        await client.query(
+          "UPDATE provider_schedule_settings SET version = $2, updated_at = now() WHERE provider_id = $1",
+          [actor.id, version],
+        );
+        await client.query(`
+          INSERT INTO provider_schedule_events (
+            id, provider_id, actor_id, event_type, schedule_version, snapshot
+          ) VALUES ($1, $2, $2, 'block_created', $3, $4::jsonb)
+        `, [eventId, actor.id, version, JSON.stringify({ blockId, startsAt, endsAt, reason })]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_schedule.block_created', 'provider_schedule_block', $3, $4::jsonb)",
+          [actor.id, actor.role, blockId, JSON.stringify({ version, eventId, startsAt, endsAt })],
+        );
+        return { block: block.rows[0], version };
+      });
+    } catch (error) {
+      throwScheduleConflict(error);
+    }
+  }
+
+  async cancelScheduleBlock(actor: Actor, blockId: string) {
+    if (actor.role !== "provider") {
+      throw new ForbiddenException("Somente profissionais podem liberar a própria agenda.");
+    }
+    return this.database.withActor(actor, async (client) => {
+      const settings = await client.query<{ version: number }>(`
+        SELECT version
+        FROM provider_schedule_settings
+        WHERE provider_id = $1
+        FOR UPDATE
+      `, [actor.id]);
+      if (!settings.rows[0]) throw new NotFoundException("Agenda profissional não configurada.");
+      const block = await client.query<{
+        id: string;
+        startsAt: Date;
+        endsAt: Date;
+      }>(`
+        UPDATE provider_schedule_blocks
+        SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+        WHERE id = $1
+          AND provider_id = $2
+          AND status = 'active'
+        RETURNING id, starts_at AS "startsAt", ends_at AS "endsAt"
+      `, [blockId, actor.id]);
+      if (!block.rows[0]) throw new NotFoundException("Bloqueio ativo não encontrado.");
+      const version = settings.rows[0].version + 1;
+      const eventId = randomUUID();
+      await client.query(
+        "UPDATE provider_schedule_settings SET version = $2, updated_at = now() WHERE provider_id = $1",
+        [actor.id, version],
+      );
+      await client.query(`
+        INSERT INTO provider_schedule_events (
+          id, provider_id, actor_id, event_type, schedule_version, snapshot
+        ) VALUES ($1, $2, $2, 'block_cancelled', $3, $4::jsonb)
+      `, [eventId, actor.id, version, JSON.stringify({ blockId, ...block.rows[0] })]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_schedule.block_cancelled', 'provider_schedule_block', $3, $4::jsonb)",
+        [actor.id, actor.role, blockId, JSON.stringify({ version, eventId })],
+      );
+      return { blockId, status: "cancelled", version };
+    });
+  }
+
+  private async providerScheduleWithinTransaction(client: PoolClient, providerId: string) {
+    const settings = await client.query<{
+      providerId: string;
+      timeZone: string;
+      version: number;
+      updatedAt: Date;
+    }>(`
+      SELECT
+        provider_id AS "providerId",
+        time_zone AS "timeZone",
+        version,
+        updated_at AS "updatedAt"
+      FROM provider_schedule_settings
+      WHERE provider_id = $1
+    `, [providerId]);
+    if (!settings.rows[0]) throw new NotFoundException("Agenda profissional não configurada.");
+    const weekly = await client.query<{
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+      active: boolean;
+    }>(`
+      SELECT
+        day_of_week AS "dayOfWeek",
+        to_char(start_time, 'HH24:MI') AS "startTime",
+        to_char(end_time, 'HH24:MI') AS "endTime",
+        active
+      FROM provider_weekly_availability
+      WHERE provider_id = $1
+      ORDER BY day_of_week
+    `, [providerId]);
+    const blocks = await client.query<{
+      id: string;
+      startsAt: Date;
+      endsAt: Date;
+      reason: string;
+      status: "active" | "cancelled";
+      createdAt: Date;
+    }>(`
+      SELECT
+        id,
+        starts_at AS "startsAt",
+        ends_at AS "endsAt",
+        reason,
+        status,
+        created_at AS "createdAt"
+      FROM provider_schedule_blocks
+      WHERE provider_id = $1
+        AND ends_at >= now() - interval '7 days'
+      ORDER BY starts_at, id
+      LIMIT 40
+    `, [providerId]);
+    const appointments = await client.query<{
+      id: string;
+      requestCode: string;
+      requestTitle: string;
+      customerName: string;
+      status: BookingStatus;
+      scheduledFor: Date;
+      scheduledUntil: Date;
+    }>(`
+      SELECT
+        booking.id,
+        request.public_code AS "requestCode",
+        request.title AS "requestTitle",
+        customer.display_name AS "customerName",
+        booking.status,
+        booking.scheduled_for AS "scheduledFor",
+        booking.scheduled_until AS "scheduledUntil"
+      FROM bookings booking
+      JOIN service_requests request ON request.id = booking.request_id
+      JOIN users customer ON customer.id = booking.customer_id
+      WHERE booking.provider_id = $1
+        AND booking.status IN ('scheduled', 'in_progress')
+        AND booking.scheduled_until >= now()
+      ORDER BY booking.scheduled_for, booking.id
+      LIMIT 40
+    `, [providerId]);
+    const history = await client.query<{
+      id: string;
+      eventType: "weekly_updated" | "block_created" | "block_cancelled";
+      scheduleVersion: number;
+      createdAt: Date;
+    }>(`
+      SELECT
+        id,
+        event_type AS "eventType",
+        schedule_version AS "scheduleVersion",
+        created_at AS "createdAt"
+      FROM provider_schedule_events
+      WHERE provider_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 10
+    `, [providerId]);
+    return {
+      settings: settings.rows[0],
+      weekly: weekly.rows,
+      blocks: blocks.rows,
+      appointments: appointments.rows,
+      history: history.rows,
+      metrics: {
+        openDayCount: weekly.rows.filter((day) => day.active).length,
+        activeBlockCount: blocks.rows.filter((block) => block.status === "active" && block.endsAt.getTime() >= Date.now()).length,
+        upcomingAppointmentCount: appointments.rows.length,
+      },
+    };
   }
 
   async detail(actor: Actor, bookingId: string) {
@@ -310,4 +613,24 @@ export class BookingsService {
       return { cancellation: cancellation.rows[0], case: supportCase.rows[0] };
     });
   }
+}
+
+function clockMinutes(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function throwScheduleConflict(error: unknown): never {
+  if (
+    typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error.code === "23514" || error.code === "23P01")
+  ) {
+    const message = "message" in error && typeof error.message === "string"
+      ? error.message
+      : "Esse período não está disponível na agenda.";
+    throw new ConflictException(message);
+  }
+  throw error;
 }

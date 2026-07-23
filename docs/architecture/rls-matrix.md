@@ -19,6 +19,8 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | notificações | somente próprias | somente próprias | somente próprias | somente próprias | auditado |
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | eventos de revisão da indicação | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
+| categorias de serviço | ativas para novos pedidos; histórico referenciado | ativas e histórico referenciado | ativas para indicar; histórico da rede | leitura completa e alteração justificada | auditado |
+| eventos do catálogo | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
 | cursor de leitura da conversa | somente o próprio | somente o próprio | nenhum | nenhum no piloto | excepcional e auditado |
 | anexo da conversa | membro | membro | nenhum | nenhum no piloto | excepcional e auditado |
@@ -55,6 +57,9 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - contexto público sem link validado retorna zero indicações; consentimento ausente, código pausado, origem inválida e tentativa de gravar em outra rede são bloqueados;
 - cliente não enxerga dados de indicação e prestador vê somente seu vínculo convertido;
 - parceiro enxerga zero eventos internos e atualiza zero estados da triagem; somente a operação executa `invited → in_review → approved | rejected`;
+- cliente, prestador e parceiro alteram zero categorias e enxergam zero eventos do catálogo; somente a operação ordena ou muda disponibilidade com justificativa;
+- categoria desativada desaparece de novos pedidos, indicação manual e captura pública, sem ocultar pedidos ou indicações históricas;
+- desativação repetida, movimento além dos limites da lista e tentativa de desativar a última categoria ativa são bloqueados;
 - decisão sem análise, justificativa curta, repetição de estado e nova transição após decisão final são bloqueadas;
 - prestador consulta somente a própria verificação e não altera decisões ou itens;
 - cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;

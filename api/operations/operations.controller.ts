@@ -1,6 +1,11 @@
 import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
-import { AddSupportCaseNoteDto, ChangePartnerReferralStatusDto, ChangeSupportCaseStatusDto } from "./operations.dto.js";
+import {
+  AddSupportCaseNoteDto,
+  ChangePartnerReferralStatusDto,
+  ChangeSupportCaseStatusDto,
+  ManageServiceCategoryDto,
+} from "./operations.dto.js";
 import { OperationsService } from "./operations.service.js";
 
 function actorFromHeaders(role: string | undefined, id: string | undefined) {
@@ -21,6 +26,31 @@ export class OperationsController {
     @Headers("x-demo-actor-id") id: string | undefined,
   ) {
     return this.operations.activity(actorFromHeaders(role, id));
+  }
+
+  @Get("categories")
+  async categories(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.operations.categories(actorFromHeaders(role, id));
+  }
+
+  @Post("categories/:categoryId/actions")
+  async manageCategory(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("categoryId") categoryId: string,
+    @Body() input: ManageServiceCategoryDto,
+  ) {
+    return {
+      category: await this.operations.manageCategory(
+        actorFromHeaders(role, id),
+        categoryId,
+        input.action,
+        input.note,
+      ),
+    };
   }
 
   @Get("cases")

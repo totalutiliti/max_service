@@ -21,7 +21,7 @@
 
 ### Catálogo e verificação
 
-`service_categories`, `provider_categories` (alvo), `provider_document_checks`, `provider_document_files`, `provider_verifications` e `provider_verification_events`. Os bytes de `provider_document_files` ficam no object storage privado; o banco contém somente metadados e hash.
+`service_categories`, `service_category_events`, `provider_categories` (alvo), `provider_document_checks`, `provider_document_files`, `provider_verifications` e `provider_verification_events`. Os eventos do catálogo registram ativação, desativação e reordenação com justificativa. Os bytes de `provider_document_files` ficam no object storage privado; o banco contém somente metadados e hash.
 
 ### Marketplace
 
@@ -53,6 +53,8 @@
 - captura por link ou QR exige código ativo, consentimento datado e versão do aviso de privacidade; repetição do mesmo e-mail na rede não cria nova indicação;
 - a triagem segue `invited → in_review → approved | rejected`; aprovação significa aptidão para onboarding e não cria conta nem ativa automaticamente o profissional;
 - cada mudança da triagem exige justificativa e gera `partner_referral_events` append-only e `audit_events`; o parceiro consulta o status, mas os eventos internos são exclusivos da operação;
+- a ordem das categorias é positiva e única; somente a operação altera `active` ou `sort_order`, sempre com justificativa, `service_category_events` append-only e auditoria;
+- o catálogo mantém ao menos uma categoria ativa; uma categoria inativa é rejeitada em novos pedidos e indicações, mas continua visível nos relacionamentos históricos;
 - uma verificação só sai de `submitted` para `in_review`; a decisão final é `approved` ou `changes_requested`;
 - aprovação exige todos os itens aceitos; correção exige ao menos um item marcado; cada ação gera evento e auditoria;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;

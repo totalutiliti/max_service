@@ -50,7 +50,18 @@ export class PartnersService {
         FROM partner_referrals
         WHERE partner_id = $1
       `, [actor.id]);
-      return { link: link.rows[0], metrics: metrics.rows[0], referrals: referrals.rows };
+      const categories = await client.query(`
+        SELECT id, slug, name, icon
+        FROM service_categories
+        WHERE active = true
+        ORDER BY sort_order, name
+      `);
+      return {
+        link: link.rows[0],
+        metrics: metrics.rows[0],
+        referrals: referrals.rows,
+        categories: categories.rows,
+      };
     });
   }
 

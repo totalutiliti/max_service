@@ -26,3 +26,13 @@ export class ChangePartnerReferralStatusDto {
   @MaxLength(1000)
   note!: string;
 }
+
+export class ManageServiceCategoryDto {
+  @IsIn(["activate", "deactivate", "move_up", "move_down"])
+  action!: "activate" | "deactivate" | "move_up" | "move_down";
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  note!: string;
+}

@@ -4,7 +4,7 @@
 
 - autenticação, confirmação e sessões revogáveis;
 - onboarding cliente/prestador e termos;
-- catálogo piloto e regiões;
+- catálogo piloto persistente, gestão operacional auditável e regiões;
 - solicitação, propostas, chat, agenda e estados;
 - cancelamentos, avaliações e notificações;
 - parceiro, atribuição, painel, captura pública por link/QR e triagem operacional;

@@ -55,6 +55,8 @@
 39. Termos/notificações/campanhas
 40. Auditoria pesquisável por área e responsável
 
+No piloto, a tela 37 está materializada em **Configurações** da Operação com métricas, demanda por categoria, disponibilidade, reordenação e justificativa obrigatória. As telas 8, 10, 28 e 34 consomem o mesmo catálogo persistente e respeitam imediatamente as categorias ativas.
+
 ## Validação visual mínima
 
 360 x 800, 390 x 844, 768 x 1024 e 1440 x 900; além de zoom a 200%, teclado e preferência por movimento reduzido.

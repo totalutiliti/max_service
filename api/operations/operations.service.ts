@@ -90,6 +90,8 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "provider_document.downloaded": { category: "operation", title: "Documento privado acessado", detail: "Download operacional registrado." },
   "finance.sandbox_settlement": { category: "finance", title: "Liquidação sandbox processada", detail: "Ledger demonstrativo atualizado e conciliado." },
   "finance.sandbox_refund": { category: "finance", title: "Estorno sandbox processado", detail: "Lançamentos inversos registrados no ledger." },
+  "service_category.status_changed": { category: "operation", title: "Categoria atualizada", detail: "Disponibilidade do catálogo alterada com justificativa." },
+  "service_category.reordered": { category: "operation", title: "Catálogo reordenado", detail: "Prioridade de exibição de uma categoria alterada." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -106,6 +108,7 @@ const auditEntityPrefix: Record<string, string> = {
   provider_document_check: "DC",
   provider_document_file: "DF",
   payment_intent: "PG",
+  service_category: "CT",
 };
 
 @Injectable()
@@ -120,6 +123,154 @@ export class OperationsService {
     const normalized = note.trim();
     if (normalized.length < 10) throw new BadRequestException("Registre uma justificativa com pelo menos 10 caracteres.");
     return normalized;
+  }
+
+  async categories(actor: Actor) {
+    this.ensureOperation(actor);
+    return this.database.withActor(actor, async (client) => {
+      const categories = await client.query(`
+        SELECT
+          category.id,
+          category.slug,
+          category.name,
+          category.icon,
+          category.sort_order AS "sortOrder",
+          category.active,
+          category.updated_at AS "updatedAt",
+          (SELECT count(*)::int FROM service_requests request WHERE request.category_id = category.id) AS "requestCount",
+          (
+            SELECT count(*)::int
+            FROM service_requests request
+            WHERE request.category_id = category.id
+              AND request.status IN ('open', 'proposals_received', 'booked', 'in_progress')
+          ) AS "openRequestCount",
+          (SELECT count(*)::int FROM partner_referrals referral WHERE referral.service_category_id = category.id) AS "referralCount",
+          (SELECT count(*)::int FROM service_category_events event WHERE event.category_id = category.id) AS "eventCount",
+          latest_event.event_type AS "latestEventType",
+          latest_event.note AS "latestEventNote",
+          latest_event.created_at AS "latestEventAt",
+          latest_actor.display_name AS "latestActorName"
+        FROM service_categories category
+        LEFT JOIN LATERAL (
+          SELECT event.actor_id, event.event_type, event.note, event.created_at
+          FROM service_category_events event
+          WHERE event.category_id = category.id
+          ORDER BY event.created_at DESC, event.id DESC
+          LIMIT 1
+        ) latest_event ON true
+        LEFT JOIN users latest_actor ON latest_actor.id = latest_event.actor_id
+        ORDER BY category.sort_order, category.name
+      `);
+      const metrics = await client.query(`
+        SELECT
+          count(*)::int AS "totalCount",
+          count(*) FILTER (WHERE active)::int AS "activeCount",
+          count(*) FILTER (WHERE NOT active)::int AS "inactiveCount"
+        FROM service_categories
+      `);
+      return { metrics: metrics.rows[0], categories: categories.rows };
+    });
+  }
+
+  async manageCategory(
+    actor: Actor,
+    categoryId: string,
+    action: "activate" | "deactivate" | "move_up" | "move_down",
+    note: string,
+  ) {
+    this.ensureOperation(actor);
+    const normalizedNote = this.normalizeNote(note);
+    return this.database.withActor(actor, async (client) => {
+      const catalog = await client.query<{
+        id: string;
+        slug: string;
+        name: string;
+        active: boolean;
+        sortOrder: number;
+      }>(`
+        SELECT id, slug, name, active, sort_order AS "sortOrder"
+        FROM service_categories
+        ORDER BY sort_order, name
+        FOR UPDATE
+      `);
+      const currentIndex = catalog.rows.findIndex((category) => category.id === categoryId);
+      if (currentIndex < 0) throw new NotFoundException("Categoria não encontrada.");
+      const current = catalog.rows[currentIndex];
+
+      if (action === "activate" || action === "deactivate") {
+        const nextActive = action === "activate";
+        if (current.active === nextActive) {
+          throw new ConflictException(nextActive ? "A categoria já está ativa." : "A categoria já está desativada.");
+        }
+        if (!nextActive && catalog.rows.filter((category) => category.active).length <= 1) {
+          throw new ConflictException("O catálogo precisa manter ao menos uma categoria ativa.");
+        }
+
+        const updated = await client.query(`
+          UPDATE service_categories
+          SET active = $2, updated_at = now()
+          WHERE id = $1
+          RETURNING id, slug, name, icon, sort_order AS "sortOrder", active, updated_at AS "updatedAt"
+        `, [categoryId, nextActive]);
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO service_category_events (
+            id, category_id, actor_id, event_type, from_active, to_active, note
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+          eventId,
+          categoryId,
+          actor.id,
+          nextActive ? "activated" : "deactivated",
+          current.active,
+          nextActive,
+          normalizedNote,
+        ]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_category.status_changed', 'service_category', $3, $4::jsonb)",
+          [actor.id, actor.role, categoryId, JSON.stringify({
+            from: current.active ? "ativa" : "inativa",
+            to: nextActive ? "ativa" : "inativa",
+            eventId,
+          })],
+        );
+        return updated.rows[0];
+      }
+
+      const targetIndex = action === "move_up" ? currentIndex - 1 : currentIndex + 1;
+      const target = catalog.rows[targetIndex];
+      if (!target) {
+        throw new ConflictException(action === "move_up"
+          ? "Esta categoria já é a primeira do catálogo."
+          : "Esta categoria já é a última do catálogo.");
+      }
+
+      await client.query("SET CONSTRAINTS service_categories_sort_order_unique DEFERRED");
+      await client.query(
+        "UPDATE service_categories SET sort_order = $2, updated_at = now() WHERE id = $1",
+        [current.id, target.sortOrder],
+      );
+      await client.query(
+        "UPDATE service_categories SET sort_order = $2, updated_at = now() WHERE id = $1",
+        [target.id, current.sortOrder],
+      );
+      const eventId = randomUUID();
+      await client.query(`
+        INSERT INTO service_category_events (
+          id, category_id, actor_id, event_type, from_sort_order, to_sort_order, note
+        ) VALUES ($1, $2, $3, 'reordered', $4, $5, $6)
+      `, [eventId, categoryId, actor.id, current.sortOrder, target.sortOrder, normalizedNote]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_category.reordered', 'service_category', $3, $4::jsonb)",
+        [actor.id, actor.role, categoryId, JSON.stringify({ from: `#${current.sortOrder}`, to: `#${target.sortOrder}`, eventId })],
+      );
+      const updated = await client.query(`
+        SELECT id, slug, name, icon, sort_order AS "sortOrder", active, updated_at AS "updatedAt"
+        FROM service_categories
+        WHERE id = $1
+      `, [categoryId]);
+      return updated.rows[0];
+    });
   }
 
   async cases(actor: Actor) {
@@ -403,7 +554,9 @@ export class OperationsService {
                   'support_case.status_changed',
                   'partner_referral.status_changed',
                   'provider_verification.status_changed',
-                  'provider_verification.document_reviewed'
+                  'provider_verification.document_reviewed',
+                  'service_category.status_changed',
+                  'service_category.reordered'
                 )
                 OR action LIKE 'finance.sandbox_%'
               )

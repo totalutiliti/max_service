@@ -15,6 +15,13 @@ interface DemoSession {
   expiresAt: string;
 }
 
+interface ServiceCategory {
+  id: string;
+  slug: string;
+  name: string;
+  icon: string;
+}
+
 interface RequestAttachment {
   id: string;
   fileName: string;
@@ -250,10 +257,32 @@ interface OperationActivityData {
   events: OperationActivityEvent[];
 }
 
+type CatalogAction = "activate" | "deactivate" | "move_up" | "move_down";
+
+interface OperationCatalogCategory extends ServiceCategory {
+  sortOrder: number;
+  active: boolean;
+  updatedAt: string;
+  requestCount: number;
+  openRequestCount: number;
+  referralCount: number;
+  eventCount: number;
+  latestEventType: "activated" | "deactivated" | "reordered" | null;
+  latestEventNote: string | null;
+  latestEventAt: string | null;
+  latestActorName: string | null;
+}
+
+interface OperationCatalogData {
+  metrics: { totalCount: number; activeCount: number; inactiveCount: number };
+  categories: OperationCatalogCategory[];
+}
+
 interface PartnerDashboardData {
   link: { id: string; referralCode: string; slug: string; status: "active" | "paused"; createdAt: string };
   metrics: { totalCount: number; activeCount: number; pendingCount: number; activationRate: number };
   referrals: PartnerReferral[];
+  categories: ServiceCategory[];
 }
 
 type VerificationStatus = "submitted" | "in_review" | "changes_requested" | "approved";
@@ -390,20 +419,6 @@ const roleDetails: Record<Role, { label: string; short: string; name: string; em
     email: "operacao@demo.maxservice",
     description: "Moderar cadastros, atender ocorrências e acompanhar o negócio.",
   },
-};
-
-const categories = [
-  ["⚡", "Eletricista"], ["💧", "Encanador"], ["▦", "Pedreiro"],
-  ["◒", "Pintor"], ["✦", "Diarista"], ["⌁", "Montagem"],
-];
-
-const categorySlugs: Record<string, string> = {
-  Eletricista: "eletricista",
-  Encanador: "encanador",
-  Pedreiro: "pedreiro",
-  Pintor: "pintor",
-  Diarista: "diarista",
-  Montagem: "montagem",
 };
 
 const sectionLabels: Record<Role, Record<Section, string>> = {
@@ -749,21 +764,56 @@ function NotificationCenter({ role }: { role: Role }) {
   return <div className="notification-center"><button className={`notification-button ${unreadCount > 0 ? "has-unread" : ""}`} onClick={() => setOpen((value) => !value)} aria-label={`Notificações, ${unreadCount} não lida${unreadCount === 1 ? "" : "s"}`} aria-expanded={open}>{unreadCount > 0 ? unreadCount > 9 ? "9+" : unreadCount : "✓"}</button>{open && <section className="notifications-panel" role="dialog" aria-label="Central de notificações"><header><div><small>CENTRAL MAX</small><h2>Notificações</h2></div><button onClick={() => setOpen(false)} aria-label="Fechar notificações">×</button></header><div className="notifications-toolbar"><span>{unreadCount} não lida{unreadCount === 1 ? "" : "s"}</span>{unreadCount > 0 && <button onClick={() => updateRead("read-all")}>Marcar todas como lidas</button>}</div><div className="notifications-list">{loading && <div className="data-state">Carregando avisos...</div>}{!loading && notifications.length === 0 && <div className="data-state"><strong>Tudo tranquilo por aqui.</strong><span>Novos avisos aparecerão nesta central.</span></div>}{notifications.map((item) => <button key={item.id} className={item.readAt ? "read" : "unread"} onClick={() => !item.readAt && updateRead("read", item.id)}><i>{notificationIcon[item.type]}</i><span><strong>{item.title}</strong><p>{item.body}</p><small>{formatDate(item.createdAt)}{item.actorName ? ` · ${item.actorName}` : ""}</small></span>{!item.readAt && <em aria-label="Não lida" />}</button>)}</div></section>}</div>;
 }
 
+function useServiceCategories(notify: (message: string) => void) {
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/categories", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { categories?: ServiceCategory[]; error?: string; message?: string };
+        if (!response.ok || !payload.categories) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar o catálogo.");
+        }
+        return payload.categories;
+      })
+      .then(setCategories)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar o catálogo.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify]);
+  return { categories, loading };
+}
+
 function CustomerView({ notify }: { notify: (message: string) => void }) {
+  const { categories, loading: categoriesLoading } = useServiceCategories(notify);
   const [requestOpen, setRequestOpen] = useState(false);
+  const [initialCategorySlug, setInitialCategorySlug] = useState("");
+  const openRequest = (categorySlug?: string) => {
+    if (categories.length === 0) {
+      notify(categoriesLoading ? "O catálogo ainda está carregando." : "Nenhuma categoria está disponível agora.");
+      return;
+    }
+    setInitialCategorySlug(categorySlug ?? categories[0].slug);
+    setRequestOpen(true);
+  };
   return (
     <>
       <DashboardHeader role="cliente" eyebrow="Quarta-feira, 22 de julho" title="Olá, Marina. O que vamos resolver?">
         <button className="location-chip" onClick={() => notify("Localização atualizada: Sorocaba, SP.")}>⌖ Sorocaba, SP</button>
       </DashboardHeader>
       <section className="dashboard-hero">
-        <div><span className="small-label">NOVO PEDIDO</span><h2>Precisa de ajuda em casa?</h2><p>Conte o que precisa e receba propostas de profissionais disponíveis na sua região.</p><button className="button" onClick={() => setRequestOpen(true)}>Pedir um serviço →</button></div>
+        <div><span className="small-label">NOVO PEDIDO</span><h2>Precisa de ajuda em casa?</h2><p>Conte o que precisa e receba propostas de profissionais disponíveis na sua região.</p><button className="button" onClick={() => openRequest()}>Pedir um serviço →</button></div>
         <div className="dashboard-hero-mark" aria-hidden="true"><Image src="/max-service-mark.png" alt="" width={220} height={220} /></div>
       </section>
       <section className="dashboard-section dashboard-spaced">
-        <div className="dashboard-section-title"><div><small>ACESSO RÁPIDO</small><h2>Serviços mais procurados</h2></div><button onClick={() => setRequestOpen(true)}>Ver todos →</button></div>
+        <div className="dashboard-section-title"><div><small>ACESSO RÁPIDO</small><h2>Serviços mais procurados</h2></div><button onClick={() => openRequest()}>Ver todos →</button></div>
         <div className="quick-categories">
-          {categories.map(([icon, name]) => <button key={name} onClick={() => setRequestOpen(true)}><span>{icon}</span><strong>{name}</strong></button>)}
+          {categoriesLoading && <div className="data-state">Carregando catálogo...</div>}
+          {!categoriesLoading && categories.map((category) => <button key={category.id} onClick={() => openRequest(category.slug)}><span>{category.icon}</span><strong>{category.name}</strong></button>)}
         </div>
       </section>
       <div className="dashboard-columns">
@@ -778,18 +828,29 @@ function CustomerView({ notify }: { notify: (message: string) => void }) {
           <span className="help-icon">?</span><div><small>PRECISA DE AJUDA?</small><h2>A gente está por perto.</h2><p>Tire dúvidas sobre pedidos, propostas ou segurança.</p></div><button className="secondary-action" onClick={() => notify("Atendimento iniciado. Tempo estimado: 2 minutos.")}>Falar com o suporte</button>
         </section>
       </div>
-      {requestOpen && <RequestDialog onClose={() => setRequestOpen(false)} notify={notify} />}
+      {requestOpen && <RequestDialog categories={categories} initialCategorySlug={initialCategorySlug} onClose={() => setRequestOpen(false)} notify={notify} />}
     </>
   );
 }
 
-function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (message: string) => void }) {
+function RequestDialog({
+  categories,
+  initialCategorySlug,
+  onClose,
+  notify,
+}: {
+  categories: ServiceCategory[];
+  initialCategorySlug: string;
+  onClose: () => void;
+  notify: (message: string) => void;
+}) {
   const [step, setStep] = useState<RequestStep>(1);
-  const [category, setCategory] = useState("Eletricista");
+  const [categorySlug, setCategorySlug] = useState(initialCategorySlug || categories[0]?.slug || "");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const selectedCategory = categories.find((category) => category.slug === categorySlug) ?? categories[0];
 
   useEffect(() => { closeRef.current?.focus(); }, []);
   useEffect(() => {
@@ -823,7 +884,7 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          categorySlug: categorySlugs[category],
+          categorySlug,
           title: description.trim().slice(0, 100),
           description: description.trim(),
           neighborhood: "Jardim Europa",
@@ -863,11 +924,11 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
       <section className="request-dialog" role="dialog" aria-modal="true" aria-labelledby="request-title">
         <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
         {step < 4 && <><p className="dialog-kicker">NOVO PEDIDO · ETAPA {step} DE 3</p><div className="dialog-progress"><span style={{ width: `${step * 33.33}%` }} /></div></>}
-        {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map(([icon, name]) => <button key={name} onClick={() => setCategory(name)} className={category === name ? "selected" : ""} aria-pressed={category === name}><span>{icon}</span>{name}<i aria-hidden="true">✓</i></button>)}</div></div>}
+        {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map((category) => <button key={category.id} onClick={() => setCategorySlug(category.slug)} className={categorySlug === category.slug ? "selected" : ""} aria-pressed={categorySlug === category.slug}><span>{category.icon}</span>{category.name}<i aria-hidden="true">✓</i></button>)}</div></div>}
         {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><label className="upload-placeholder"><input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} /><span>＋</span><strong>Adicionar fotos sintéticas</strong><small>Opcional · até 3 JPEG/PNG de 512 KB</small></label>{photos.length > 0 && <ul className="request-photo-selection">{photos.map((photo) => <li key={`${photo.name}-${photo.size}`}><span>{photo.type === "image/png" ? "PNG" : "JPG"}</span><div><strong>{photo.name}</strong><small>{Math.ceil(photo.size / 1024)} KB · privado</small></div><button type="button" onClick={() => setPhotos((current) => current.filter((item) => item !== photo))} aria-label={`Remover ${photo.name}`}>×</button></li>)}</ul>}<p className="synthetic-file-note">Use apenas imagens sintéticas nesta demonstração. Os arquivos ficam privados e sem link público.</p></div>}
         {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Você poderá ajustar os detalhes com o profissional pelo chat.</p><label className="field"><span>Região</span><input value="Jardim Europa, Sorocaba - SP" readOnly /></label><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
-        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{categories.find((item) => item[1] === category)?.[0]}</span><div><small>Categoria</small><strong>{category}</strong><small>Jardim Europa · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
-        {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={step === 2 && description.trim().length < 10}>Continuar →</button></footer>}
+        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{selectedCategory?.icon}</span><div><small>Categoria</small><strong>{selectedCategory?.name}</strong><small>Jardim Europa · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving || !selectedCategory}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
+        {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={!selectedCategory || (step === 2 && description.trim().length < 10)}>Continuar →</button></footer>}
       </section>
     </div>
   );
@@ -1076,13 +1137,13 @@ function PartnerView({ notify }: { notify: (message: string) => void }) {
   };
   return (
     <>
-      <DashboardHeader role="parceiro" eyebrow="Área do parceiro" title="Sua rede, com origem e status claros."><button className="button button-small" onClick={() => setInviteOpen(true)}>Nova indicação</button></DashboardHeader>
+      <DashboardHeader role="parceiro" eyebrow="Área do parceiro" title="Sua rede, com origem e status claros."><button className="button button-small" onClick={() => setInviteOpen(true)} disabled={!data || data.categories.length === 0}>Nova indicação</button></DashboardHeader>
       <div className="metric-grid"><Metric label="Afiliados ativos" value={loading ? "…" : String(data?.metrics.activeCount ?? 0)} detail="Cadastro concluído" tone="lime" /><Metric label="Em andamento" value={loading ? "…" : String(data?.metrics.pendingCount ?? 0)} detail="Convites e análises" /><Metric label="Indicações totais" value={loading ? "…" : String(data?.metrics.totalCount ?? 0)} detail="Somente sua rede" /><Metric label="Taxa de ativação" value={loading ? "…" : `${data?.metrics.activationRate ?? 0}%`} detail="Ativos sobre indicações" /></div>
       <div className="dashboard-columns">
         <section className="dashboard-section referral-card"><div><small>SEU CÓDIGO DE INDICAÇÃO</small><h2>Convide profissionais da sua região.</h2><p>Compartilhe o link ou o QR Code. O profissional acessa uma página pública, registra o consentimento e entra na sua rede como convidado.</p><div className="fake-link"><span>{referralUrl}</span><button disabled={!data} onClick={copyLink}>Copiar</button></div></div>{data && <a className="referral-qr" href={`/convite?codigo=${encodeURIComponent(data.link.referralCode)}&origem=qr`} aria-label={`Abrir convite pelo QR Code ${data.link.referralCode}`}><Image src={`/api/v1/public/referrals/qr?code=${encodeURIComponent(data.link.referralCode)}`} alt={`QR Code de indicação ${data.link.referralCode}`} width={320} height={320} unoptimized /></a>}</section>
         <section className="dashboard-section"><div className="dashboard-section-title"><div><small>REDE RECENTE</small><h2>Últimas indicações</h2></div><button onClick={refresh}>Atualizar ↻</button></div><div className="affiliate-list">{loading && <div className="data-state">Carregando indicações...</div>}{!loading && data?.referrals.length === 0 && <div className="data-state"><strong>Sua rede começa aqui.</strong><span>Registre a primeira indicação para acompanhar o progresso.</span></div>}{data?.referrals.slice(0, 5).map((referral) => <Affiliate key={referral.id} referral={referral} />)}</div></section>
       </div>
-      {inviteOpen && <ReferralInviteDialog onClose={() => setInviteOpen(false)} onSaved={refresh} notify={notify} />}
+      {inviteOpen && <ReferralInviteDialog categories={data?.categories ?? []} onClose={() => setInviteOpen(false)} onSaved={refresh} notify={notify} />}
     </>
   );
 }
@@ -1092,10 +1153,20 @@ function Affiliate({ referral }: { referral: PartnerReferral }) {
   return <div><span className="mini-avatar neutral">{initials}</span><p><strong>{referral.professionalName}</strong><small>{referral.categoryIcon} {referral.categoryName} · {referral.publicCode}</small></p><span className={`status-pill ${referralStatusTone(referral.status)}`}>{referralStatusLabel[referral.status]}</span></div>;
 }
 
-function ReferralInviteDialog({ onClose, onSaved, notify }: { onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+function ReferralInviteDialog({
+  categories,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  categories: ServiceCategory[];
+  onClose: () => void;
+  onSaved: () => void;
+  notify: (message: string) => void;
+}) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [categorySlug, setCategorySlug] = useState("eletricista");
+  const [categorySlug, setCategorySlug] = useState(categories[0]?.slug ?? "");
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { closeRef.current?.focus(); }, []);
@@ -1121,7 +1192,7 @@ function ReferralInviteDialog({ onClose, onSaved, notify }: { onClose: () => voi
     }
   };
 
-  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog referral-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="referral-invite-title"><button ref={closeRef} className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>+</span><div><p className="dialog-kicker">NOVA INDICAÇÃO</p><h2 id="referral-invite-title">Registre um profissional.</h2><p>O cadastro entrará como convidado e ficará vinculado ao seu código.</p></div></header><form onSubmit={submit}><label className="field"><span>Nome do profissional</span><input minLength={3} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome completo" required /></label><label className="field"><span>E-mail</span><input type="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="profissional@exemplo.com" required /></label><label className="field"><span>Categoria principal</span><select value={categorySlug} onChange={(event) => setCategorySlug(event.target.value)}><option value="eletricista">Eletricista</option><option value="encanador">Encanador</option><option value="pedreiro">Pedreiro</option><option value="pintor">Pintor</option><option value="diarista">Diarista</option><option value="montagem">Montagem</option></select></label><div className="commercial-preview"><span>i</span><p><strong>Registro sem disparo automático</strong>A indicação será persistida, mas nenhum e-mail ou mensagem externa será enviado nesta demonstração.</p></div><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || name.trim().length < 3 || !email.includes("@")}>{saving ? "Registrando..." : "Registrar indicação →"}</button></footer></form></section></div>;
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog referral-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="referral-invite-title"><button ref={closeRef} className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>+</span><div><p className="dialog-kicker">NOVA INDICAÇÃO</p><h2 id="referral-invite-title">Registre um profissional.</h2><p>O cadastro entrará como convidado e ficará vinculado ao seu código.</p></div></header><form onSubmit={submit}><label className="field"><span>Nome do profissional</span><input minLength={3} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome completo" required /></label><label className="field"><span>E-mail</span><input type="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="profissional@exemplo.com" required /></label><label className="field"><span>Categoria principal</span><select value={categorySlug} onChange={(event) => setCategorySlug(event.target.value)} disabled={categories.length === 0} required>{categories.map((category) => <option key={category.id} value={category.slug}>{category.icon} {category.name}</option>)}</select></label><div className="commercial-preview"><span>i</span><p><strong>Registro sem disparo automático</strong>A indicação será persistida, mas nenhum e-mail ou mensagem externa será enviado nesta demonstração.</p></div><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || !categorySlug || name.trim().length < 3 || !email.includes("@")}>{saving ? "Registrando..." : "Registrar indicação →"}</button></footer></form></section></div>;
 }
 
 function OperationsView({ notify }: { notify: (message: string) => void }) {
@@ -2000,6 +2071,144 @@ function NonTransactionalMessages({ role, notify }: { role: "parceiro" | "operac
   return <><DashboardHeader role={role} eyebrow={role === "operacao" ? "CENTRAL DE ATENDIMENTOS" : "MENSAGENS DA REDE"} title="Comunicação com contexto e responsabilidade." /><section className="dashboard-section non-transactional-message"><span>◉</span><div><small>PRÓXIMO MÓDULO</small><h2>{role === "operacao" ? "Atendimentos e ocorrências serão vinculados aos casos." : "Conversas com afiliados serão liberadas na gestão da rede."}</h2><p>A conversa transacional já está ativa para clientes e profissionais. Este perfil receberá um canal próprio, com permissões e histórico específicos.</p><button className="secondary-action" onClick={() => notify("Módulo registrado no backlog da plataforma.")}>Ver próxima etapa</button></div></section></>;
 }
 
+const catalogActionCopy: Record<CatalogAction, { title: string; verb: string; detail: string }> = {
+  activate: { title: "Ativar categoria", verb: "Ativar", detail: "A categoria voltará a aparecer em novos pedidos e indicações." },
+  deactivate: { title: "Desativar categoria", verb: "Desativar", detail: "A categoria deixará de aceitar novos pedidos e indicações; o histórico será preservado." },
+  move_up: { title: "Subir no catálogo", verb: "Mover para cima", detail: "A categoria ganhará prioridade nas listas exibidas aos usuários." },
+  move_down: { title: "Descer no catálogo", verb: "Mover para baixo", detail: "A categoria perderá uma posição nas listas exibidas aos usuários." },
+};
+
+function CatalogManagementPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationCatalogData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [pending, setPending] = useState<{ category: OperationCatalogCategory; action: CatalogAction } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/categories", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationCatalogData & { error?: string; message?: string };
+        if (!response.ok || !payload.categories || !payload.metrics) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar o catálogo operacional.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar o catálogo operacional.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const reload = () => {
+    setLoading(true);
+    setRefresh((value) => value + 1);
+  };
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+
+  return (
+    <section className="dashboard-section catalog-management">
+      <header>
+        <div><small>CATÁLOGO DO PILOTO</small><h2>Categorias de serviço</h2><p>Controle disponibilidade e prioridade sem apagar o histórico do marketplace.</p></div>
+        <button className="secondary-action" onClick={reload} disabled={loading}>Atualizar ↻</button>
+      </header>
+      <div className="catalog-metrics">
+        <article><strong>{loading ? "…" : data?.metrics.activeCount ?? 0}</strong><span>ativas para novos pedidos</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.inactiveCount ?? 0}</strong><span>temporariamente indisponíveis</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.totalCount ?? 0}</strong><span>categorias versionadas</span></article>
+      </div>
+      <div className="catalog-list">
+        {loading && <div className="data-state">Carregando categorias...</div>}
+        {!loading && data?.categories.map((category, index) => (
+          <article key={category.id} className={category.active ? "" : "inactive"}>
+            <span className="catalog-position">#{index + 1}</span>
+            <span className="catalog-icon">{category.icon}</span>
+            <div className="catalog-identity"><strong>{category.name}</strong><small>{category.slug} · atualizado {formatted(category.updatedAt)}</small></div>
+            <div className="catalog-demand"><strong>{category.openRequestCount}</strong><small>em andamento</small></div>
+            <div className="catalog-demand"><strong>{category.requestCount}</strong><small>pedidos</small></div>
+            <div className="catalog-demand"><strong>{category.referralCount}</strong><small>indicações</small></div>
+            <span className={`status-pill ${category.active ? "success" : "neutral"}`}>{category.active ? "Ativa" : "Inativa"}</span>
+            <div className="catalog-actions">
+              <button onClick={() => setPending({ category, action: "move_up" })} disabled={index === 0} aria-label={`Subir ${category.name}`}>↑</button>
+              <button onClick={() => setPending({ category, action: "move_down" })} disabled={index === (data?.categories.length ?? 0) - 1} aria-label={`Descer ${category.name}`}>↓</button>
+              <button className={category.active ? "danger" : "restore"} onClick={() => setPending({ category, action: category.active ? "deactivate" : "activate" })}>{category.active ? "Desativar" : "Ativar"}</button>
+            </div>
+            {category.latestEventAt && <div className="catalog-latest"><span>Última decisão</span><p>{category.latestEventNote}</p><small>{category.latestActorName} · {formatted(category.latestEventAt)} · {category.eventCount} evento(s)</small></div>}
+          </article>
+        ))}
+      </div>
+      <footer><span>i</span><p><strong>Proteção operacional:</strong> toda mudança exige justificativa, gera evento imutável e aparece na trilha de atividade. O banco impede a desativação da última categoria ativa.</p></footer>
+      {pending && <CatalogActionDialog pending={pending} onClose={() => setPending(null)} onSaved={() => { setPending(null); reload(); }} notify={notify} />}
+    </section>
+  );
+}
+
+function CatalogActionDialog({
+  pending,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  pending: { category: OperationCatalogCategory; action: CatalogAction };
+  onClose: () => void;
+  onSaved: () => void;
+  notify: (message: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const copy = catalogActionCopy[pending.action];
+  useEffect(() => { closeRef.current?.focus(); }, []);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/categories", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          categoryId: pending.category.id,
+          action: pending.action,
+          note: note.trim(),
+        }),
+      });
+      const payload = await response.json() as { category?: OperationCatalogCategory; error?: string; message?: string };
+      if (!response.ok || !payload.category) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a categoria.");
+      }
+      notify(`${pending.category.name}: catálogo atualizado e auditado.`);
+      onSaved();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a categoria.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog catalog-action-dialog" role="dialog" aria-modal="true" aria-labelledby="catalog-action-title">
+        <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
+        <header><span>{pending.category.icon}</span><div><p className="dialog-kicker">DECISÃO OPERACIONAL</p><h2 id="catalog-action-title">{copy.title}</h2><p>{pending.category.name} · posição {pending.category.sortOrder}</p></div></header>
+        <form onSubmit={submit}>
+          <p className="catalog-action-detail">{copy.detail}</p>
+          <label className="field"><span>Justificativa da mudança</span><textarea rows={4} minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explique o motivo e o impacto esperado..." required /><small>{note.length}/1000 caracteres · mínimo de 10</small></label>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Registrando..." : `${copy.verb} e auditar →`}</button></footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function AccountView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   const user = roleDetails[role];
   const isOperational = role === "operacao";
@@ -2020,6 +2229,7 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
+        {isOperational && <CatalogManagementPanel notify={notify} />}
         <FinancialSandboxPanel key={role} role={role} notify={notify} />
       </div>
     </>

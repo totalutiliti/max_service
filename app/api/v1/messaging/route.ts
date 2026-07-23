@@ -17,10 +17,17 @@ export async function GET(request: Request) {
     return proxyDemoDownloadRequest(`/api/v1/message-attachments/${encodeURIComponent(attachmentId)}`, request, role);
   }
   const conversationId = url.searchParams.get("conversationId");
+  const afterMessageId = url.searchParams.get("after");
+  if (afterMessageId && !conversationId) {
+    return Response.json({ error: "conversationId é obrigatório para sincronizar mensagens." }, { status: 400 });
+  }
+  if (afterMessageId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(afterMessageId)) {
+    return Response.json({ error: "Cursor de mensagem inválido." }, { status: 400 });
+  }
   const path = conversationId
     ? `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`
     : "/api/v1/conversations";
-  return proxyDemoRequest(path, request, role);
+  return proxyDemoRequest(path, request, role, undefined, afterMessageId ? { "x-after-message-id": afterMessageId } : {});
 }
 
 export async function POST(request: Request) {

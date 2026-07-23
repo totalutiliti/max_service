@@ -606,24 +606,41 @@ function NotificationCenter({ role }: { role: Role }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/v1/notifications?role=${encodeURIComponent(role)}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
+    let syncing = false;
+    let active = true;
+    const syncNotifications = async () => {
+      if (syncing) return;
+      syncing = true;
+      try {
+        const response = await fetch(`/api/v1/notifications?role=${encodeURIComponent(role)}`, { cache: "no-store", signal: controller.signal });
         const payload = await response.json() as { notifications?: UserNotification[]; unreadCount?: number };
         if (!response.ok || !payload.notifications) throw new Error("Não foi possível carregar as notificações.");
-        return payload;
-      })
-      .then((payload) => {
-        setNotifications(payload.notifications ?? []);
+        if (!active) return;
+        setNotifications(payload.notifications);
         setUnreadCount(payload.unreadCount ?? 0);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        setNotifications([]);
-        setUnreadCount(0);
-      })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
-  }, [role, refresh]);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          // Mantém a última leitura válida durante uma indisponibilidade transitória.
+        }
+      } finally {
+        syncing = false;
+        if (active) setLoading(false);
+      }
+    };
+    const syncWhenVisible = () => {
+      if (document.visibilityState === "visible") void syncNotifications();
+    };
+    const initialSync = window.setTimeout(syncWhenVisible, 0);
+    const timer = window.setInterval(syncWhenVisible, 15_000);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(initialSync);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [refresh, role]);
 
   const updateRead = async (action: "read" | "read-all", notificationId?: string) => {
     const response = await fetch("/api/v1/notifications", {
@@ -1513,40 +1530,101 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const messageCursorRef = useRef<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/v1/messaging?role=${role}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
+    let syncing = false;
+    let active = true;
+    const syncConversations = async () => {
+      if (syncing || document.visibilityState !== "visible") return;
+      syncing = true;
+      try {
+        const response = await fetch(`/api/v1/messaging?role=${role}`, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error("Não foi possível carregar as conversas.");
-        return response.json() as Promise<{ conversations: PersistedConversation[] }>;
-      })
-      .then((payload) => {
+        const payload = await response.json() as { conversations: PersistedConversation[] };
+        if (!active) return;
         setConversations(payload.conversations);
         setSelectedId((current) => payload.conversations.some((item) => item.id === current) ? current : payload.conversations[0]?.id ?? "");
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        notify(error instanceof Error ? error.message : "Não foi possível carregar as conversas.");
-      })
-      .finally(() => setLoading(false));
-    return () => controller.abort();
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          notify(error instanceof Error ? error.message : "Não foi possível carregar as conversas.");
+        }
+      } finally {
+        syncing = false;
+        if (active) setLoading(false);
+      }
+    };
+    const syncWhenVisible = () => {
+      if (document.visibilityState === "visible") void syncConversations();
+    };
+    void syncConversations();
+    const timer = window.setInterval(syncWhenVisible, 12_000);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
   }, [notify, role]);
 
   useEffect(() => {
-    if (!selectedId) return;
+    messageCursorRef.current = null;
+    if (!selectedId) {
+      const clearMessages = window.setTimeout(() => setMessages([]), 0);
+      return () => window.clearTimeout(clearMessages);
+    }
     const controller = new AbortController();
-    fetch(`/api/v1/messaging?role=${role}&conversationId=${encodeURIComponent(selectedId)}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Não foi possível carregar as mensagens.");
-        return response.json() as Promise<{ messages: PersistedMessage[] }>;
-      })
-      .then((payload) => setMessages(payload.messages))
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        notify(error instanceof Error ? error.message : "Não foi possível carregar as mensagens.");
-      });
-    return () => controller.abort();
+    let syncing = false;
+    let active = true;
+    const syncMessages = async (initial = false) => {
+      if (syncing || (!initial && document.visibilityState !== "visible")) return;
+      const after = initial ? null : messageCursorRef.current;
+      if (!initial && !after) return;
+      syncing = true;
+      try {
+        const params = new URLSearchParams({ role, conversationId: selectedId });
+        if (after) params.set("after", after);
+        const response = await fetch(`/api/v1/messaging?${params}`, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error("Não foi possível sincronizar as mensagens.");
+        const payload = await response.json() as { messages: PersistedMessage[]; cursor: string | null };
+        if (!active) return;
+        if (initial) {
+          setMessages(payload.messages);
+        } else if (payload.messages.length > 0) {
+          setMessages((current) => {
+            const known = new Set(current.map((message) => message.id));
+            return [...current, ...payload.messages.filter((message) => !known.has(message.id))];
+          });
+          const latest = payload.messages.at(-1);
+          if (latest) {
+            setConversations((current) => current.map((conversation) => conversation.id === selectedId
+              ? { ...conversation, latestMessage: latest.body, latestMessageAt: latest.createdAt }
+              : conversation));
+          }
+        }
+        messageCursorRef.current = payload.cursor ?? messageCursorRef.current;
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError") && initial) {
+          notify(error instanceof Error ? error.message : "Não foi possível carregar as mensagens.");
+        }
+      } finally {
+        syncing = false;
+      }
+    };
+    const syncWhenVisible = () => {
+      if (document.visibilityState === "visible") void syncMessages(false);
+    };
+    void syncMessages(true);
+    const timer = window.setInterval(syncWhenVisible, 4_000);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
   }, [notify, role, selectedId]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages]);
@@ -1621,9 +1699,9 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
           <div className="conversation-search"><input aria-label="Buscar conversa" placeholder="Buscar conversa" /></div>
           {loading && <div className="data-state">Carregando conversas...</div>}
           {!loading && conversations.length === 0 && <div className="data-state"><strong>Nenhuma conversa ainda.</strong><span>Ela será criada quando uma proposta for aceita.</span></div>}
-          {conversations.map((conversation) => <button key={conversation.id} onClick={() => setSelectedId(conversation.id)} className={conversation.id === selectedId ? "active" : ""}><span className="mini-avatar">{conversation.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><span><strong>{conversation.otherName}</strong><small>{conversation.requestCode} · {conversation.requestTitle}</small><em>{conversation.latestMessage ?? "Conversa liberada"}</em></span>{conversation.bookingStatus === "scheduled" && <i>✓</i>}</button>)}
+          {conversations.map((conversation) => <button key={conversation.id} onClick={() => { setSelectedId(conversation.id); setAttachmentFile(null); }} className={conversation.id === selectedId ? "active" : ""}><span className="mini-avatar">{conversation.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><span><strong>{conversation.otherName}</strong><small>{conversation.requestCode} · {conversation.requestTitle}</small><em>{conversation.latestMessage ?? "Conversa liberada"}</em></span>{conversation.bookingStatus === "scheduled" && <i>✓</i>}</button>)}
         </aside>
-        {selected ? <div className="chat-panel"><header><span className="mini-avatar">{selected.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><strong>{selected.otherName}</strong><small><span className="live-dot" /> {selected.requestCode} · {selected.scheduledFor ? `Agendado: ${schedule(selected.scheduledFor)}` : selected.bookingStatus}</small></div><button aria-label="Mais opções">•••</button></header><div className="chat-messages"><div className="chat-date">CONVERSA DO SERVIÇO</div>{messages.length === 0 && <div className="data-state"><strong>Conversa liberada.</strong><span>Envie a primeira mensagem para combinar os detalhes.</span></div>}{messages.map((message) => <article key={message.id} className={`message ${message.senderId === actorId ? "sent" : "received"}`}><span>{message.body}</span>{message.attachment && <a className="message-attachment" href={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} target="_blank" rel="noreferrer"><Image src={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} alt={message.attachment.fileName} width={360} height={220} unoptimized /><em>Imagem privada · abrir em tamanho original</em></a>}<small>{time(message.createdAt)}{message.senderId === actorId ? " · ✓" : ""}</small></article>)}<div ref={endRef} /></div><form className="message-composer" onSubmit={send}>{attachmentFile && <div className="message-attachment-draft"><span>▣ {attachmentFile.name} · {(attachmentFile.size / 1024).toFixed(0)} KB</span><button type="button" onClick={() => setAttachmentFile(null)} aria-label="Remover imagem selecionada">×</button></div>}<label className="message-attachment-button" title="Anexar imagem privada"><span>＋</span><input type="file" accept="image/jpeg,image/png" onChange={selectAttachment} aria-label="Anexar imagem privada" /></label><input aria-label="Mensagem" value={draft} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder={attachmentFile ? "Adicione uma legenda (opcional)..." : "Escreva uma mensagem..."} /><button type="submit" disabled={sending || (!draft.trim() && !attachmentFile)}>{sending ? "Enviando..." : "Enviar"}</button></form></div> : <div className="chat-panel empty-chat"><div className="data-state"><strong>Selecione uma conversa.</strong><span>As mensagens ficam vinculadas ao serviço contratado.</span></div></div>}
+        {selected ? <div className="chat-panel"><header><span className="mini-avatar">{selected.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><strong>{selected.otherName}</strong><small><span className="live-dot" /> Sincronização automática · {selected.requestCode} · {selected.scheduledFor ? `Agendado: ${schedule(selected.scheduledFor)}` : selected.bookingStatus}</small></div><button aria-label="Mais opções">•••</button></header><div className="chat-messages"><div className="chat-date">CONVERSA DO SERVIÇO</div>{messages.length === 0 && <div className="data-state"><strong>Conversa liberada.</strong><span>Envie a primeira mensagem para combinar os detalhes.</span></div>}{messages.map((message) => <article key={message.id} className={`message ${message.senderId === actorId ? "sent" : "received"}`}><span>{message.body}</span>{message.attachment && <a className="message-attachment" href={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} target="_blank" rel="noreferrer"><Image src={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} alt={message.attachment.fileName} width={360} height={220} unoptimized /><em>Imagem privada · abrir em tamanho original</em></a>}<small>{time(message.createdAt)}{message.senderId === actorId ? " · ✓" : ""}</small></article>)}<div ref={endRef} /></div><form className="message-composer" onSubmit={send}>{attachmentFile && <div className="message-attachment-draft"><span>▣ {attachmentFile.name} · {(attachmentFile.size / 1024).toFixed(0)} KB</span><button type="button" onClick={() => setAttachmentFile(null)} aria-label="Remover imagem selecionada">×</button></div>}<label className="message-attachment-button" title="Anexar imagem privada"><span>＋</span><input type="file" accept="image/jpeg,image/png" onChange={selectAttachment} aria-label="Anexar imagem privada" /></label><input aria-label="Mensagem" value={draft} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder={attachmentFile ? "Adicione uma legenda (opcional)..." : "Escreva uma mensagem..."} /><button type="submit" disabled={sending || (!draft.trim() && !attachmentFile)}>{sending ? "Enviando..." : "Enviar"}</button></form></div> : <div className="chat-panel empty-chat"><div className="data-state"><strong>Selecione uma conversa.</strong><span>As mensagens ficam vinculadas ao serviço contratado.</span></div></div>}
       </section>
     </>
   );

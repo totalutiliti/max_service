@@ -13,7 +13,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - cancelamento estruturado e avaliações;
 - código persistente e registro manual de indicação; captura pública por link/QR permanece como integração posterior;
 - moderação manual de prestador;
-- notificações internas persistentes; e-mail permanece como integração posterior;
+- mensagens e notificações internas persistentes com sincronização incremental automática; push e e-mail permanecem como integrações posteriores;
 - PSP fake e visualização de divisão financeira, sem transação real;
 - dados 100% fictícios.
 

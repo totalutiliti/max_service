@@ -45,7 +45,7 @@ export class MessagingService {
     });
   }
 
-  async messages(actor: Actor, conversationId: string) {
+  async messages(actor: Actor, conversationId: string, afterMessageId?: string) {
     return this.database.withActor(actor, async (client) => {
       const conversation = await client.query<{ id: string; otherUserId: string; requestCode: string }>(`
         SELECT
@@ -58,7 +58,19 @@ export class MessagingService {
         WHERE c.id = $1
       `, [conversationId, actor.id]);
       if (!conversation.rows[0]) throw new NotFoundException("Conversa não encontrada.");
-      const result = await client.query(`
+      const after = afterMessageId?.trim() || null;
+      if (after && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(after)) {
+        throw new BadRequestException("Cursor de mensagem inválido.");
+      }
+      if (after) {
+        const cursor = await client.query(`
+          SELECT id
+          FROM messages
+          WHERE id = $1 AND conversation_id = $2
+        `, [after, conversationId]);
+        if (!cursor.rows[0]) throw new BadRequestException("Cursor de mensagem inválido.");
+      }
+      const messageSelection = `
         SELECT
           m.id,
           m.conversation_id AS "conversationId",
@@ -84,10 +96,26 @@ export class MessagingService {
           LIMIT 1
         ) attachment ON true
         WHERE m.conversation_id = $1
+          AND (
+            $2::uuid IS NULL
+            OR (m.created_at, m.id) > (
+              SELECT cursor.created_at, cursor.id
+              FROM messages cursor
+              WHERE cursor.id = $2::uuid AND cursor.conversation_id = $1
+            )
+          )
         ORDER BY m.created_at, m.id
         LIMIT 200
-      `, [conversationId]);
-      return result.rows;
+      `;
+      const result = after
+        ? await client.query(messageSelection, [conversationId, after])
+        : await client.query(`
+            SELECT *
+            FROM (${messageSelection.replace("ORDER BY m.created_at, m.id", "ORDER BY m.created_at DESC, m.id DESC")}) recent
+            ORDER BY recent."createdAt", recent.id
+          `, [conversationId, null]);
+      const cursor = result.rows.at(-1)?.id ?? after;
+      return { messages: result.rows, cursor, hasMore: result.rows.length === 200 };
     });
   }
 

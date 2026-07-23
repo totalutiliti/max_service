@@ -68,3 +68,4 @@
 - imagens de pedido são visíveis ao cliente proprietário, aos profissionais enquanto a solicitação é oportunidade aberta e, após o aceite, somente ao profissional contratado e à operação;
 - cada mensagem aceita no máximo uma imagem append-only JPEG/PNG de 512 KB; a chave do objeto, o hash SHA-256 e o remetente são vinculados por constraints à conversa e à mensagem;
 - anexos de mensagem são visíveis exclusivamente aos membros cliente e profissional da conversa; parceiro, operação e conexão sem contexto recebem zero linhas;
+- o cursor de sincronização referencia uma mensagem visível da própria conversa e avança pela tupla imutável `(created_at, id)`, comparada integralmente no PostgreSQL para preservar precisão;

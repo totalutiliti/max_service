@@ -58,6 +58,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - após o booking, prestador não contratado, parceiro e conexão sem contexto retornam zero imagens do pedido;
 - anexo da conversa é listado e baixado pelos dois membros; parceiro, operação, não membro e conexão sem contexto recebem zero linhas;
 - arquivo com assinatura adulterada, MIME fora da allowlist ou mais de 512 KB é rejeitado antes da persistência;
+- cursor inexistente, malformado ou pertencente a outra conversa é rejeitado sem revelar mensagens e sem alterar a sessão;
 - cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
 - somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
 - evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;

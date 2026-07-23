@@ -30,9 +30,10 @@ export class MessagingController {
   async messages(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("x-after-message-id") afterMessageId: string | undefined,
     @Param("conversationId") conversationId: string,
   ) {
-    return { messages: await this.messaging.messages(actorFromHeaders(role, id), conversationId) };
+    return this.messaging.messages(actorFromHeaders(role, id), conversationId, afterMessageId);
   }
 
   @Post("conversations/:conversationId/messages")

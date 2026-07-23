@@ -1,9 +1,16 @@
 import { apiUrl, crossOriginMutation, demoActorIds, type DemoRole, resolveDemoSession, signedInternalHeaders } from "./_session";
 
-export async function proxyDemoRequest(path: string, request: Request, role: DemoRole, payload?: unknown) {
+export async function proxyDemoRequest(
+  path: string,
+  request: Request,
+  role: DemoRole,
+  payload?: unknown,
+  extraHeaders: Record<string, string> = {},
+) {
   const authorization = await authorize(path, request, role);
   if (authorization instanceof Response) return authorization;
   const headers = authorization;
+  for (const [name, value] of Object.entries(extraHeaders)) headers.set(name, value);
 
   let body: string | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {

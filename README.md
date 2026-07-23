@@ -14,7 +14,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - O cliente pode anexar até três imagens sintéticas JPEG/PNG de 512 KB ao pedido; os profissionais elegíveis ou contratados visualizam pelo BFF autenticado, sem URL pública.
 - O profissional recebe oportunidades do banco, envia ou atualiza sua proposta e o cliente compara valores e prazos antes de aceitar.
 - O aceite cria um agendamento e uma conversa persistente, acessível somente pelo cliente e pelo profissional vinculados.
-- Cliente e profissional trocam mensagens pelo painel; a lista, o histórico e a última mensagem sobrevivem a reinícios.
+- Cliente e profissional trocam mensagens pelo painel; a lista, o histórico e a última mensagem sobrevivem a reinícios e são sincronizados automaticamente por cursor enquanto a tela está ativa.
 - Cliente e profissional podem enviar uma imagem sintética JPEG/PNG de até 512 KB por mensagem, com legenda opcional, hash de integridade, download privado, RLS e auditoria.
 - A área **Atividade** apresenta a agenda persistente, detalhes do atendimento e a linha do tempo do serviço.
 - O profissional inicia e conclui o atendimento por transições validadas; o cliente acompanha cada atualização sem poder alterar o estado.
@@ -22,7 +22,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Cliente e profissional podem cancelar atendimentos agendados ou em execução, com motivo obrigatório, histórico e auditoria.
 - Cada cancelamento abre automaticamente um chamado persistente; interrupções durante a execução entram como prioridade alta na fila da operação.
 - A operação consulta a linha do tempo do chamado, registra notas internas, assume a análise e resolve com justificativa auditável.
-- Os quatro perfis têm uma central persistente de notificações, com contador de não lidas e leitura individual ou em massa.
+- Os quatro perfis têm uma central persistente de notificações, com atualização automática do contador, leitura individual ou em massa.
 - Propostas, aceite, mensagens, execução, avaliações, cancelamentos e atualizações de chamados geram avisos transacionais para o destinatário correto.
 - O perfil parceiro possui código persistente, métricas reais da própria rede, histórico pesquisável e registro manual de novas indicações.
 - A operação possui uma fila persistente de verificação de profissionais, revisão item a item, justificativa obrigatória e trilha de auditoria; o profissional acompanha o próprio status e checklist.
@@ -86,4 +86,4 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 
 ## Limites desta etapa
 
-Esta entrega é uma fundação local, ainda com identidades e dados fictícios. As sessões demonstrativas exercitam expiração, revogação, cookie seguro e autorização, mas não substituem cadastro público, senha forte, confirmação de contato, recuperação de conta ou MFA administrativo. Documentos, fotos de pedidos e imagens das conversas aceitam somente arquivos sintéticos; antivírus, quarentena automatizada, criptografia gerenciada e política final de retenção continuam obrigatórios antes de dados reais. Captura pública do link/QR de indicação, entrega em tempo real por push/WebSocket, e-mail/SMS, pagamentos reais e integrações externas permanecem desativados. Conversas, notificações internas, rede do parceiro, ciclo do agendamento, cancelamentos, tratamento de chamados, estados da verificação, anexos privados, versões documentais, avaliações e ledger financeiro sandbox são persistentes. As credenciais e chaves do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.
+Esta entrega é uma fundação local, ainda com identidades e dados fictícios. As sessões demonstrativas exercitam expiração, revogação, cookie seguro e autorização, mas não substituem cadastro público, senha forte, confirmação de contato, recuperação de conta ou MFA administrativo. Documentos, fotos de pedidos e imagens das conversas aceitam somente arquivos sintéticos; antivírus, quarentena automatizada, criptografia gerenciada e política final de retenção continuam obrigatórios antes de dados reais. Mensagens e notificações usam sincronização incremental automática; push/WebSocket, e-mail/SMS, captura pública do link/QR de indicação, pagamentos reais e integrações externas permanecem desativados. Conversas, notificações internas, rede do parceiro, ciclo do agendamento, cancelamentos, tratamento de chamados, estados da verificação, anexos privados, versões documentais, avaliações e ledger financeiro sandbox são persistentes. As credenciais e chaves do `compose.yaml` existem somente para desenvolvimento local e não podem ser reutilizadas em produção.

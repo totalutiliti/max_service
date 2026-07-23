@@ -228,6 +228,14 @@ interface PartnerSupportEvent {
   createdAt: string;
   actorName: string;
   actorRole: "partner" | "operation";
+  attachment: {
+    id: string;
+    fileName: string;
+    contentType: "application/pdf" | "image/jpeg" | "image/png";
+    sizeBytes: number;
+    sha256: string;
+    createdAt: string;
+  } | null;
 }
 
 interface PartnerSupportCaseDetail extends PartnerSupportCase {
@@ -2232,6 +2240,7 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
   const [query, setQuery] = useState("");
   const [caseFilter, setCaseFilter] = useState<"all" | PartnerSupportStatus | "sla">("all");
   const [draft, setDraft] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [transitionNote, setTransitionNote] = useState("");
   const [triagePriority, setTriagePriority] = useState<"normal" | "high">("normal");
   const [triageAssigneeId, setTriageAssigneeId] = useState("");
@@ -2255,6 +2264,7 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
       })
       .then((payload) => {
         setDetailLoading(true);
+        setAttachmentFile(null);
         setData(payload);
         setSelectedId((current) => payload.cases.some((item) => item.id === current) ? current : payload.cases[0]?.id ?? "");
       })
@@ -2329,24 +2339,50 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
 
   const sendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedId || draft.trim().length < 3) return;
+    const body = draft.trim();
+    if (!selectedId || (!attachmentFile && body.length < 3) || (body.length > 0 && body.length < 3)) return;
     setSubmitting(true);
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "message", caseId: selectedId, body: draft.trim() }),
-      });
+      let response: Response;
+      if (attachmentFile) {
+        const form = new FormData();
+        form.set("caseId", selectedId);
+        form.set("body", body);
+        form.set("file", attachmentFile);
+        response = await fetch(endpoint, { method: "POST", body: form });
+      } else {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "message", caseId: selectedId, body }),
+        });
+      }
       const payload = await response.json() as { event?: PartnerSupportEvent; error?: string; message?: string };
       if (!response.ok || !payload.event) throw new Error(payload.error ?? payload.message ?? "Não foi possível enviar a mensagem.");
       setDraft("");
+      setAttachmentFile(null);
       refreshCenter();
-      notify("Mensagem registrada no atendimento.");
+      notify(attachmentFile ? "Mensagem e anexo privado registrados no atendimento." : "Mensagem registrada no atendimento.");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Não foi possível enviar a mensagem.");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const selectAttachment = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    if (!new Set(["application/pdf", "image/jpeg", "image/png"]).has(file.type)) {
+      notify("Envie somente PDF, JPEG ou PNG.");
+      return;
+    }
+    if (file.size < 4 || file.size > 2_097_152) {
+      notify("O arquivo deve ter entre 4 bytes e 2 MB.");
+      return;
+    }
+    setAttachmentFile(file);
   };
 
   const transition = async (status: "in_review" | "resolved") => {
@@ -2416,7 +2452,7 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
           <div>
             {loading && <div className="data-state">Carregando atendimentos...</div>}
             {!loading && filteredCases.length === 0 && <div className="data-state"><strong>Nenhum atendimento encontrado.</strong><span>{role === "parceiro" ? "Abra uma solicitação para falar com a equipe Max." : "A fila está em dia."}</span></div>}
-            {filteredCases.map((item) => <button key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => { setDetail(null); setDetailLoading(true); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><div className={`support-sla-chip ${slaState(item)}`}>{slaLabel(item)}</div><footer><span>{role === "operacao" ? `${item.partnerName} · ${item.assignedToName ?? "sem responsável"}` : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
+            {filteredCases.map((item) => <button key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => { setDetail(null); setDetailLoading(true); setAttachmentFile(null); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><div className={`support-sla-chip ${slaState(item)}`}>{slaLabel(item)}</div><footer><span>{role === "operacao" ? `${item.partnerName} · ${item.assignedToName ?? "sem responsável"}` : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
           </div>
         </aside>
         <div className="partner-support-thread">
@@ -2437,13 +2473,69 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
                 <div className="chat-date">HISTÓRICO IMUTÁVEL · {detail.eventCount} EVENTO(S)</div>
                 {detail.events.map((event) => event.eventType !== "message"
                   ? <article key={event.id} className={`support-status-event ${event.eventType === "triage_changed" ? "triage" : ""}`}><span>{event.eventType === "triage_changed" ? "T" : "→"}</span><div><strong>{event.eventType === "triage_changed" ? "Triagem atualizada" : `${event.fromStatus ? partnerSupportStatusLabel[event.fromStatus] : ""} → ${event.toStatus ? partnerSupportStatusLabel[event.toStatus] : ""}`}</strong><p>{event.body}</p><small>{event.actorName} · {timestamp(event.createdAt)}</small></div></article>
-                  : <article key={event.id} className={`support-message ${event.actorRole === (role === "parceiro" ? "partner" : "operation") ? "sent" : "received"}`}><strong>{event.actorName}</strong><p>{event.body}</p><small>{timestamp(event.createdAt)}</small></article>)}
+                  : (
+                    <article key={event.id} className={`support-message ${event.actorRole === (role === "parceiro" ? "partner" : "operation") ? "sent" : "received"}`}>
+                      <strong>{event.actorName}</strong>
+                      <p>{event.body}</p>
+                      {event.attachment && (
+                        <a
+                          className="support-private-attachment"
+                          href={`${endpoint}?attachmentId=${encodeURIComponent(event.attachment.id)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <span>{event.attachment.contentType === "application/pdf" ? "PDF" : "IMG"}</span>
+                          <div>
+                            <strong>{event.attachment.fileName}</strong>
+                            <small>{Math.ceil(event.attachment.sizeBytes / 1024)} KB · arquivo privado</small>
+                          </div>
+                          <b>↗</b>
+                        </a>
+                      )}
+                      <small>{timestamp(event.createdAt)}</small>
+                    </article>
+                  ))}
                 {detail.resolution && <section className="support-resolution"><span>✓</span><div><small>RESOLUÇÃO REGISTRADA</small><strong>{detail.resolution}</strong><p>{detail.resolvedAt ? timestamp(detail.resolvedAt) : ""}</p></div></section>}
                 <div ref={endRef} />
               </div>
               {detail.status !== "resolved" && (
                 <>
-                  <form className="support-composer" onSubmit={sendMessage}><label><span>Responder no atendimento</span><textarea aria-label="Mensagem do atendimento" value={draft} minLength={3} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder="Escreva uma mensagem objetiva..." /></label><button className="primary-action" type="submit" disabled={submitting || draft.trim().length < 3}>{submitting ? "Enviando..." : "Enviar mensagem"}</button></form>
+                  <form className="support-composer" onSubmit={sendMessage}>
+                    {attachmentFile && (
+                      <div className="support-attachment-draft">
+                        <span>{attachmentFile.type === "application/pdf" ? "PDF" : "IMG"} · {attachmentFile.name} · {Math.ceil(attachmentFile.size / 1024)} KB</span>
+                        <button type="button" onClick={() => setAttachmentFile(null)} aria-label="Remover arquivo selecionado">×</button>
+                      </div>
+                    )}
+                    <label className="support-attachment-button" title="Anexar arquivo privado">
+                      <span>＋</span>
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                        onChange={selectAttachment}
+                        aria-label="Anexar arquivo privado"
+                      />
+                    </label>
+                    <label className="support-message-field">
+                      <span>Responder no atendimento</span>
+                      <textarea
+                        aria-label="Mensagem do atendimento"
+                        value={draft}
+                        minLength={attachmentFile ? undefined : 3}
+                        maxLength={2000}
+                        onChange={(event) => setDraft(event.target.value)}
+                        placeholder={attachmentFile ? "Adicione uma legenda ou envie somente o arquivo..." : "Escreva uma mensagem objetiva..."}
+                      />
+                    </label>
+                    <button
+                      className="primary-action"
+                      type="submit"
+                      disabled={submitting || (!attachmentFile && draft.trim().length < 3) || (draft.trim().length > 0 && draft.trim().length < 3)}
+                    >
+                      {submitting ? "Enviando..." : attachmentFile ? "Enviar arquivo" : "Enviar mensagem"}
+                    </button>
+                    <small className="support-attachment-note">PDF, JPEG ou PNG sintético · até 2 MB · acesso auditado</small>
+                  </form>
                   {role === "operacao" && (
                     <>
                       <section className="support-triage">

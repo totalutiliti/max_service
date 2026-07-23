@@ -94,6 +94,8 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "service_category.reordered": { category: "operation", title: "Catálogo reordenado", detail: "Prioridade de exibição de uma categoria alterada." },
   "partner_support_case.created": { category: "growth", title: "Atendimento aberto", detail: "Nova solicitação registrada por um parceiro." },
   "partner_support_case.message_sent": { category: "growth", title: "Mensagem de atendimento", detail: "Interação registrada na central do parceiro." },
+  "partner_support_case.attachment_sent": { category: "growth", title: "Anexo de atendimento enviado", detail: "Arquivo privado vinculado ao histórico do atendimento." },
+  "partner_support_case.attachment_downloaded": { category: "operation", title: "Anexo de atendimento acessado", detail: "Download privado registrado na auditoria." },
   "partner_support_case.triaged": { category: "operation", title: "Triagem de atendimento", detail: "Prioridade, responsável e prazos operacionais atualizados com justificativa." },
   "partner_support_case.status_changed": { category: "operation", title: "Atendimento atualizado", detail: "Estado da solicitação do parceiro alterado com justificativa." },
 };
@@ -114,6 +116,7 @@ const auditEntityPrefix: Record<string, string> = {
   payment_intent: "PG",
   service_category: "CT",
   partner_support_case: "AT",
+  partner_support_attachment: "AA",
 };
 
 @Injectable()

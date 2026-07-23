@@ -33,7 +33,7 @@
 
 ### Operação
 
-`notifications`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `audit_events`, `outbox_events` e `feature_flags`.
+`notifications`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `partner_support_attachments`, `audit_events`, `outbox_events` e `feature_flags`.
 
 ## Invariantes
 
@@ -56,6 +56,8 @@
 - cada atendimento do parceiro pertence à sua rede, pode vincular somente uma indicação da mesma rede e aceita mensagens apenas enquanto não estiver resolvido;
 - a Operação pode atribuir o atendimento apenas a um usuário operacional e elevar a prioridade de normal para alta, nunca reduzi-la durante o caso; cada mudança exige justificativa, evento append-only e auditoria;
 - a política `SUPPORT-SLA-2026-01` define primeira resposta/resolução em 4 h/48 h no fluxo normal e 1 h/8 h na prioridade alta; os prazos ficam persistidos e o primeiro prazo é preservado depois da resposta;
+- cada mensagem de atendimento aceita no máximo um anexo append-only PDF/JPEG/PNG sintético de 2 MB; evento, caso e autor são vinculados por chave estrangeira composta;
+- o anexo de atendimento é visível somente ao parceiro titular e à Operação; o object storage guarda os bytes e `partner_support_attachments` preserva chave aleatória, nome normalizado, tipo, tamanho, hash e autoria;
 - a ordem das categorias é positiva e única; somente a operação altera `active` ou `sort_order`, sempre com justificativa, `service_category_events` append-only e auditoria;
 - o catálogo mantém ao menos uma categoria ativa; uma categoria inativa é rejeitada em novos pedidos e indicações, mas continua visível nos relacionamentos históricos;
 - uma verificação só sai de `submitted` para `in_review`; a decisão final é `approved` ou `changes_requested`;

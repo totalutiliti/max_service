@@ -1,5 +1,25 @@
-import { Body, Controller, Get, Headers, Param, ParseUUIDPipe, Post, UnauthorizedException } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  Res,
+  StreamableFile,
+  UnauthorizedException,
+} from "@nestjs/common";
+import type { IncomingMessage } from "node:http";
 import { parseDemoActor } from "../auth/demo-actor.js";
+import {
+  decodeFileName,
+  readLimitedBody,
+  setPrivateFileHeaders,
+  type HeaderResponse,
+} from "../storage/private-file-http.js";
+import { maximumPartnerSupportAttachmentBytes } from "./partner-support-attachment-validation.js";
 import {
   AddPartnerSupportMessageDto,
   ChangePartnerSupportStatusDto,
@@ -55,6 +75,50 @@ export class PartnerSupportController {
   ) {
     return { event: await this.support.addMessage(actorFromHeaders(role, id), caseId, input.body, "partner") };
   }
+
+  @Post("cases/:caseId/attachments")
+  async addAttachment(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("x-file-name") encodedFileName: string | undefined,
+    @Headers("x-message-body") encodedBody: string | undefined,
+    @Headers("content-type") contentType: string | undefined,
+    @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
+    @Req() request: IncomingMessage,
+  ) {
+    const bytes = await readLimitedBody(
+      request,
+      maximumPartnerSupportAttachmentBytes,
+      "O arquivo excede o limite de 2 MB.",
+    );
+    return {
+      event: await this.support.addMessageWithAttachment(
+        actorFromHeaders(role, id),
+        caseId,
+        decodeFileName(encodedBody),
+        decodeFileName(encodedFileName),
+        contentType ?? "",
+        bytes,
+        "partner",
+      ),
+    };
+  }
+
+  @Get("attachments/:attachmentId")
+  async downloadAttachment(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("attachmentId", new ParseUUIDPipe({ version: "4" })) attachmentId: string,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const file = await this.support.downloadAttachment(
+      actorFromHeaders(role, id),
+      attachmentId,
+      "partner",
+    );
+    setPrivateFileHeaders(response, file.originalName, file.contentType, file.bytes.length, "inline");
+    return new StreamableFile(file.bytes);
+  }
 }
 
 @Controller("api/v1/operation/support")
@@ -86,6 +150,50 @@ export class OperationSupportController {
     @Body() input: AddPartnerSupportMessageDto,
   ) {
     return { event: await this.support.addMessage(actorFromHeaders(role, id), caseId, input.body, "operation") };
+  }
+
+  @Post("cases/:caseId/attachments")
+  async addAttachment(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("x-file-name") encodedFileName: string | undefined,
+    @Headers("x-message-body") encodedBody: string | undefined,
+    @Headers("content-type") contentType: string | undefined,
+    @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
+    @Req() request: IncomingMessage,
+  ) {
+    const bytes = await readLimitedBody(
+      request,
+      maximumPartnerSupportAttachmentBytes,
+      "O arquivo excede o limite de 2 MB.",
+    );
+    return {
+      event: await this.support.addMessageWithAttachment(
+        actorFromHeaders(role, id),
+        caseId,
+        decodeFileName(encodedBody),
+        decodeFileName(encodedFileName),
+        contentType ?? "",
+        bytes,
+        "operation",
+      ),
+    };
+  }
+
+  @Get("attachments/:attachmentId")
+  async downloadAttachment(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("attachmentId", new ParseUUIDPipe({ version: "4" })) attachmentId: string,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const file = await this.support.downloadAttachment(
+      actorFromHeaders(role, id),
+      attachmentId,
+      "operation",
+    );
+    setPrivateFileHeaders(response, file.originalName, file.contentType, file.bytes.length, "inline");
+    return new StreamableFile(file.bytes);
   }
 
   @Post("cases/:caseId/transitions")

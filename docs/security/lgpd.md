@@ -28,7 +28,7 @@ Finalidade explícita, minimização, transparência, acesso restrito, retençã
 
 No piloto, a captura pública de indicação guarda `consent_at` e `privacy_notice_version` junto ao interesse. O formulário informa a finalidade de contato, não cria conta definitiva, não coleta IP para atribuição e não autoriza score, crédito ou consulta automatizada de antecedentes.
 
-A central do parceiro expõe à Operação apenas o contexto necessário ao atendimento. O vínculo com indicação é opcional e limitado à rede do próprio parceiro por RLS; mensagens, triagens e mudanças de estado são append-only. Prioridade, responsável e prazos de SLA são metadados operacionais do atendimento, não produzem perfil de risco nem decisão automatizada sobre o titular. Antes de produção, a retenção do conteúdo, o processo de exportação e a anonimização após o prazo de defesa precisam ser aprovados.
+A central do parceiro expõe à Operação apenas o contexto necessário ao atendimento. O vínculo com indicação é opcional e limitado à rede do próprio parceiro por RLS; mensagens, anexos, triagens e mudanças de estado são append-only. Os bytes dos anexos ficam no cofre privado e o banco guarda apenas nome normalizado, tipo, tamanho, hash, autoria e vínculo com o evento. Prioridade, responsável e prazos de SLA são metadados operacionais do atendimento, não produzem perfil de risco nem decisão automatizada sobre o titular. Antes de produção, a retenção do conteúdo e dos arquivos, o processo de exportação e a anonimização após o prazo de defesa precisam ser aprovados.
 
 ## Restrições
 

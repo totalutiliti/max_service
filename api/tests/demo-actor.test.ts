@@ -4,6 +4,10 @@ import { demoActorIds, parseDemoActor } from "../auth/demo-actor.js";
 import { computeInternalSignature, verifyInternalSignature } from "../auth/internal-signature.js";
 import { computeSandboxSignature, verifySandboxSignature } from "../finance/finance-signature.js";
 import { maximumRequestAttachmentBytes, validateRequestAttachment } from "../marketplace/request-attachment-validation.js";
+import {
+  maximumPartnerSupportAttachmentBytes,
+  validatePartnerSupportAttachment,
+} from "../support/partner-support-attachment-validation.js";
 import { maximumProviderDocumentBytes, validateProviderDocumentFile } from "../verifications/document-file-validation.js";
 
 test("aceita somente a identidade correspondente ao perfil demonstrativo", () => {
@@ -78,5 +82,25 @@ test("aceita somente imagens de pedido coerentes com MIME, extensão e assinatur
   assert.throws(
     () => validateRequestAttachment("grande.jpg", "image/jpeg", Buffer.alloc(maximumRequestAttachmentBytes + 1)),
     /512 KB/,
+  );
+});
+
+test("valida anexos privados da central por nome, tipo, tamanho e assinatura", () => {
+  const pdf = Buffer.from("%PDF-1.7\nsynthetic support file\n%%EOF\n");
+  assert.equal(
+    validatePartnerSupportAttachment("evidencias\\retorno.pdf", "application/pdf", pdf),
+    "retorno.pdf",
+  );
+  assert.throws(
+    () => validatePartnerSupportAttachment("retorno.pdf", "application/pdf", Buffer.from("arquivo adulterado")),
+    /assinatura/,
+  );
+  assert.throws(
+    () => validatePartnerSupportAttachment(
+      "grande.png",
+      "image/png",
+      Buffer.alloc(maximumPartnerSupportAttachmentBytes + 1),
+    ),
+    /2 MB/,
   );
 });

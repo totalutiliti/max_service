@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
+import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
+import { validatePartnerSupportAttachment } from "./partner-support-attachment-validation.js";
 import type { CreatePartnerSupportCaseDto } from "./partner-support.dto.js";
 
 const supportCaseSelect = `
@@ -75,7 +77,10 @@ const supportCaseSelect = `
 
 @Injectable()
 export class PartnerSupportService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly storage: PrivateObjectStorageService,
+  ) {}
 
   private ensureScope(actor: Actor, scope: "partner" | "operation") {
     if (actor.role !== scope) {
@@ -190,6 +195,7 @@ export class PartnerSupportService {
           event.to_status AS "toStatus",
           event.body,
           event.created_at AS "createdAt",
+          attachment.file AS attachment,
           CASE
             WHEN event.actor_id = support.partner_id THEN partner.display_name
             ELSE 'Equipe Max'
@@ -201,6 +207,19 @@ export class PartnerSupportService {
         FROM partner_support_events event
         JOIN partner_support_cases support ON support.id = event.case_id
         JOIN users partner ON partner.id = support.partner_id
+        LEFT JOIN LATERAL (
+          SELECT jsonb_build_object(
+            'id', file.id,
+            'fileName', file.original_name,
+            'contentType', file.content_type,
+            'sizeBytes', file.size_bytes,
+            'sha256', file.sha256,
+            'createdAt', file.created_at
+          ) AS file
+          FROM partner_support_attachments file
+          WHERE file.event_id = event.id
+          LIMIT 1
+        ) attachment ON true
         WHERE event.case_id = $1
         ORDER BY event.created_at, event.id
       `, [caseId]);
@@ -337,6 +356,188 @@ export class PartnerSupportService {
       });
       return event.rows[0];
     });
+  }
+
+  async addMessageWithAttachment(
+    actor: Actor,
+    caseId: string,
+    rawBody: string,
+    originalName: string,
+    contentType: string,
+    bytes: Buffer,
+    scope: "partner" | "operation",
+  ) {
+    this.ensureScope(actor, scope);
+    const caption = rawBody.trim();
+    if (caption.length > 0 && caption.length < 3) {
+      throw new BadRequestException("Escreva ao menos 3 caracteres ou envie o arquivo sem legenda.");
+    }
+    if (caption.length > 2000) {
+      throw new BadRequestException("A mensagem deve ter no máximo 2.000 caracteres.");
+    }
+    const fileName = validatePartnerSupportAttachment(originalName, contentType, bytes);
+    const body = caption || `Arquivo anexado: ${fileName}`;
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const eventId = randomUUID();
+    const attachmentId = randomUUID();
+
+    const preflight = await this.database.withActor(actor, async (client) => {
+      const result = await client.query<{
+        status: "open" | "in_review" | "resolved";
+      }>(`
+        SELECT status
+        FROM partner_support_cases
+        WHERE id = $1
+      `, [caseId]);
+      return result.rows[0];
+    });
+    if (!preflight) throw new NotFoundException("Solicitação de atendimento não encontrada.");
+    if (preflight.status === "resolved") {
+      throw new ConflictException("Solicitações resolvidas não recebem novos anexos.");
+    }
+
+    const objectKey = `partner-support/${caseId}/events/${eventId}/attachments/${attachmentId}`;
+    await this.storage.put(objectKey, bytes, contentType, sha256);
+    try {
+      return await this.database.withActor(actor, async (client) => {
+        const current = await client.query<{
+          partnerId: string;
+          status: "open" | "in_review" | "resolved";
+          publicCode: string;
+        }>(`
+          SELECT
+            partner_id AS "partnerId",
+            status,
+            public_code AS "publicCode"
+          FROM partner_support_cases
+          WHERE id = $1
+        `, [caseId]);
+        if (!current.rows[0]) throw new NotFoundException("Solicitação de atendimento não encontrada.");
+        if (current.rows[0].status === "resolved") {
+          throw new ConflictException("Solicitações resolvidas não recebem novos anexos.");
+        }
+
+        const event = await client.query(`
+          INSERT INTO partner_support_events (id, case_id, actor_id, event_type, body)
+          VALUES ($1, $2, $3, 'message', $4)
+          RETURNING id, event_type AS "eventType", body, created_at AS "createdAt"
+        `, [eventId, caseId, actor.id, body]);
+        const attachment = await client.query(`
+          INSERT INTO partner_support_attachments (
+            id, event_id, case_id, uploader_id, object_key, original_name,
+            content_type, size_bytes, sha256
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING
+            id,
+            original_name AS "fileName",
+            content_type AS "contentType",
+            size_bytes AS "sizeBytes",
+            sha256,
+            created_at AS "createdAt"
+        `, [
+          attachmentId,
+          eventId,
+          caseId,
+          actor.id,
+          objectKey,
+          fileName,
+          contentType,
+          bytes.length,
+          sha256,
+        ]);
+        if (scope === "operation") {
+          await client.query(`
+            UPDATE partner_support_cases
+            SET
+              first_responded_at = COALESCE(first_responded_at, now()),
+              updated_at = now()
+            WHERE id = $1
+          `, [caseId]);
+        }
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_support_case.attachment_sent', 'partner_support_attachment', $3, $4::jsonb)",
+          [actor.id, actor.role, attachmentId, JSON.stringify({
+            caseId,
+            eventId,
+            publicCode: current.rows[0].publicCode,
+            contentType,
+            sizeBytes: bytes.length,
+            sha256,
+          })],
+        );
+        const recipientId = scope === "partner"
+          ? "00000000-0000-4000-8000-000000000401"
+          : current.rows[0].partnerId;
+        await createNotification(client, {
+          userId: recipientId,
+          actorId: actor.id,
+          type: "support_message",
+          title: `Novo anexo · ${current.rows[0].publicCode}`,
+          body: caption ? caption.slice(0, 500) : `Arquivo privado: ${fileName}`,
+          entityType: "partner_support_case",
+          entityId: caseId,
+        });
+        return { ...event.rows[0], attachment: attachment.rows[0] };
+      });
+    } catch (error) {
+      await this.storage.remove(objectKey);
+      throw error;
+    }
+  }
+
+  async downloadAttachment(
+    actor: Actor,
+    attachmentId: string,
+    scope: "partner" | "operation",
+  ) {
+    this.ensureScope(actor, scope);
+    const record = await this.database.withActor(actor, async (client) => {
+      const result = await client.query<{
+        caseId: string;
+        eventId: string;
+        objectKey: string;
+        originalName: string;
+        contentType: string;
+        sizeBytes: number;
+        sha256: string;
+      }>(`
+        SELECT
+          attachment.case_id AS "caseId",
+          attachment.event_id AS "eventId",
+          attachment.object_key AS "objectKey",
+          attachment.original_name AS "originalName",
+          attachment.content_type AS "contentType",
+          attachment.size_bytes AS "sizeBytes",
+          attachment.sha256
+        FROM partner_support_attachments attachment
+        WHERE attachment.id = $1
+      `, [attachmentId]);
+      return result.rows[0];
+    });
+    if (!record) throw new NotFoundException("Anexo privado não encontrado.");
+
+    const bytes = await this.storage.get(record.objectKey);
+    const actualHash = createHash("sha256").update(bytes).digest("hex");
+    if (bytes.length !== record.sizeBytes || actualHash !== record.sha256) {
+      throw new ConflictException("A integridade do anexo privado não pôde ser confirmada.");
+    }
+    await this.database.withActor(actor, async (client) => {
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_support_case.attachment_downloaded', 'partner_support_attachment', $3, $4::jsonb)",
+        [actor.id, actor.role, attachmentId, JSON.stringify({
+          caseId: record.caseId,
+          eventId: record.eventId,
+          contentType: record.contentType,
+          sizeBytes: record.sizeBytes,
+          sha256: record.sha256,
+        })],
+      );
+    });
+    return {
+      originalName: record.originalName,
+      contentType: record.contentType,
+      bytes,
+    };
   }
 
   async triage(

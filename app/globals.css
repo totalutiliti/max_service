@@ -623,6 +623,12 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .support-message strong { font-size: .61rem; }
 .support-message p { margin: 0; font-size: .74rem; line-height: 1.5; white-space: pre-wrap; }
 .support-message small { justify-self: end; color: #7d887e; font-size: .53rem; }
+.support-private-attachment { min-width: min(310px, 72vw); padding: .58rem; border: 1px solid rgba(52,88,31,.2); border-radius: 10px; background: rgba(255,255,255,.72); color: #315f16; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .55rem; text-decoration: none; }
+.support-private-attachment > span { width: 34px; height: 34px; border-radius: 8px; background: #dff5ca; display: grid; place-items: center; font-size: .52rem; font-weight: 900; }
+.support-private-attachment > div { min-width: 0; display: grid; gap: .12rem; }
+.support-private-attachment > div strong { overflow: hidden; font-size: .59rem; text-overflow: ellipsis; white-space: nowrap; }
+.support-private-attachment > div small { justify-self: start; font-size: .5rem; }
+.support-private-attachment > b { font-size: .8rem; }
 .support-status-event { width: min(100%, 560px); margin: .85rem auto; padding: .75rem .9rem; border: 1px solid #dce2d8; border-radius: 12px; background: rgba(255,255,255,.88); display: grid; grid-template-columns: auto 1fr; gap: .7rem; }
 .support-status-event > span { width: 27px; height: 27px; border-radius: 50%; background: var(--ink); color: var(--lime); display: grid; place-items: center; font-size: .7rem; }
 .support-status-event.triage > span { background: #ffefc8; color: #8b6815; font-weight: 900; }
@@ -636,11 +642,18 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .support-resolution small { color: #4d8617; font-size: .55rem; font-weight: 850; letter-spacing: .08em; }
 .support-resolution strong { font-size: .7rem; }
 .support-resolution p { margin: 0; color: #708364; font-size: .56rem; }
-.support-composer { padding: .85rem 1rem; border-top: 1px solid #e1e6df; display: grid; grid-template-columns: 1fr auto; align-items: end; gap: .7rem; }
+.support-composer { padding: .85rem 1rem; border-top: 1px solid #e1e6df; display: grid; grid-template-columns: 44px 1fr auto; align-items: end; gap: .7rem; }
 .support-composer label, .support-transition label { display: grid; gap: .32rem; }
 .support-composer label span, .support-transition label span { font-size: .61rem; font-weight: 750; }
 .support-composer textarea, .support-transition textarea { width: 100%; min-height: 66px; border: 1px solid #cfd7cd; border-radius: 10px; padding: .68rem .75rem; resize: vertical; }
 .support-composer button { min-height: 44px; }
+.support-composer .support-attachment-button { width: 44px; height: 44px; border: 1px solid #cdd7c9; border-radius: 10px; background: #f0f5ed; display: grid; place-items: center; cursor: pointer; }
+.support-composer .support-attachment-button > span { font-size: 1.15rem; font-weight: 500; }
+.support-attachment-button input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; clip: rect(0 0 0 0); overflow: hidden; }
+.support-attachment-draft { grid-column: 1 / -1; min-height: 34px; padding: .35rem .4rem .35rem .65rem; border: 1px solid #b8d7a2; border-radius: 9px; background: #f1faea; color: #3e681f; display: flex; align-items: center; justify-content: space-between; gap: .7rem; font-size: .6rem; font-weight: 750; }
+.support-attachment-draft span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.support-attachment-draft button { width: 27px; height: 27px; min-height: 27px; padding: 0; background: transparent; color: #4a6142; font-size: 1rem; }
+.support-attachment-note { grid-column: 1 / -1; color: #7c897b; font-size: .51rem; }
 .support-triage { padding: .85rem 1rem; border-top: 1px solid #d8e1d4; background: #f5f9f1; display: grid; grid-template-columns: minmax(150px, .8fr) 130px 180px 1fr auto; align-items: end; gap: .65rem; }
 .support-triage > div { align-self: center; display: grid; gap: .2rem; }
 .support-triage > div small { color: #54851f; font-size: .53rem; font-weight: 850; letter-spacing: .08em; }
@@ -1127,8 +1140,10 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .support-header-badges { align-items: flex-end; flex-direction: column; }
   .support-sla-overview { grid-template-columns: 1fr; }
   .support-message { max-width: 90%; }
-  .support-composer, .support-transition { grid-template-columns: 1fr; }
-  .support-composer button, .support-transition button { width: 100%; }
+  .support-composer { grid-template-columns: 44px 1fr; }
+  .support-composer > button { width: 100%; grid-column: 1 / -1; }
+  .support-transition { grid-template-columns: 1fr; }
+  .support-transition button { width: 100%; }
   .partner-support-toolbar { grid-template-columns: 1fr; }
   .support-triage { grid-template-columns: 1fr; }
   .support-triage > div, .support-triage .triage-note { grid-column: auto; }

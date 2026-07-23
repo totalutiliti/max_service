@@ -41,6 +41,9 @@ services:
       OBJECT_STORAGE_BUCKET: max-service-private
       OBJECT_STORAGE_ACCESS_KEY: max_service_local
       OBJECT_STORAGE_SECRET_KEY: max_service_objects_local
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
     depends_on:
       database:
         condition: service_healthy

@@ -13,6 +13,7 @@ import { MessagingController } from "./messaging/messaging.controller.js";
 import { MessagingService } from "./messaging/messaging.service.js";
 import { NotificationsController } from "./notifications/notifications.controller.js";
 import { NotificationsService } from "./notifications/notifications.service.js";
+import { PushDeliveryService } from "./notifications/push-delivery.service.js";
 import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
 import { PartnersController, PublicReferralsController } from "./partners/partners.controller.js";
@@ -36,7 +37,7 @@ class HealthController {
 
 @Module({
   controllers: [HealthController, DemoSessionController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
+  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

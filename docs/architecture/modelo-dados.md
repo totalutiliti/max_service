@@ -33,7 +33,7 @@
 
 ### Operação
 
-`notifications`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `partner_support_attachments`, `audit_events`, `outbox_events` e `feature_flags`.
+`notifications`, `push_subscriptions`, `notification_push_deliveries`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `partner_support_attachments`, `audit_events`, `outbox_events` e `feature_flags`.
 
 ## Invariantes
 
@@ -48,6 +48,8 @@
 - resolver um chamado exige justificativa, responsável e instante de resolução;
 - cada notificação pertence a um destinatário e só pode ser emitida a partir de uma relação transacional comprovada;
 - leitura de notificação altera apenas `read_at`; conteúdo, origem e destinatário permanecem imutáveis;
+- cada assinatura Web Push pertence a um usuário e aparelho, só é criada ou revogada dentro da própria sessão e nunca expõe a chave privada VAPID ao navegador;
+- cada notificação cria entregas apenas para assinaturas ativas no mesmo commit; a fila é inacessível ao papel de aplicação, possui claim interno com lock, no máximo cinco tentativas e finalização de endpoints expirados;
 - um parceiro possui um código ativo e enxerga somente indicações vinculadas à própria rede;
 - convite manual nasce como `invited`; ativação exige um prestador convertido e instante de ativação;
 - captura por link ou QR exige código ativo, consentimento datado e versão do aviso de privacidade; repetição do mesmo e-mail na rede não cria nova indicação;

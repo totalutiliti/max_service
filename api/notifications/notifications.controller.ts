@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
 import { NotificationsService } from "./notifications.service.js";
 
@@ -31,5 +31,37 @@ export class NotificationsController {
   @Post("read-all")
   async markAllRead(@Headers("x-demo-role") role: string | undefined, @Headers("x-demo-actor-id") id: string | undefined) {
     return this.notifications.markAllRead(actorFromHeaders(role, id));
+  }
+
+  @Get("push")
+  async pushStatus(@Headers("x-demo-role") role: string | undefined, @Headers("x-demo-actor-id") id: string | undefined) {
+    return this.notifications.pushStatus(actorFromHeaders(role, id));
+  }
+
+  @Post("push/subscribe")
+  async subscribePush(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() body: { subscription?: unknown },
+  ) {
+    return this.notifications.subscribePush(actorFromHeaders(role, id), body.subscription);
+  }
+
+  @Post("push/status")
+  async pushEndpointStatus(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() body: { endpoint?: unknown },
+  ) {
+    return this.notifications.pushEndpointStatus(actorFromHeaders(role, id), body.endpoint);
+  }
+
+  @Post("push/unsubscribe")
+  async unsubscribePush(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() body: { endpoint?: unknown },
+  ) {
+    return this.notifications.unsubscribePush(actorFromHeaders(role, id), body.endpoint);
   }
 }

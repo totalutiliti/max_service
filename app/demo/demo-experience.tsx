@@ -771,7 +771,7 @@ function DashboardHeader({ role, eyebrow, title, children }: { role: Role; eyebr
   return (
     <header className="dashboard-header">
       <div><p>{eyebrow}</p><h1>{title}</h1></div>
-      <div className="dashboard-actions">{children}<NotificationCenter role={role} /><div className="mini-avatar">{roleDetails[role].short}</div></div>
+      <div className="dashboard-actions">{children}<NotificationCenter key={role} role={role} /><div className="mini-avatar">{roleDetails[role].short}</div></div>
     </header>
   );
 }
@@ -791,12 +791,79 @@ const notificationIcon: Record<UserNotification["type"], string> = {
   support_message: "AT",
 };
 
+type PushChannelState = "checking" | "unavailable" | "blocked" | "inactive" | "active" | "working" | "error";
+
+interface PushConfigurationResponse {
+  available?: boolean;
+  publicKey?: string | null;
+  error?: string;
+  message?: string;
+}
+
+function applicationServerKey(value: string) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const decoded = window.atob(base64);
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0)).buffer;
+}
+
 function NotificationCenter({ role }: { role: Role }) {
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
+  const [pushState, setPushState] = useState<PushChannelState>("checking");
+  const [pushPublicKey, setPushPublicKey] = useState<string | null>(null);
+  const [pushMessage, setPushMessage] = useState("");
+
+  const syncPushState = useCallback(async () => {
+    setPushMessage("");
+    if (
+      !window.isSecureContext
+      || !("serviceWorker" in navigator)
+      || !("PushManager" in window)
+      || !("Notification" in window)
+    ) {
+      setPushState("unavailable");
+      return;
+    }
+    setPushState("checking");
+    try {
+      const configResponse = await fetch(
+        `/api/v1/notifications?role=${encodeURIComponent(role)}&channel=push`,
+        { cache: "no-store" },
+      );
+      const config = await configResponse.json() as PushConfigurationResponse;
+      if (!configResponse.ok) throw new Error(config.error ?? config.message ?? "Não foi possível consultar o canal push.");
+      if (!config.available || !config.publicKey) {
+        setPushState("unavailable");
+        return;
+      }
+      setPushPublicKey(config.publicKey);
+      if (Notification.permission === "denied") {
+        setPushState("blocked");
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        setPushState("inactive");
+        return;
+      }
+      const statusResponse = await fetch("/api/v1/notifications", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role, action: "status-push", endpoint: subscription.endpoint }),
+      });
+      const status = await statusResponse.json() as { enabled?: boolean; error?: string; message?: string };
+      if (!statusResponse.ok) throw new Error(status.error ?? status.message ?? "Não foi possível confirmar este aparelho.");
+      setPushState(status.enabled ? "active" : "inactive");
+    } catch (error) {
+      setPushState("error");
+      setPushMessage(error instanceof Error ? error.message : "Não foi possível consultar os avisos deste aparelho.");
+    }
+  }, [role]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -846,8 +913,143 @@ function NotificationCenter({ role }: { role: Role }) {
     setRefresh((value) => value + 1);
   };
 
+  const enablePush = async () => {
+    if (!pushPublicKey || !("Notification" in window)) return;
+    setPushState("working");
+    setPushMessage("");
+    try {
+      const permission = Notification.permission === "granted"
+        ? "granted"
+        : await Notification.requestPermission();
+      if (permission !== "granted") {
+        setPushState("blocked");
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription()
+        ?? await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey(pushPublicKey),
+        });
+      const response = await fetch("/api/v1/notifications", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role, action: "subscribe-push", subscription: subscription.toJSON() }),
+      });
+      const payload = await response.json() as { error?: string; message?: string };
+      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível ativar os avisos.");
+      setPushState("active");
+      await registration.showNotification("Avisos ativados", {
+        body: "Este aparelho já pode receber novidades da Max Service.",
+        tag: "max-service-push-enabled",
+        icon: "/max-service-mark-192.png",
+        badge: "/max-service-mark-192.png",
+      });
+    } catch (error) {
+      setPushState("error");
+      setPushMessage(error instanceof Error ? error.message : "Não foi possível ativar os avisos.");
+    }
+  };
+
+  const disablePush = async () => {
+    setPushState("working");
+    setPushMessage("");
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const response = await fetch("/api/v1/notifications", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ role, action: "unsubscribe-push", endpoint: subscription.endpoint }),
+        });
+        const payload = await response.json() as { error?: string; message?: string };
+        if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível desativar os avisos.");
+        await subscription.unsubscribe();
+      }
+      setPushState("inactive");
+    } catch (error) {
+      setPushState("error");
+      setPushMessage(error instanceof Error ? error.message : "Não foi possível desativar os avisos.");
+    }
+  };
+
   const formatDate = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-  return <div className="notification-center"><button className={`notification-button ${unreadCount > 0 ? "has-unread" : ""}`} onClick={() => setOpen((value) => !value)} aria-label={`Notificações, ${unreadCount} não lida${unreadCount === 1 ? "" : "s"}`} aria-expanded={open}>{unreadCount > 0 ? unreadCount > 9 ? "9+" : unreadCount : "✓"}</button>{open && <section className="notifications-panel" role="dialog" aria-label="Central de notificações"><header><div><small>CENTRAL MAX</small><h2>Notificações</h2></div><button onClick={() => setOpen(false)} aria-label="Fechar notificações">×</button></header><div className="notifications-toolbar"><span>{unreadCount} não lida{unreadCount === 1 ? "" : "s"}</span>{unreadCount > 0 && <button onClick={() => updateRead("read-all")}>Marcar todas como lidas</button>}</div><div className="notifications-list">{loading && <div className="data-state">Carregando avisos...</div>}{!loading && notifications.length === 0 && <div className="data-state"><strong>Tudo tranquilo por aqui.</strong><span>Novos avisos aparecerão nesta central.</span></div>}{notifications.map((item) => <button key={item.id} className={item.readAt ? "read" : "unread"} onClick={() => !item.readAt && updateRead("read", item.id)}><i>{notificationIcon[item.type]}</i><span><strong>{item.title}</strong><p>{item.body}</p><small>{formatDate(item.createdAt)}{item.actorName ? ` · ${item.actorName}` : ""}</small></span>{!item.readAt && <em aria-label="Não lida" />}</button>)}</div></section>}</div>;
+  const toggleNotifications = () => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen) void syncPushState();
+  };
+  const pushCopy = pushState === "active"
+    ? "Ativo neste aparelho. Você receberá atualizações mesmo fora da plataforma."
+    : pushState === "blocked"
+      ? "A permissão está bloqueada no navegador. Libere-a nas configurações do site."
+      : pushState === "unavailable"
+        ? "Este navegador ou ambiente ainda não oferece avisos em segundo plano."
+        : "Receba propostas, mensagens e mudanças de atendimento fora da plataforma.";
+  return (
+    <div className="notification-center">
+      <button
+        className={`notification-button ${unreadCount > 0 ? "has-unread" : ""}`}
+        onClick={toggleNotifications}
+        aria-label={`Notificações, ${unreadCount} não lida${unreadCount === 1 ? "" : "s"}`}
+        aria-expanded={open}
+      >
+        {unreadCount > 0 ? unreadCount > 9 ? "9+" : unreadCount : "✓"}
+      </button>
+      {open && (
+        <section className="notifications-panel" role="dialog" aria-label="Central de notificações">
+          <header>
+            <div><small>CENTRAL MAX</small><h2>Notificações</h2></div>
+            <button onClick={() => setOpen(false)} aria-label="Fechar notificações">×</button>
+          </header>
+          <div className="notifications-toolbar">
+            <span>{unreadCount} não lida{unreadCount === 1 ? "" : "s"}</span>
+            {unreadCount > 0 && <button onClick={() => updateRead("read-all")}>Marcar todas como lidas</button>}
+          </div>
+          <div className={`push-channel push-${pushState}`}>
+            <div>
+              <strong>Avisos neste aparelho</strong>
+              <span>{pushState === "checking" ? "Verificando disponibilidade..." : pushCopy}</span>
+              {pushState !== "active" && pushState !== "checking" && (
+                <small>O conteúdo pode aparecer na tela bloqueada.</small>
+              )}
+              {pushMessage && <small role="alert">{pushMessage}</small>}
+            </div>
+            {pushState === "active" && <button onClick={disablePush}>Desativar</button>}
+            {(pushState === "inactive" || pushState === "error") && (
+              <button onClick={enablePush} disabled={!pushPublicKey}>Ativar avisos</button>
+            )}
+            {pushState === "working" && <button disabled>Salvando...</button>}
+          </div>
+          <div className="notifications-list">
+            {loading && <div className="data-state">Carregando avisos...</div>}
+            {!loading && notifications.length === 0 && (
+              <div className="data-state">
+                <strong>Tudo tranquilo por aqui.</strong>
+                <span>Novos avisos aparecerão nesta central.</span>
+              </div>
+            )}
+            {notifications.map((item) => (
+              <button
+                key={item.id}
+                className={item.readAt ? "read" : "unread"}
+                onClick={() => !item.readAt && updateRead("read", item.id)}
+              >
+                <i>{notificationIcon[item.type]}</i>
+                <span>
+                  <strong>{item.title}</strong>
+                  <p>{item.body}</p>
+                  <small>{formatDate(item.createdAt)}{item.actorName ? ` · ${item.actorName}` : ""}</small>
+                </span>
+                {!item.readAt && <em aria-label="Não lida" />}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
 }
 
 function useServiceCategories(notify: (message: string) => void) {

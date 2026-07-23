@@ -168,7 +168,7 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .notification-button { width: 42px; padding: 0; border-radius: 50%; position: relative; color: #366c00; }
 .notification-button.has-unread { border-color: #74b82d; background: #efffdf; box-shadow: 0 0 0 3px rgba(117,230,0,.12); }
 .notification-center { position: relative; }
-.notifications-panel { position: absolute; z-index: 60; top: calc(100% + .7rem); right: 0; width: min(390px, calc(100vw - 2rem)); max-height: min(620px, calc(100vh - 110px)); overflow: hidden; border: 1px solid #dce2da; border-radius: 18px; background: var(--white); box-shadow: 0 24px 65px rgba(12,24,13,.2); display: grid; grid-template-rows: auto auto minmax(0,1fr); }
+.notifications-panel { position: absolute; z-index: 60; top: calc(100% + .7rem); right: 0; width: min(390px, calc(100vw - 2rem)); max-height: min(660px, calc(100vh - 110px)); overflow: hidden; border: 1px solid #dce2da; border-radius: 18px; background: var(--white); box-shadow: 0 24px 65px rgba(12,24,13,.2); display: grid; grid-template-rows: auto auto auto minmax(0,1fr); }
 .notifications-panel > header { padding: 1rem 1rem .8rem; background: radial-gradient(circle at 85% 15%, rgba(117,230,0,.16), transparent 30%), var(--ink); color: var(--white); display: flex; align-items: center; justify-content: space-between; }
 .notifications-panel > header div { display: grid; gap: .2rem; }
 .notifications-panel > header small { color: var(--lime); font-size: .54rem; font-weight: 850; letter-spacing: .11em; }
@@ -177,6 +177,17 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .notifications-toolbar { min-height: 44px; padding: .55rem .8rem; border-bottom: 1px solid #e5eae3; display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
 .notifications-toolbar span { color: var(--muted); font-size: .62rem; }
 .notifications-toolbar button { border: 0; background: transparent; color: #4c8413; font-size: .62rem; font-weight: 800; cursor: pointer; }
+.push-channel { padding: .72rem .8rem; border-bottom: 1px solid #e5eae3; background: #f7faf4; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .7rem; }
+.push-channel > div { min-width: 0; display: grid; gap: .18rem; }
+.push-channel strong { color: #253126; font-size: .66rem; }
+.push-channel span { color: #68736a; font-size: .58rem; line-height: 1.4; }
+.push-channel small { color: #8a938b; font-size: .51rem; line-height: 1.35; }
+.push-channel small[role="alert"] { color: #a33b2b; }
+.push-channel > button { min-height: 34px; padding: 0 .65rem; border: 1px solid #b9c7b5; border-radius: 8px; background: var(--white); color: #3f7410; font-size: .56rem; font-weight: 850; cursor: pointer; }
+.push-channel > button:disabled { cursor: wait; opacity: .65; }
+.push-channel.push-active { background: #efffdf; }
+.push-channel.push-active > button { color: #617064; }
+.push-channel.push-blocked, .push-channel.push-error { background: #fff8f3; }
 .notifications-list { overflow-y: auto; }
 .notifications-list > button { width: 100%; min-height: 90px; padding: .8rem; border: 0; border-bottom: 1px solid #ebefea; background: var(--white); display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: .7rem; text-align: left; cursor: pointer; }
 .notifications-list > button.unread { background: #f5fbea; }

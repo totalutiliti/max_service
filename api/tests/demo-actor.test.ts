@@ -8,6 +8,7 @@ import {
   maximumPartnerSupportAttachmentBytes,
   validatePartnerSupportAttachment,
 } from "../support/partner-support-attachment-validation.js";
+import { validatePushSubscription } from "../notifications/push-subscription-validation.js";
 import { maximumProviderDocumentBytes, validateProviderDocumentFile } from "../verifications/document-file-validation.js";
 
 test("aceita somente a identidade correspondente ao perfil demonstrativo", () => {
@@ -102,5 +103,26 @@ test("valida anexos privados da central por nome, tipo, tamanho e assinatura", (
       Buffer.alloc(maximumPartnerSupportAttachmentBytes + 1),
     ),
     /2 MB/,
+  );
+});
+
+test("aceita somente assinaturas push HTTPS com chaves Web Push válidas", () => {
+  const subscription = validatePushSubscription({
+    endpoint: "https://push.example.test/subscriptions/device-01",
+    expirationTime: null,
+    keys: {
+      p256dh: "BOV-zZnXYcbOZQsTsmmFyBq0fSn0GqVxA0spNOhcC-OEP_-cDslYPb-kNebFNaKZTa0xRlZjMaUf46R41aTLhxg",
+      auth: "AAAAAAAAAAAAAAAAAAAAAA",
+    },
+  });
+  assert.equal(subscription.endpoint, "https://push.example.test/subscriptions/device-01");
+  assert.equal(subscription.keys.auth, "AAAAAAAAAAAAAAAAAAAAAA");
+  assert.throws(
+    () => validatePushSubscription({ ...subscription, endpoint: "http://push.example.test/device" }),
+    /Endpoint/,
+  );
+  assert.throws(
+    () => validatePushSubscription({ ...subscription, keys: { ...subscription.keys, auth: "curta" } }),
+    /autenticação/,
   );
 });

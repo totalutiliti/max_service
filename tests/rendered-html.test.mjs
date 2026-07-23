@@ -57,6 +57,8 @@ test("publica uma PWA instalável sem armazenar APIs protegidas", async () => {
   const serviceWorker = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
   assert.match(serviceWorker, /url\.pathname\.startsWith\("\/api\/"\)/);
   assert.match(serviceWorker, /offline\.html/);
+  assert.match(serviceWorker, /addEventListener\("push"/);
+  assert.match(serviceWorker, /addEventListener\("notificationclick"/);
   assert.doesNotMatch(serviceWorker, /cache\.put\(/);
 
   const offline = await readFile(new URL("../public/offline.html", import.meta.url), "utf8");

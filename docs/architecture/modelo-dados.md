@@ -25,7 +25,7 @@
 
 ### Marketplace
 
-`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `booking_cancellations`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`.
+`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `booking_cancellations`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`. `service_request_attachments` está materializada no piloto com metadados no PostgreSQL e bytes no object storage privado; anexos de mensagens permanecem como alvo.
 
 ### Crescimento e receita
 
@@ -64,3 +64,5 @@
 - sem `app.session_token_hash`, a role de runtime não lê nem altera sessões.
 - cada versão documental possui chave de objeto aleatória, hash SHA-256, tipo e tamanho validados; nenhuma versão é sobrescrita pela aplicação;
 - somente o profissional proprietário e a operação consultam os metadados; o arquivo é entregue como anexo privado, sem URL pública;
+- cada pedido aceita até três imagens append-only JPEG/PNG de 512 KB, com chave de objeto aleatória, hash SHA-256 e validação conjunta de MIME, extensão e assinatura;
+- imagens de pedido são visíveis ao cliente proprietário, aos profissionais enquanto a solicitação é oportunidade aberta e, após o aceite, somente ao profissional contratado e à operação;

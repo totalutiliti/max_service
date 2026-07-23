@@ -3,6 +3,7 @@ import test from "node:test";
 import { demoActorIds, parseDemoActor } from "../auth/demo-actor.js";
 import { computeInternalSignature, verifyInternalSignature } from "../auth/internal-signature.js";
 import { computeSandboxSignature, verifySandboxSignature } from "../finance/finance-signature.js";
+import { maximumRequestAttachmentBytes, validateRequestAttachment } from "../marketplace/request-attachment-validation.js";
 import { maximumProviderDocumentBytes, validateProviderDocumentFile } from "../verifications/document-file-validation.js";
 
 test("aceita somente a identidade correspondente ao perfil demonstrativo", () => {
@@ -64,5 +65,18 @@ test("valida nome, tamanho, MIME e assinatura binária de documento", () => {
   assert.throws(
     () => validateProviderDocumentFile("grande.png", "image/png", Buffer.alloc(maximumProviderDocumentBytes + 1)),
     /2 MB/,
+  );
+});
+
+test("aceita somente imagens de pedido coerentes com MIME, extensão e assinatura", () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+  assert.equal(validateRequestAttachment("pasta\\problema.png", "image/png", png), "problema.png");
+  assert.throws(
+    () => validateRequestAttachment("falso.png", "image/png", Buffer.from("imagem adulterada")),
+    /assinatura/,
+  );
+  assert.throws(
+    () => validateRequestAttachment("grande.jpg", "image/jpeg", Buffer.alloc(maximumRequestAttachmentBytes + 1)),
+    /512 KB/,
   );
 });

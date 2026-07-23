@@ -8,6 +8,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 | perfil do cliente | próprio | nenhum | nenhum | caso autorizado | auditado |
 | perfil do prestador | dados públicos; privado só quando necessário ao booking | próprio | afiliados, campos mínimos | moderação | auditado |
 | solicitação | própria | oportunidade elegível sem PII excessiva | nenhum | caso autorizado | auditado |
+| imagens da solicitação | somente próprias | oportunidade elegível; após aceite, somente contratado | nenhum | caso autorizado | auditado |
 | proposta | das próprias solicitações | própria | nenhum | suporte/disputa | auditado |
 | booking | próprio | próprio | afiliado sem chat/PII | suporte/disputa | auditado |
 | cancelamento | solicita e consulta no booking próprio | solicita e consulta no booking próprio | nenhum | consulta operacional | auditado |
@@ -52,6 +53,8 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - aprovação com item pendente e correção sem item marcado são bloqueadas;
 - profissional não associa arquivo à verificação de outro; cliente e parceiro enxergam zero metadados;
 - bucket anônimo retorna `403`; downloads do profissional e da operação validam tamanho/hash e geram auditoria;
+- cliente anexa somente ao próprio pedido aberto; quarta imagem, assinatura inválida e excesso de 512 KB são bloqueados;
+- após o booking, prestador não contratado, parceiro e conexão sem contexto retornam zero imagens do pedido;
 - cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
 - somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
 - evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;

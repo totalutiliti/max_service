@@ -54,7 +54,7 @@ export async function proxyDemoBinaryRequest(
       headers: { "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8", "cache-control": "no-store" },
     });
   } catch {
-    return Response.json({ error: "O cofre documental está temporariamente indisponível." }, { status: 503 });
+    return Response.json({ error: "O armazenamento privado está temporariamente indisponível." }, { status: 503 });
   }
 }
 

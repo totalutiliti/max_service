@@ -31,4 +31,4 @@ Pagamento real, garantia, antecedentes, biometria, crédito e categorias regulad
 
 ## Situação do upload no piloto
 
-O piloto implementa bucket privado, chave aleatória gerada pelo servidor, allowlist de tipo/extensão/assinatura, limite de 2 MB, hash de integridade, versionamento, autorização por sessão/RLS e auditoria. Quarentena automatizada e antivírus continuam ausentes; portanto somente arquivos sintéticos são permitidos.
+O piloto implementa bucket privado, chave aleatória gerada pelo servidor, allowlist de tipo/extensão/assinatura, hash de integridade, autorização por sessão/RLS e auditoria. Documentos de verificação são versionados e limitados a 2 MB; imagens de pedidos são append-only, limitadas a três arquivos de 512 KB e expostas somente pelo BFF autenticado. Quarentena automatizada e antivírus continuam ausentes; portanto somente arquivos sintéticos são permitidos. Em produção, anexos maiores devem usar upload direto assinado ao object storage, sem atravessar o limite de corpo da borda.

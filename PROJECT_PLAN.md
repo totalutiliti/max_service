@@ -32,7 +32,8 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.
 - A verificação possui cofre S3 local para documentos sintéticos, versões append-only, validação de assinatura/MIME/tamanho, hash SHA-256, download privado e auditoria por ator.
-- Captura pública de indicação, arquivos privados, autenticação real e integrações reguladas continuam condicionados aos gates das fases seguintes.
+- A solicitação de serviço aceita até três imagens sintéticas privadas, com limite compatível com a borda local, hash, RLS, auditoria e visualização pelo profissional autorizado.
+- Captura pública de indicação, autenticação real, processamento antimalware e integrações reguladas continuam condicionados aos gates das fases seguintes.
 
 ## Não objetivos do MVP
 

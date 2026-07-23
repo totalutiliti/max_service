@@ -15,6 +15,15 @@ interface DemoSession {
   expiresAt: string;
 }
 
+interface RequestAttachment {
+  id: string;
+  fileName: string;
+  contentType: "image/jpeg" | "image/png";
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
 interface PersistedRequest {
   id: string;
   publicCode: string;
@@ -29,6 +38,7 @@ interface PersistedRequest {
   categoryIcon: string;
   proposalCount: number;
   hasActorProposal?: boolean;
+  attachments: RequestAttachment[];
 }
 
 interface PersistedProposal {
@@ -666,6 +676,7 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
   const [step, setStep] = useState<RequestStep>(1);
   const [category, setCategory] = useState("Eletricista");
   const [description, setDescription] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -675,6 +686,22 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
+
+  const addPhotos = (selected: FileList | null) => {
+    if (!selected) return;
+    const candidates = Array.from(selected);
+    const invalid = candidates.find((file) => !["image/jpeg", "image/png"].includes(file.type) || file.size > 524_288 || file.size < 8);
+    if (invalid) {
+      notify(`${invalid.name}: use somente JPEG ou PNG de até 512 KB.`);
+      return;
+    }
+    setPhotos((current) => {
+      const unique = candidates.filter((file) => !current.some((item) => item.name === file.name && item.size === file.size));
+      const nextPhotos = [...current, ...unique].slice(0, 3);
+      if (current.length + unique.length > 3) notify("Cada pedido aceita no máximo 3 imagens.");
+      return nextPhotos;
+    });
+  };
 
   const next = () => setStep((Math.min(4, step + 1)) as RequestStep);
   const back = () => setStep((Math.max(1, step - 1)) as RequestStep);
@@ -694,9 +721,24 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
           preferredWindow: "O quanto antes",
         }),
       });
-      const payload = await response.json() as { request?: { publicCode?: string }; error?: string; message?: string };
-      if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível criar o pedido.");
-      notify(`Pedido ${payload.request?.publicCode ?? ""} criado e salvo com sucesso.`);
+      const payload = await response.json() as { request?: { id?: string; publicCode?: string }; error?: string; message?: string };
+      if (!response.ok || !payload.request?.id) throw new Error(payload.error ?? payload.message ?? "Não foi possível criar o pedido.");
+      let uploaded = 0;
+      let uploadFailure = "";
+      for (const photo of photos) {
+        const form = new FormData();
+        form.set("requestId", payload.request.id);
+        form.set("file", photo);
+        const uploadResponse = await fetch("/api/v1/customer/request-attachments", { method: "POST", body: form });
+        const uploadPayload = await uploadResponse.json() as { error?: string; message?: string };
+        if (uploadResponse.ok) uploaded += 1;
+        else uploadFailure = uploadPayload.error ?? uploadPayload.message ?? "Uma imagem não pôde ser guardada.";
+      }
+      if (uploadFailure) {
+        notify(`Pedido ${payload.request.publicCode ?? ""} criado; ${uploaded} de ${photos.length} imagem(ns) guardada(s). ${uploadFailure}`);
+      } else {
+        notify(`Pedido ${payload.request.publicCode ?? ""} criado${uploaded ? ` com ${uploaded} imagem(ns) privada(s)` : ""}.`);
+      }
       onClose();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Não foi possível salvar o pedido.");
@@ -711,9 +753,9 @@ function RequestDialog({ onClose, notify }: { onClose: () => void; notify: (mess
         <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
         {step < 4 && <><p className="dialog-kicker">NOVO PEDIDO · ETAPA {step} DE 3</p><div className="dialog-progress"><span style={{ width: `${step * 33.33}%` }} /></div></>}
         {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map(([icon, name]) => <button key={name} onClick={() => setCategory(name)} className={category === name ? "selected" : ""} aria-pressed={category === name}><span>{icon}</span>{name}<i aria-hidden="true">✓</i></button>)}</div></div>}
-        {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><button className="upload-placeholder" type="button" onClick={() => notify("Envio de fotos será conectado na próxima fase.")}><span>＋</span><strong>Adicionar fotos</strong><small>Opcional · JPG ou PNG</small></button></div>}
+        {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><label className="upload-placeholder"><input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} /><span>＋</span><strong>Adicionar fotos sintéticas</strong><small>Opcional · até 3 JPEG/PNG de 512 KB</small></label>{photos.length > 0 && <ul className="request-photo-selection">{photos.map((photo) => <li key={`${photo.name}-${photo.size}`}><span>{photo.type === "image/png" ? "PNG" : "JPG"}</span><div><strong>{photo.name}</strong><small>{Math.ceil(photo.size / 1024)} KB · privado</small></div><button type="button" onClick={() => setPhotos((current) => current.filter((item) => item !== photo))} aria-label={`Remover ${photo.name}`}>×</button></li>)}</ul>}<p className="synthetic-file-note">Use apenas imagens sintéticas nesta demonstração. Os arquivos ficam privados e sem link público.</p></div>}
         {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Você poderá ajustar os detalhes com o profissional pelo chat.</p><label className="field"><span>Região</span><input value="Jardim Europa, Sorocaba - SP" readOnly /></label><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
-        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{categories.find((item) => item[1] === category)?.[0]}</span><div><small>Categoria</small><strong>{category}</strong><small>Jardim Europa · o quanto antes</small></div></div><button className="button" onClick={finish} disabled={saving}>{saving ? "Salvando..." : "Confirmar e acompanhar"}</button></div>}
+        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{categories.find((item) => item[1] === category)?.[0]}</span><div><small>Categoria</small><strong>{category}</strong><small>Jardim Europa · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
         {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={step === 2 && description.trim().length < 10}>Continuar →</button></footer>}
       </section>
     </div>
@@ -813,7 +855,7 @@ function ProviderView({ notify }: { notify: (message: string) => void }) {
 }
 
 function Opportunity({ request, onSelect }: { request: PersistedRequest; onSelect: () => void }) {
-  return <article><span className="category-icon">{request.categoryIcon}</span><div><strong>{request.title}</strong><span>{request.neighborhood} · {request.city}</span></div><div><small>{request.preferredWindow}</small><button onClick={onSelect}>{request.hasActorProposal ? "Atualizar proposta" : "Enviar proposta"}</button></div></article>;
+  return <article><span className="category-icon">{request.categoryIcon}</span><div><strong>{request.title}</strong><span>{request.neighborhood} · {request.city}{request.attachments.length ? ` · ${request.attachments.length} foto(s)` : ""}</span></div><div><small>{request.preferredWindow}</small><button onClick={onSelect}>{request.hasActorProposal ? "Atualizar proposta" : "Enviar proposta"}</button></div></article>;
 }
 
 function ProposalDialog({ request, onClose, onSaved, notify }: { request: PersistedRequest; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
@@ -861,6 +903,7 @@ function ProposalDialog({ request, onClose, onSaved, notify }: { request: Persis
       <section className="request-dialog proposal-dialog" role="dialog" aria-modal="true" aria-labelledby="proposal-title">
         <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
         <div className="proposal-request-summary"><span>{request.categoryIcon}</span><div><small>{request.publicCode} · {request.categoryName}</small><h2 id="proposal-title">{request.title}</h2><p>{request.description}</p><em>⌖ {request.neighborhood}, {request.city} · {request.preferredWindow}</em></div></div>
+        {request.attachments.length > 0 && <section className="request-photo-gallery"><header><div><small>IMAGENS DO PEDIDO</small><strong>{request.attachments.length} arquivo(s) privado(s)</strong></div><span>Somente para avaliar o serviço</span></header><div>{request.attachments.map((attachment, index) => <a key={attachment.id} href={`/api/v1/provider/request-attachments?attachmentId=${encodeURIComponent(attachment.id)}`} target="_blank" rel="noreferrer"><Image src={`/api/v1/provider/request-attachments?attachmentId=${encodeURIComponent(attachment.id)}`} alt={`Imagem ${index + 1} do pedido ${request.publicCode}`} width={220} height={120} unoptimized /><span>Abrir imagem {index + 1}</span></a>)}</div></section>}
         <form className="proposal-form" onSubmit={submit}>
           <div className="proposal-fields"><label className="field"><span>Valor da proposta</span><div className="money-input"><i>R$</i><input type="number" min="1" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required /></div></label><label className="field"><span>Tempo estimado</span><select value={minutes} onChange={(event) => setMinutes(event.target.value)}><option value="60">Até 1 hora</option><option value="90">Até 1h30</option><option value="120">Até 2 horas</option><option value="240">Até 4 horas</option><option value="480">Até 1 dia</option></select></label></div>
           <label className="field"><span>Mensagem para o cliente</span><textarea rows={4} maxLength={500} value={message} onChange={(event) => setMessage(event.target.value)} required /><small>{message.length}/500 caracteres</small></label>

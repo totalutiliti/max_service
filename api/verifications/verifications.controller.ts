@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Headers, Param, PayloadTooLargeException, Post, Req, Res, StreamableFile, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Req, Res, StreamableFile, UnauthorizedException } from "@nestjs/common";
 import type { IncomingMessage } from "node:http";
 import { parseDemoActor } from "../auth/demo-actor.js";
+import { decodeFileName, readLimitedBody, setPrivateFileHeaders, type HeaderResponse } from "../storage/private-file-http.js";
+import { maximumProviderDocumentBytes } from "./document-file-validation.js";
 import { ChangeVerificationStatusDto, ReviewProviderDocumentDto } from "./verifications.dto.js";
 import { VerificationsService } from "./verifications.service.js";
 
@@ -34,7 +36,7 @@ export class ProviderVerificationController {
     @Req() request: IncomingMessage,
   ) {
     const fileName = decodeFileName(encodedFileName);
-    const bytes = await readLimitedBody(request);
+    const bytes = await readLimitedBody(request, maximumProviderDocumentBytes, "O arquivo excede o limite de 2 MB.");
     return { verification: await this.verifications.uploadDocument(actorFromHeaders(role, id), documentId, fileName, contentType ?? "", bytes) };
   }
 
@@ -46,7 +48,7 @@ export class ProviderVerificationController {
     @Res({ passthrough: true }) response: HeaderResponse,
   ) {
     const file = await this.verifications.downloadDocument(actorFromHeaders(role, id), fileId);
-    setDownloadHeaders(response, file.originalName, file.contentType, file.bytes.length);
+    setPrivateFileHeaders(response, file.originalName, file.contentType, file.bytes.length);
     return new StreamableFile(file.bytes);
   }
 }
@@ -80,7 +82,7 @@ export class OperationVerificationsController {
     @Res({ passthrough: true }) response: HeaderResponse,
   ) {
     const file = await this.verifications.downloadDocument(actorFromHeaders(role, id), fileId);
-    setDownloadHeaders(response, file.originalName, file.contentType, file.bytes.length);
+    setPrivateFileHeaders(response, file.originalName, file.contentType, file.bytes.length);
     return new StreamableFile(file.bytes);
   }
 
@@ -104,38 +106,4 @@ export class OperationVerificationsController {
   ) {
     return { verification: await this.verifications.reviewDocument(actorFromHeaders(role, id), verificationId, documentId, input.status, input.note) };
   }
-}
-
-interface HeaderResponse {
-  setHeader(name: string, value: string | number): void;
-}
-
-function decodeFileName(value: string | undefined) {
-  if (!value) return "";
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return "";
-  }
-}
-
-async function readLimitedBody(request: IncomingMessage) {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += bytes.length;
-    if (size > 2_097_152) throw new PayloadTooLargeException("O arquivo excede o limite de 2 MB.");
-    chunks.push(bytes);
-  }
-  return Buffer.concat(chunks, size);
-}
-
-function setDownloadHeaders(response: HeaderResponse, fileName: string, contentType: string, size: number) {
-  const asciiName = fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
-  response.setHeader("content-type", contentType);
-  response.setHeader("content-length", size);
-  response.setHeader("content-disposition", `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-  response.setHeader("cache-control", "private, no-store");
-  response.setHeader("x-content-type-options", "nosniff");
 }

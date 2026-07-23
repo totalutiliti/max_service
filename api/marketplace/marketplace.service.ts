@@ -1,9 +1,20 @@
-import { randomBytes, randomUUID } from "node:crypto";
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
+import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import type { CreateProposalDto, CreateServiceRequestDto } from "./marketplace.dto.js";
+import { maximumRequestAttachmentCount, validateRequestAttachment } from "./request-attachment-validation.js";
+
+interface RequestAttachmentRow {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: Date;
+}
 
 interface ServiceRequestRow {
   id: string;
@@ -20,11 +31,15 @@ interface ServiceRequestRow {
   categoryIcon: string;
   proposalCount: number;
   hasActorProposal: boolean;
+  attachments: RequestAttachmentRow[];
 }
 
 @Injectable()
 export class MarketplaceService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly storage: PrivateObjectStorageService,
+  ) {}
 
   async categories() {
     const result = await this.database.query<{
@@ -57,7 +72,19 @@ export class MarketplaceService {
             SELECT 1 FROM proposals own_proposal
             WHERE own_proposal.request_id = r.id
               AND own_proposal.provider_id = $2::uuid
-          ) AS "hasActorProposal"
+          ) AS "hasActorProposal",
+          COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+              'id', attachment.id,
+              'fileName', attachment.original_name,
+              'contentType', attachment.content_type,
+              'sizeBytes', attachment.size_bytes,
+              'sha256', attachment.sha256,
+              'createdAt', attachment.created_at
+            ) ORDER BY attachment.created_at, attachment.id)
+            FROM service_request_attachments attachment
+            WHERE attachment.request_id = r.id
+          ), '[]'::jsonb) AS attachments
         FROM service_requests r
         JOIN service_categories c ON c.id = r.category_id
         LEFT JOIN proposals p ON p.request_id = r.id
@@ -103,6 +130,103 @@ export class MarketplaceService {
 
       return created.rows[0];
     });
+  }
+
+  async uploadRequestAttachment(actor: Actor, requestId: string, originalName: string, contentType: string, bytes: Buffer) {
+    if (actor.role !== "customer") throw new ForbiddenException("Somente clientes podem anexar imagens ao pedido.");
+    const fileName = validateRequestAttachment(originalName, contentType, bytes);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const attachmentId = randomUUID();
+    const request = await this.database.withActor(actor, async (client) => {
+      const result = await client.query<{ id: string; publicCode: string }>(`
+        SELECT id, public_code AS "publicCode"
+        FROM service_requests
+        WHERE id = $1 AND customer_id = $2 AND status IN ('open', 'proposals_received')
+      `, [requestId, actor.id]);
+      if (!result.rows[0]) return null;
+      const count = await client.query<{ total: number }>(
+        "SELECT count(*)::int AS total FROM service_request_attachments WHERE request_id = $1",
+        [requestId],
+      );
+      return { ...result.rows[0], attachmentCount: count.rows[0]?.total ?? 0 };
+    });
+    if (!request) throw new NotFoundException("Pedido não encontrado ou indisponível para anexos.");
+    if (request.attachmentCount >= maximumRequestAttachmentCount) {
+      throw new ConflictException("O pedido já possui o limite de 3 imagens.");
+    }
+
+    const objectKey = `service-requests/${requestId}/attachments/${attachmentId}`;
+    await this.storage.put(objectKey, bytes, contentType, sha256);
+    try {
+      return await this.database.withActor(actor, async (client) => {
+        const result = await client.query<RequestAttachmentRow>(`
+          INSERT INTO service_request_attachments (
+            id, request_id, customer_id, object_key, original_name,
+            content_type, size_bytes, sha256, uploaded_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $3)
+          RETURNING
+            id,
+            original_name AS "fileName",
+            content_type AS "contentType",
+            size_bytes AS "sizeBytes",
+            sha256,
+            created_at AS "createdAt"
+        `, [attachmentId, requestId, actor.id, objectKey, fileName, contentType, bytes.length, sha256]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_request.attachment_uploaded', 'service_request_attachment', $3, $4::jsonb)",
+          [actor.id, actor.role, attachmentId, JSON.stringify({ requestId, publicCode: request.publicCode, contentType, sizeBytes: bytes.length, sha256 })],
+        );
+        return result.rows[0];
+      });
+    } catch (error) {
+      await this.storage.remove(objectKey);
+      if (error instanceof Error && error.message.includes("service_request_attachment_limit")) {
+        throw new ConflictException("O pedido já possui o limite de 3 imagens.");
+      }
+      throw error;
+    }
+  }
+
+  async downloadRequestAttachment(actor: Actor, attachmentId: string) {
+    if (actor.role !== "customer" && actor.role !== "provider" && actor.role !== "operation") {
+      throw new ForbiddenException("Perfil sem acesso às imagens privadas do pedido.");
+    }
+    const record = await this.database.withActor(actor, async (client) => {
+      const result = await client.query<{
+        id: string;
+        requestId: string;
+        objectKey: string;
+        originalName: string;
+        contentType: string;
+        sizeBytes: number;
+        sha256: string;
+      }>(`
+        SELECT
+          attachment.id,
+          attachment.request_id AS "requestId",
+          attachment.object_key AS "objectKey",
+          attachment.original_name AS "originalName",
+          attachment.content_type AS "contentType",
+          attachment.size_bytes AS "sizeBytes",
+          attachment.sha256
+        FROM service_request_attachments attachment
+        WHERE attachment.id = $1
+      `, [attachmentId]);
+      return result.rows[0];
+    });
+    if (!record) throw new NotFoundException("Imagem privada não encontrada.");
+    const bytes = await this.storage.get(record.objectKey);
+    const actualHash = createHash("sha256").update(bytes).digest("hex");
+    if (bytes.length !== record.sizeBytes || actualHash !== record.sha256) {
+      throw new ConflictException("A integridade da imagem privada não pôde ser confirmada.");
+    }
+    await this.database.withActor(actor, async (client) => {
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_request.attachment_downloaded', 'service_request_attachment', $3, $4::jsonb)",
+        [actor.id, actor.role, attachmentId, JSON.stringify({ requestId: record.requestId, contentType: record.contentType, sizeBytes: record.sizeBytes, sha256: record.sha256 })],
+      );
+    });
+    return { ...record, bytes };
   }
 
   async listProposals(actor: Actor, requestId: string) {

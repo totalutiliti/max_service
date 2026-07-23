@@ -6,7 +6,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 
 ## Incluído
 
-- superfície pública e onboarding;
+- superfície pública e onboarding persistente de cliente e profissional, com documentos versionados, aceite íntegro e preferências opcionais separadas;
 - PWA instalável com ícones próprios, atalho para a plataforma e tela offline sem cache de dados autenticados;
 - cliente, prestador, parceiro e administração;
 - seis categorias piloto persistentes, ordenáveis e ativáveis pela Operação com justificativa e auditoria;

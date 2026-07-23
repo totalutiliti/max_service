@@ -2,8 +2,8 @@
 
 ## P0 - validar o marketplace
 
-- autenticação, confirmação e sessões revogáveis;
-- onboarding cliente/prestador e termos;
+- autenticação e confirmação reais sobre as sessões revogáveis já materializadas;
+- aprovação jurídica das minutas, enquanto onboarding, aceites e consentimentos de cliente/prestador já estão materializados;
 - catálogo piloto persistente, gestão operacional auditável e regiões;
 - solicitação, propostas, chat, agenda e estados;
 - cancelamentos, avaliações e notificações;

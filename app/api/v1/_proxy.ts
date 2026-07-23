@@ -1,9 +1,11 @@
 import { apiUrl, crossOriginMutation, demoActorIds, type DemoRole, resolveDemoSession, signedInternalHeaders } from "./_session";
 
+type AllowedDemoRole = DemoRole | readonly DemoRole[];
+
 export async function proxyDemoRequest(
   path: string,
   request: Request,
-  role: DemoRole,
+  role: AllowedDemoRole,
   payload?: unknown,
   extraHeaders: Record<string, string> = {},
 ) {
@@ -87,15 +89,16 @@ export async function proxyDemoDownloadRequest(path: string, request: Request, r
   }
 }
 
-async function authorize(path: string, request: Request, role: DemoRole): Promise<Headers | Response> {
+async function authorize(path: string, request: Request, role: AllowedDemoRole): Promise<Headers | Response> {
   if (crossOriginMutation(request)) return Response.json({ error: "Origem da requisição inválida." }, { status: 403 });
   const session = await resolveDemoSession(request);
   if (!session) return Response.json({ error: "Sessão ausente, expirada ou revogada." }, { status: 401 });
-  if (session.role !== role || session.actorId !== demoActorIds[role]) {
+  const allowedRoles: readonly DemoRole[] = typeof role === "string" ? [role] : role;
+  if (!allowedRoles.includes(session.role) || session.actorId !== demoActorIds[session.role]) {
     return Response.json({ error: "O perfil da sessão não tem acesso a este recurso." }, { status: 403 });
   }
   try {
-    return await signedInternalHeaders(request.method, path, role, session.actorId);
+    return await signedInternalHeaders(request.method, path, session.role, session.actorId);
   } catch {
     return Response.json({ error: "Canal interno da Max Service não configurado." }, { status: 503 });
   }

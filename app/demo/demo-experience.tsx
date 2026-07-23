@@ -452,6 +452,49 @@ interface OperationReportData {
   }>;
 }
 
+interface OnboardingData {
+  status: "pending" | "completed";
+  profile: {
+    profileType: "customer" | "provider";
+    city: string;
+    state: string;
+    neighborhood: string | null;
+    serviceCategoryId: string | null;
+    serviceCategoryName: string | null;
+    serviceCategoryIcon: string | null;
+    yearsExperience: number | null;
+    serviceRadiusKm: number | null;
+    bio: string | null;
+    availabilitySummary: string | null;
+    version: number;
+    completedAt: string;
+    updatedAt: string;
+  } | null;
+  documents: Array<{
+    id: string;
+    documentType: "terms_of_use" | "privacy_notice" | "provider_code";
+    version: string;
+    title: string;
+    summary: string;
+    content: string;
+    contentSha256: string;
+    approvalStatus: "draft" | "approved";
+    effectiveAt: string;
+    acceptedAt: string | null;
+  }>;
+  consents: {
+    marketingCommunications: boolean;
+    productResearch: boolean;
+  };
+  categories: Array<{ id: string; name: string; icon: string }>;
+  history: Array<{
+    id: string;
+    eventType: "completed" | "updated";
+    profileVersion: number;
+    createdAt: string;
+  }>;
+}
+
 type CatalogAction = "activate" | "deactivate" | "move_up" | "move_down";
 
 interface OperationCatalogCategory extends ServiceCategory {
@@ -3454,6 +3497,153 @@ function CampaignStatusDialog({ pending, onClose, onSaved, notify }: { pending: 
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog catalog-action-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-status-title"><button className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>%</span><div><p className="dialog-kicker">DECISÃO PROMOCIONAL</p><h2 id="campaign-status-title">{pending.action === "pause" ? "Pausar campanha" : "Ativar campanha"}</h2><p>{pending.campaign.code} · {pending.campaign.name}</p></div></header><form onSubmit={submit}><p className="catalog-action-detail">{pending.action === "pause" ? "Novos pedidos deixarão de reservar este cupom; reservas já criadas serão preservadas." : "O cupom voltará a aceitar reservas dentro da janela e dos limites configurados."}</p><label className="field"><span>Justificativa da mudança</span><textarea minLength={10} maxLength={1000} rows={4} value={note} onChange={(event) => setNote(event.target.value)} required /><small>{note.length}/1000 caracteres</small></label><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Registrando..." : `${pending.action === "pause" ? "Pausar" : "Ativar"} e auditar →`}</button></footer></form></section></div>;
 }
 
+function OnboardingPanel({ role, notify }: { role: "cliente" | "prestador"; notify: (message: string) => void }) {
+  const [data, setData] = useState<OnboardingData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/onboarding", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OnboardingData & { error?: string; message?: string };
+        if (!response.ok || !payload.status || !payload.documents) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar o onboarding.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar o onboarding.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  if (loading && !data) return <section className="dashboard-section onboarding-panel"><div className="data-state">Carregando perfil e documentos vigentes...</div></section>;
+  if (!data) return <section className="dashboard-section onboarding-panel"><div className="data-state"><strong>Onboarding indisponível.</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Tentar novamente</button></div></section>;
+  if (data.status === "pending" || editing) {
+    return <OnboardingForm key={`${role}-${data.profile?.version ?? 0}`} role={role} data={data} notify={notify} onCancel={data.status === "completed" ? () => setEditing(false) : undefined} onSaved={(next) => { setData(next); setEditing(false); }} />;
+  }
+
+  const profile = data.profile;
+  return (
+    <section className="dashboard-section onboarding-panel completed">
+      <header><div><small>IDENTIDADE E CONSENTIMENTOS</small><h2>Onboarding concluído</h2><p>Perfil persistente, documentos vinculados ao hash aceito e preferências separadas.</p></div><span className="status-pill success">Versão {profile?.version}</span></header>
+      <div className="onboarding-summary">
+        <article><small>ATUAÇÃO</small><strong>{profile?.city} · {profile?.state}</strong><span>{role === "cliente" ? profile?.neighborhood : `${profile?.serviceCategoryIcon} ${profile?.serviceCategoryName}`}</span></article>
+        <article><small>TERMOS VIGENTES</small><strong>{data.documents.filter((document) => document.acceptedAt).length} de {data.documents.length}</strong><span>Todos os aceites preservados</span></article>
+        <article><small>COMUNICAÇÃO</small><strong>{data.consents.marketingCommunications ? "Autorizada" : "Somente transacional"}</strong><span>Pesquisa {data.consents.productResearch ? "autorizada" : "não autorizada"}</span></article>
+        <article><small>ÚLTIMA ATUALIZAÇÃO</small><strong>{profile ? formatted(profile.updatedAt) : "—"}</strong><span>{data.history.length} evento(s) no histórico</span></article>
+      </div>
+      <div className="onboarding-accepted-docs">{data.documents.map((document) => <span key={document.id}><i>✓</i><strong>{document.title}</strong><small>{document.version} · {document.approvalStatus === "draft" ? "minuta do piloto" : "aprovado"}</small></span>)}</div>
+      <footer><div><strong>Dados reais continuam bloqueados.</strong><span>Estas minutas e o armazenamento local validam a jornada; publicação exige aprovação jurídica e provedor de identidade.</span></div><button className="secondary-action" onClick={() => setEditing(true)}>Atualizar cadastro</button></footer>
+    </section>
+  );
+}
+
+function OnboardingForm({
+  role,
+  data,
+  notify,
+  onCancel,
+  onSaved,
+}: {
+  role: "cliente" | "prestador";
+  data: OnboardingData;
+  notify: (message: string) => void;
+  onCancel?: () => void;
+  onSaved: (data: OnboardingData) => void;
+}) {
+  const profile = data.profile;
+  const [city, setCity] = useState(profile?.city ?? "Sorocaba");
+  const [state, setState] = useState(profile?.state ?? "SP");
+  const [neighborhood, setNeighborhood] = useState(profile?.neighborhood ?? "Jardim Europa");
+  const [serviceCategoryId, setServiceCategoryId] = useState(profile?.serviceCategoryId ?? data.categories[0]?.id ?? "");
+  const [yearsExperience, setYearsExperience] = useState(String(profile?.yearsExperience ?? 5));
+  const [serviceRadiusKm, setServiceRadiusKm] = useState(String(profile?.serviceRadiusKm ?? 25));
+  const [bio, setBio] = useState(profile?.bio ?? "Profissional com experiência prática, atendimento transparente e foco em segurança.");
+  const [availabilitySummary, setAvailabilitySummary] = useState(profile?.availabilitySummary ?? "Segunda a sábado, das 8h às 18h");
+  const [acceptedDocumentIds, setAcceptedDocumentIds] = useState(() => new Set(data.documents.filter((document) => document.acceptedAt).map((document) => document.id)));
+  const [marketingConsent, setMarketingConsent] = useState(data.consents.marketingCommunications);
+  const [productResearchConsent, setProductResearchConsent] = useState(data.consents.productResearch);
+  const [saving, setSaving] = useState(false);
+  const isProvider = role === "prestador";
+  const allDocumentsAccepted = data.documents.length > 0 && acceptedDocumentIds.size === data.documents.length;
+
+  const toggleDocument = (id: string) => {
+    setAcceptedDocumentIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/onboarding", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          city: city.trim(),
+          state: state.trim().toUpperCase(),
+          ...(isProvider
+            ? {
+                serviceCategoryId,
+                yearsExperience: Number(yearsExperience),
+                serviceRadiusKm: Number(serviceRadiusKm),
+                bio: bio.trim(),
+                availabilitySummary: availabilitySummary.trim(),
+              }
+            : { neighborhood: neighborhood.trim() }),
+          acceptedDocumentIds: [...acceptedDocumentIds],
+          marketingConsent,
+          productResearchConsent,
+        }),
+      });
+      const payload = await response.json() as OnboardingData & { error?: string; message?: string };
+      if (!response.ok || payload.status !== "completed" || !payload.profile) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível concluir o onboarding.");
+      }
+      notify(`Onboarding salvo na versão ${payload.profile.version}, com termos e consentimentos auditados.`);
+      onSaved(payload);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível concluir o onboarding.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="dashboard-section onboarding-panel onboarding-form">
+      <header><div><small>ONBOARDING PERSISTENTE</small><h2>{profile ? "Atualize seu cadastro." : "Prepare seu perfil para o piloto."}</h2><p>Preencha somente dados sintéticos nesta etapa. Termos e preferências são registrados separadamente.</p></div><span className="status-pill warning">{profile ? `Versão ${profile.version}` : "Pendente"}</span></header>
+      <form onSubmit={submit}>
+        <div className="onboarding-fields">
+          <label className="field"><span>Cidade</span><input minLength={2} maxLength={80} value={city} onChange={(event) => setCity(event.target.value)} required /></label>
+          <label className="field compact"><span>UF</span><input minLength={2} maxLength={2} pattern="[A-Za-z]{2}" value={state} onChange={(event) => setState(event.target.value.toUpperCase())} required /></label>
+          {!isProvider && <label className="field"><span>Bairro</span><input minLength={2} maxLength={80} value={neighborhood} onChange={(event) => setNeighborhood(event.target.value)} required /></label>}
+          {isProvider && <><label className="field"><span>Categoria principal</span><select value={serviceCategoryId} onChange={(event) => setServiceCategoryId(event.target.value)} required>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.name}</option>)}</select></label><label className="field"><span>Anos de experiência</span><input type="number" min="0" max="60" value={yearsExperience} onChange={(event) => setYearsExperience(event.target.value)} required /></label><label className="field"><span>Raio de atendimento (km)</span><input type="number" min="1" max="200" value={serviceRadiusKm} onChange={(event) => setServiceRadiusKm(event.target.value)} required /></label><label className="field onboarding-wide"><span>Apresentação profissional</span><textarea minLength={20} maxLength={500} rows={3} value={bio} onChange={(event) => setBio(event.target.value)} required /><small>{bio.trim().length}/500</small></label><label className="field onboarding-wide"><span>Disponibilidade</span><input minLength={5} maxLength={200} value={availabilitySummary} onChange={(event) => setAvailabilitySummary(event.target.value)} required /></label></>}
+        </div>
+        <section className="onboarding-documents">
+          <header><div><small>DOCUMENTOS VIGENTES</small><h3>Leia e aceite para continuar</h3></div><span>{acceptedDocumentIds.size} de {data.documents.length}</span></header>
+          {data.documents.map((document) => <article key={document.id}><label><input type="checkbox" checked={acceptedDocumentIds.has(document.id)} onChange={() => toggleDocument(document.id)} /><span><strong>{document.title}</strong><small>{document.version} · {document.approvalStatus === "draft" ? "minuta do piloto" : "aprovado"}</small></span></label><details><summary>Consultar conteúdo</summary><p>{document.content}</p><small>Integridade: {document.contentSha256.slice(0, 12)}…</small></details></article>)}
+        </section>
+        <section className="onboarding-consents">
+          <header><small>PREFERÊNCIAS OPCIONAIS</small><h3>Você decide separadamente.</h3></header>
+          <label><input type="checkbox" checked={marketingConsent} onChange={(event) => setMarketingConsent(event.target.checked)} /><span><strong>Novidades e campanhas</strong><small>Autorizar comunicações promocionais. Pode ser revogado depois.</small></span></label>
+          <label><input type="checkbox" checked={productResearchConsent} onChange={(event) => setProductResearchConsent(event.target.checked)} /><span><strong>Pesquisa de produto</strong><small>Autorizar convites para entrevistas e testes da experiência.</small></span></label>
+        </section>
+        <footer className="onboarding-form-footer"><div><strong>Aceites obrigatórios não incluem marketing.</strong><span>O hash do texto, a versão e o horário ficam preservados.</span></div><div>{onCancel && <button type="button" className="secondary-action" onClick={onCancel}>Cancelar</button>}<button className="primary-action" disabled={saving || !allDocumentsAccepted || city.trim().length < 2 || state.length !== 2}>{saving ? "Salvando..." : profile ? "Salvar nova versão →" : "Concluir onboarding →"}</button></div></footer>
+      </form>
+    </section>
+  );
+}
+
 function AccountView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   const user = roleDetails[role];
   const isOperational = role === "operacao";
@@ -3468,6 +3658,7 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <div><span className="plan-badge">PILOTO MAX</span><h2>{isOperational ? "Ambiente de validação" : "Sem mensalidade nesta fase"}</h2><p>{isOperational ? "Parâmetros críticos permanecem bloqueados até aprovação operacional e jurídica." : "Durante o piloto, você conhece a plataforma sem assinatura mensal. Regras comerciais futuras serão apresentadas antes de qualquer aceite."}</p></div>
           <div className="plan-price"><small>VALOR MENSAL</small><strong>R$ 0</strong><span>Ambiente demonstrativo</span></div>
         </section>
+        {(role === "cliente" || role === "prestador") && <OnboardingPanel role={role} notify={notify} />}
         <section className="dashboard-section account-options">
           <div className="dashboard-section-title"><div><small>PREFERÊNCIAS</small><h2>Configurações da conta</h2></div></div>
           <button onClick={() => notify("Preferências de notificação atualizadas.")}><span>Notificações</span><small>E-mail e avisos na plataforma</small><i>→</i></button>

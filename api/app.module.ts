@@ -16,6 +16,8 @@ import { MessagingService } from "./messaging/messaging.service.js";
 import { NotificationsController } from "./notifications/notifications.controller.js";
 import { NotificationsService } from "./notifications/notifications.service.js";
 import { PushDeliveryService } from "./notifications/push-delivery.service.js";
+import { OnboardingController } from "./onboarding/onboarding.controller.js";
+import { OnboardingService } from "./onboarding/onboarding.service.js";
 import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
 import { PartnersController, PublicReferralsController } from "./partners/partners.controller.js";
@@ -38,8 +40,8 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, DemoSessionController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
+  controllers: [HealthController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

@@ -110,6 +110,8 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "marketing_campaign.reserved": { category: "growth", title: "Cupom reservado", detail: "Benefício promocional vinculado a um pedido." },
   "operation_report.generated": { category: "operation", title: "Relatório consolidado", detail: "Indicadores agregados consultados pela Operação." },
   "operation_report_goals.updated": { category: "operation", title: "Metas do relatório atualizadas", detail: "Limites operacionais alterados com justificativa." },
+  "onboarding.completed": { category: "operation", title: "Onboarding concluído", detail: "Perfil, termos e consentimentos iniciais registrados." },
+  "onboarding.updated": { category: "operation", title: "Onboarding atualizado", detail: "Nova versão do perfil e das preferências registrada." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -133,6 +135,7 @@ const auditEntityPrefix: Record<string, string> = {
   campaign_reservation: "CR",
   operation_report: "RP",
   operation_report_goal: "MG",
+  onboarding_profile: "ON",
 };
 
 @Injectable()

@@ -13,7 +13,7 @@
 
 ### Identidade e acesso
 
-`users` e `demo_sessions` estão materializados no piloto. `identities`, sessões de produção, `roles`, `permissions`, `user_roles`, `terms_versions`, `terms_acceptances` e `consent_records` permanecem como alvo.
+`users`, `demo_sessions`, `legal_documents`, `legal_acceptances`, `onboarding_profiles`, `consent_preferences` e seus históricos append-only estão materializados no piloto. `identities`, sessões de produção, `roles`, `permissions` e `user_roles` permanecem como alvo; as minutas legais atuais precisam ser substituídas por versões aprovadas antes da coleta de dados reais.
 
 ### Perfis e geografia
 

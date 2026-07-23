@@ -27,6 +27,7 @@ Browser/PWA, BFF, API, PostgreSQL, Redis/worker, object storage, PSP, e-mail/SMS
 | cobrança/comissão duplicada | constraints únicas, ledger append-only e reconciliação |
 | abuso interno | least privilege, justificativa, confirmação, antes/depois e alertas |
 | exportação excessiva | endpoint exclusivo da Operação, projeção agregada, períodos fechados e CSV sem PII ou identificadores internos |
+| aceite ou consentimento forjado | sessão vinculada ao titular, documento limitado à audiência, hash congelado, finalidade separada, RLS e evento append-only |
 | sabotagem do catálogo | RLS exclusivo da operação, justificativa, evento append-only, auditoria e proteção da última categoria ativa |
 | acesso cruzado no suporte da rede | sessão vinculada ao perfil, BFF assinado, caso pertencente ao parceiro, RLS nos casos/eventos e teste negativo entre perfis |
 | scraping de contatos | minimização de PII e contato somente após regra de negócio |
@@ -47,6 +48,8 @@ A atividade administrativa é somente leitura e exclusiva da Operação. O backe
 O relatório administrativo aceita somente períodos fechados de 7, 30 ou 90 dias e agrega os módulos dentro de uma transação com contexto operacional. A resposta não inclui nomes, contatos, descrições, endereços ou payloads de auditoria. A exportação CSV é derivada exclusivamente da tabela agregada por categoria e não contém UUIDs; perfis não operacionais são bloqueados pelo cookie de sessão no BFF, pela assinatura interna e pelo RLS.
 
 Metas de relatório são globais por período, persistidas em pontos-base ou inteiros e protegidas por constraints. O runtime não pode criar ou excluir períodos: atualiza apenas os campos permitidos, incrementa a versão e registra valores anterior/posterior em evento append-only com justificativa. Alertas são derivados no servidor a cada consulta, sem perfilamento individual ou envio externo automático.
+
+O onboarding não confia em IDs enviados pelo navegador: o servidor exige o conjunto exato de documentos ativos da audiência do ator, copia o hash persistido para o aceite e valida campos conforme o papel. Preferências opcionais usam registros e eventos separados por finalidade. Parceiro e Operação não podem executar a jornada pelo BFF; a Operação conserva somente leitura por RLS para suporte e auditoria.
 
 A gestão do catálogo exige sessão operacional no BFF e no RLS. O runtime concede atualização apenas de `active`, `sort_order` e `updated_at`; cada ação registra justificativa em `service_category_events` e projeção em `audit_events`. Uma constraint mantém a ordem positiva e única, e um trigger impede que a última categoria ativa seja desativada. Categorias inativas são excluídas somente de novas contratações e indicações, preservando evidências históricas.
 

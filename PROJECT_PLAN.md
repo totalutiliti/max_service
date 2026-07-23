@@ -37,6 +37,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - Relatórios operacionais do P1 já consolidam coortes de 7, 30 e 90 dias, funil do marketplace, categorias, crescimento, suporte e saúde financeira em projeção exclusiva da Operação e exportação agregada; metas versionadas, comparação com a janela anterior e alertas de desvio já estão materializados.
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.
+- Cliente e profissional já possuem onboarding transacional com perfil específico, documentos `pilot-0.1` versionados, aceite ligado ao SHA-256 do conteúdo, consentimentos opcionais revogáveis e histórico append-only.
 - A verificação possui cofre S3 local para documentos sintéticos, versões append-only, validação de assinatura/MIME/tamanho, hash SHA-256, download privado e auditoria por ator.
 - A solicitação de serviço aceita até três imagens sintéticas privadas, com limite compatível com a borda local, hash, RLS, auditoria e visualização pelo profissional autorizado.
 - A conversa transacional aceita uma imagem sintética privada por mensagem, com legenda opcional, validação de conteúdo, hash, isolamento entre membros e auditoria de envio/download.

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#080b09" />
+    <title>Sem conexão | Max Service</title>
+    <style>
+      :root { color-scheme: dark; font-family: Arial, Helvetica, sans-serif; background: #080b09; color: #f7faf5; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; padding: 24px; display: grid; place-items: center; background: radial-gradient(circle at 50% 12%, rgba(117,230,0,.17), transparent 34%), #080b09; }
+      main { width: min(100%, 520px); padding: clamp(28px, 7vw, 54px); border: 1px solid #2d382c; border-radius: 24px; background: rgba(15,20,16,.96); box-shadow: 0 24px 80px rgba(0,0,0,.38); text-align: center; }
+      img { width: 108px; height: 108px; object-fit: contain; }
+      small { display: block; margin-top: 18px; color: #75e600; font-size: 12px; font-weight: 800; letter-spacing: .14em; }
+      h1 { margin: 12px 0; font-size: clamp(30px, 8vw, 48px); letter-spacing: -.05em; }
+      p { margin: 0 auto 28px; color: #aab4aa; font-size: 16px; line-height: 1.6; }
+      nav { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+      a, button { min-height: 46px; padding: 0 20px; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+      button { border: 0; background: #75e600; color: #10150f; }
+      a { border: 1px solid #455344; color: #eef4eb; display: inline-grid; place-items: center; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/max-service-mark-192.png" alt="" width="108" height="108" />
+      <small>MAX SERVICE · MODO OFFLINE</small>
+      <h1>A conexão deu uma pausa.</h1>
+      <p>Seus dados protegidos não são guardados no cache. Reconecte-se para abrir os painéis e continuar de onde parou.</p>
+      <nav aria-label="Ações offline">
+        <button type="button" onclick="window.location.reload()">Tentar novamente</button>
+        <a href="/">Ir para o início</a>
+      </nav>
+    </main>
+  </body>
+</html>

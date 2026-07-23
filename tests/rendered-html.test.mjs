@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render(path = "/") {
@@ -41,4 +42,24 @@ test("renderiza a landing pública de indicação sem expor dados da rede", asyn
   assert.match(html, /PC-7K2M/);
   assert.match(html, /Cadastro de interesse/i);
   assert.doesNotMatch(html, /joao\.martins|partner_id|00000000-0000-4000/i);
+});
+
+test("publica uma PWA instalável sem armazenar APIs protegidas", async () => {
+  const manifestResponse = await render("/manifest.webmanifest");
+  assert.equal(manifestResponse.status, 200);
+  assert.match(manifestResponse.headers.get("content-type") ?? "", /^application\/manifest\+json\b/i);
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.name, "Max Service");
+  assert.equal(manifest.display, "standalone");
+  assert.match(manifest.start_url, /^\/demo/);
+  assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["192x192", "512x512"]);
+
+  const serviceWorker = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+  assert.match(serviceWorker, /url\.pathname\.startsWith\("\/api\/"\)/);
+  assert.match(serviceWorker, /offline\.html/);
+  assert.doesNotMatch(serviceWorker, /cache\.put\(/);
+
+  const offline = await readFile(new URL("../public/offline.html", import.meta.url), "utf8");
+  assert.match(offline, /MODO OFFLINE/);
+  assert.match(offline, /dados protegidos não são guardados no cache/i);
 });

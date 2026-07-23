@@ -14,7 +14,7 @@
 
 ## P1 - operar o piloto
 
-- PWA instalável e push notifications;
+- push notifications e sincronização segura em segundo plano para a PWA já instalável;
 - ampliar a central de suporte, que já possui SLA, atribuição entre múltiplos operadores e anexos privados, com escalonamento externo e fluxo formal de disputa;
 - campanhas e cupons;
 - anúncios contextuais moderados;

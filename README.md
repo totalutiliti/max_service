@@ -7,6 +7,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Fase 0 de descoberta e auditoria concluída e documentada em `docs/`.
 - Landing page e primeira experiência SaaS navegável para cliente, profissional, parceiro e administração.
 - A demonstração inclui entrada por perfil, painéis, atividades, mensagens e área de conta/plano com dados fictícios.
+- A experiência web é instalável como PWA, com manifest e ícones próprios, convite de instalação e tela offline; o service worker guarda somente a estrutura pública e nunca armazena sessões, APIs ou dados protegidos.
 - A entrada agora cria uma sessão opaca, temporária e revogável em cookie `HttpOnly`; troca de perfil invalida a sessão anterior e o logout revoga a atual.
 - O BFF deriva o ator exclusivamente da sessão e assina o contexto enviado à API; parâmetros de perfil adulterados e cabeçalhos diretos são bloqueados.
 - API NestJS versionada e PostgreSQL 16 já sustentam categorias, solicitações, propostas e aceite.

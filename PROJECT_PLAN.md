@@ -39,6 +39,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - A solicitação de serviço aceita até três imagens sintéticas privadas, com limite compatível com a borda local, hash, RLS, auditoria e visualização pelo profissional autorizado.
 - A conversa transacional aceita uma imagem sintética privada por mensagem, com legenda opcional, validação de conteúdo, hash, isolamento entre membros e auditoria de envio/download.
 - Mensagens, lista de conversas e contadores possuem sincronização adaptativa; o backend entrega apenas mensagens posteriores ao cursor validado na própria conversa e mantém um cursor de leitura monotônico por membro para calcular não lidas.
+- A experiência web já é instalável como PWA, com identidade visual própria e fallback offline seguro; o cache usa allowlist pública e exclui integralmente APIs, sessões e superfícies autenticadas.
 - Autenticação real, confirmação de contato, processamento antimalware e integrações reguladas continuam condicionados aos gates das fases seguintes.
 
 ## Não objetivos do MVP

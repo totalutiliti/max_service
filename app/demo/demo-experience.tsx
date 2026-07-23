@@ -225,6 +225,31 @@ interface OperationReferralDetail extends OperationReferral {
   events: OperationReferralEvent[];
 }
 
+type OperationActivityCategory = "marketplace" | "service" | "operation" | "growth" | "finance";
+
+interface OperationActivityEvent {
+  id: string;
+  action: string;
+  category: OperationActivityCategory;
+  title: string;
+  detail: string;
+  reference: string;
+  entityType: string;
+  actorRole: "customer" | "provider" | "partner" | "operation";
+  actorName: string;
+  createdAt: string;
+}
+
+interface OperationActivityData {
+  metrics: {
+    totalCount: number;
+    lastThirtyDaysCount: number;
+    criticalCount: number;
+    actorCount: number;
+  };
+  events: OperationActivityEvent[];
+}
+
 interface PartnerDashboardData {
   link: { id: string; referralCode: string; slug: string; status: "active" | "paused"; createdAt: string };
   metrics: { totalCount: number; activeCount: number; pendingCount: number; activationRate: number };
@@ -1400,7 +1425,7 @@ function OperationCaseDialog({ caseId, onClose, onChanged, notify }: { caseId: s
 function ActivityView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   if (role === "cliente" || role === "prestador") return <BookingActivityView role={role} notify={notify} />;
   if (role === "parceiro") return <PartnerActivityView notify={notify} />;
-  return <StaticActivityView role="operacao" notify={notify} />;
+  return <OperationActivityView notify={notify} />;
 }
 
 const bookingStatusLabel: Record<BookingStatus, string> = {
@@ -1495,17 +1520,68 @@ function PartnerActivityView({ notify }: { notify: (message: string) => void }) 
   return <><DashboardHeader role="parceiro" eyebrow="REDE DE PROFISSIONAIS" title="Acompanhe cada indicação com transparência."><button className="button button-small" onClick={refresh}>Atualizar rede</button></DashboardHeader><div className="activity-overview"><article><small>Afiliados ativos</small><strong>{loading ? "…" : data?.metrics.activeCount ?? 0}</strong><span>Vínculo confirmado</span></article><article><small>Taxa de ativação</small><strong>{loading ? "…" : `${data?.metrics.activationRate ?? 0}%`}</strong><span>Sem estimativa financeira</span></article><article><small>Em andamento</small><strong>{loading ? "…" : data?.metrics.pendingCount ?? 0}</strong><span>Convites, análises e onboarding</span></article></div><section className="dashboard-section records-card"><div className="records-toolbar"><label><span>Buscar na rede</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Código, profissional, e-mail ou categoria" /></label><span className="records-counter">{referrals.length} indicação(ões)</span></div><div className="record-list">{loading && <div className="data-state">Carregando rede...</div>}{!loading && referrals.length === 0 && <div className="data-state"><strong>Nenhuma indicação encontrada.</strong><span>Ajuste a busca ou registre um novo profissional.</span></div>}{referrals.map((referral) => <button key={referral.id} onClick={() => notify(`${referral.publicCode}: origem ${referral.source} em ${date(referral.createdAt)}.`)}><span className="record-code">{referral.publicCode}</span><span><strong>{referral.professionalName} · {referral.categoryName}</strong><small>{referral.email} · registrado em {date(referral.createdAt)}</small></span><span className={`status-pill ${referralStatusTone(referral.status)}`}>{referralStatusLabel[referral.status]}</span><i>→</i></button>)}</div></section></>;
 }
 
-function StaticActivityView({ role, notify }: { role: "operacao"; notify: (message: string) => void }) {
-  const content = { eyebrow: "FILA OPERACIONAL", title: "Prioridade clara para decidir com segurança.", metric: ["17", "Itens aguardando"], rows: [["PR-8M4Q", "Documento reenviado", "Revisar", "38 min"], ["SV-29K7", "Cancelamento contestado", "Prioridade", "1 h 12"], ["CS-4N8R", "Dúvida sobre proposta", "Aberto", "5 h 03"]] };
+const operationActivityCategoryLabel: Record<OperationActivityCategory, string> = {
+  marketplace: "Marketplace",
+  service: "Atendimento",
+  operation: "Operação",
+  growth: "Parceiros",
+  finance: "Financeiro",
+};
+
+const operationActivityRoleLabel: Record<OperationActivityEvent["actorRole"], string> = {
+  customer: "Cliente",
+  provider: "Profissional",
+  partner: "Parceiro",
+  operation: "Operação",
+};
+
+function OperationActivityView({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationActivityData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<"all" | OperationActivityCategory>("all");
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/activity", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationActivityData & { error?: string; message?: string };
+        if (!response.ok || !payload.events || !payload.metrics) throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a atividade.");
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a atividade.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
+  const events = data?.events.filter((event) => {
+    if (category !== "all" && event.category !== category) return false;
+    if (!normalizedQuery) return true;
+    return [event.reference, event.title, event.detail, event.actorName, event.action]
+      .some((value) => value.toLocaleLowerCase("pt-BR").includes(normalizedQuery));
+  }) ?? [];
+  const dateTime = (value: string) => new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 
   return (
     <>
-      <DashboardHeader role={role} eyebrow={content.eyebrow} title={content.title}><button className="button button-small" onClick={() => notify("Filtros atualizados.")}>Filtrar resultados</button></DashboardHeader>
-      <div className="activity-overview"><article><small>{content.metric[1]}</small><strong>{content.metric[0]}</strong><span>Atualizado agora</span></article><article><small>Taxa de conclusão</small><strong>96%</strong><span>Últimos 30 dias</span></article><article><small>Tempo médio de resposta</small><strong>18 min</strong><span>Dentro da meta</span></article></div>
+      <DashboardHeader role="operacao" eyebrow="AUDITORIA OPERACIONAL" title="Cada ação crítica, com origem e contexto."><button className="button button-small" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar histórico</button></DashboardHeader>
+      <div className="activity-overview"><article><small>Eventos registrados</small><strong>{loading ? "…" : data?.metrics.totalCount ?? 0}</strong><span>{data?.metrics.lastThirtyDaysCount ?? 0} nos últimos 30 dias</span></article><article><small>Ações críticas</small><strong>{loading ? "…" : data?.metrics.criticalCount ?? 0}</strong><span>Decisões e mudanças nos últimos 30 dias</span></article><article><small>Atores identificados</small><strong>{loading ? "…" : data?.metrics.actorCount ?? 0}</strong><span>Nenhum evento anônimo</span></article></div>
       <section className="dashboard-section records-card">
-        <div className="records-toolbar"><label><span>Buscar</span><input placeholder="Código, serviço ou pessoa" /></label><button className="secondary-action" onClick={() => notify("Relatório demonstrativo preparado.")}>Exportar</button></div>
-        <div className="record-list">
-          {content.rows.map(([code, title, status, detail]) => <button key={code} onClick={() => notify(`${code}: detalhes carregados.`)}><span className="record-code">{code}</span><span><strong>{title}</strong><small>{detail}</small></span><span className={`status-pill ${status === "Prioridade" ? "warning" : "success"}`}>{status}</span><i>→</i></button>)}
+        <div className="records-toolbar operation-activity-toolbar">
+          <label><span>Buscar no histórico</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Referência, ação ou responsável" /></label>
+          <label><span>Área</span><select aria-label="Filtrar atividade por área" value={category} onChange={(event) => setCategory(event.target.value as "all" | OperationActivityCategory)}><option value="all">Todas as áreas</option>{Object.entries(operationActivityCategoryLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <span className="records-counter">{events.length} evento(s)</span>
+        </div>
+        <div className="record-list operation-activity-list">
+          {loading && <div className="data-state">Carregando histórico auditável...</div>}
+          {!loading && events.length === 0 && <div className="data-state"><strong>Nenhum evento encontrado.</strong><span>Ajuste a busca ou o filtro de área.</span></div>}
+          {!loading && events.map((event) => <button key={event.id} onClick={() => notify(`${event.reference}: ${event.detail}`)}><span className="record-code">{event.reference}</span><span><strong>{event.title}</strong><small>{event.actorName} · {operationActivityRoleLabel[event.actorRole]} · {dateTime(event.createdAt)}</small></span><span className={`status-pill ${event.category === "operation" || event.category === "finance" ? "warning" : event.category === "growth" ? "neutral" : "success"}`}>{operationActivityCategoryLabel[event.category]}</span><i>→</i></button>)}
         </div>
       </section>
     </>

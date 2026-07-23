@@ -14,6 +14,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - código persistente, registro manual e captura pública de indicação por link/QR, com consentimento versionado e sem criação automática de conta;
 - fila operacional para analisar indicações, aprovar para onboarding ou rejeitar com justificativa e histórico;
 - moderação manual de prestador;
+- atividade operacional real, pesquisável por área, referência, ação ou responsável;
 - mensagens e notificações internas persistentes, contadores reais de não lidas e sincronização incremental automática; push e e-mail permanecem como integrações posteriores;
 - PSP fake e visualização de divisão financeira, sem transação real;
 - dados 100% fictícios.

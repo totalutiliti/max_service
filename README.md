@@ -22,6 +22,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Cliente e profissional podem cancelar atendimentos agendados ou em execução, com motivo obrigatório, histórico e auditoria.
 - Cada cancelamento abre automaticamente um chamado persistente; interrupções durante a execução entram como prioridade alta na fila da operação.
 - A operação consulta a linha do tempo do chamado, registra notas internas, assume a análise e resolve com justificativa auditável.
+- A aba **Atividade** da Operação apresenta a trilha real e pesquisável de ações do marketplace, atendimentos, moderação, parceiros e financeiro sandbox, sem expor o payload bruto da auditoria.
 - Os quatro perfis têm uma central persistente de notificações, com atualização automática do contador, leitura individual ou em massa.
 - Propostas, aceite, mensagens, execução, avaliações, cancelamentos e atualizações de chamados geram avisos transacionais para o destinatário correto.
 - O perfil parceiro possui código persistente, métricas reais da própria rede, histórico pesquisável, registro manual e captura pública por link ou QR Code escaneável.

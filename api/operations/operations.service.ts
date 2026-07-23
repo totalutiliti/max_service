@@ -68,6 +68,46 @@ const referralSelect = `
   LEFT JOIN users reviewer ON reviewer.id = latest_event.actor_id
 `;
 
+const auditActivityCopy: Record<string, { category: string; title: string; detail: string }> = {
+  "service_request.created": { category: "marketplace", title: "Solicitação criada", detail: "Novo pedido registrado no marketplace." },
+  "service_request.attachment_uploaded": { category: "marketplace", title: "Imagem do pedido enviada", detail: "Arquivo privado anexado à solicitação." },
+  "service_request.attachment_downloaded": { category: "marketplace", title: "Imagem do pedido acessada", detail: "Download privado registrado na auditoria." },
+  "proposal.upserted": { category: "marketplace", title: "Proposta registrada", detail: "Oferta do profissional criada ou atualizada." },
+  "proposal.accepted": { category: "marketplace", title: "Proposta aceita", detail: "A contratação avançou para agendamento." },
+  "message.sent": { category: "service", title: "Mensagem enviada", detail: "Comunicação transacional registrada." },
+  "message.attachment_sent": { category: "service", title: "Imagem enviada na conversa", detail: "Anexo privado vinculado à mensagem." },
+  "message.attachment_downloaded": { category: "service", title: "Imagem da conversa acessada", detail: "Download privado registrado na auditoria." },
+  "booking.status_changed": { category: "service", title: "Atendimento atualizado", detail: "O serviço avançou no ciclo de execução." },
+  "booking.cancelled": { category: "operation", title: "Atendimento cancelado", detail: "Cancelamento e abertura de ocorrência registrados." },
+  "service_review.created": { category: "service", title: "Avaliação registrada", detail: "Experiência avaliada após a conclusão." },
+  "support_case.status_changed": { category: "operation", title: "Ocorrência atualizada", detail: "Mudança de estado justificada pela Operação." },
+  "support_case.note_added": { category: "operation", title: "Nota interna adicionada", detail: "Registro append-only incluído na ocorrência." },
+  "partner_referral.invited": { category: "growth", title: "Indicação registrada", detail: "Profissional vinculado à rede de um parceiro." },
+  "partner_referral.status_changed": { category: "growth", title: "Indicação revisada", detail: "Triagem operacional da indicação atualizada." },
+  "provider_verification.status_changed": { category: "operation", title: "Verificação atualizada", detail: "Estado da análise documental alterado." },
+  "provider_verification.document_reviewed": { category: "operation", title: "Documento revisado", detail: "Item do checklist conferido pela Operação." },
+  "provider_document.uploaded": { category: "operation", title: "Documento privado enviado", detail: "Nova versão recebida para conferência." },
+  "provider_document.downloaded": { category: "operation", title: "Documento privado acessado", detail: "Download operacional registrado." },
+  "finance.sandbox_settlement": { category: "finance", title: "Liquidação sandbox processada", detail: "Ledger demonstrativo atualizado e conciliado." },
+  "finance.sandbox_refund": { category: "finance", title: "Estorno sandbox processado", detail: "Lançamentos inversos registrados no ledger." },
+};
+
+const auditEntityPrefix: Record<string, string> = {
+  service_request: "SV",
+  service_request_attachment: "AN",
+  proposal: "PP",
+  booking: "AG",
+  message: "MS",
+  message_attachment: "MA",
+  service_review: "AV",
+  support_case: "CS",
+  partner_referral: "RF",
+  provider_verification: "VF",
+  provider_document_check: "DC",
+  provider_document_file: "DF",
+  payment_intent: "PG",
+};
+
 @Injectable()
 export class OperationsService {
   constructor(private readonly database: DatabaseService) {}
@@ -311,6 +351,93 @@ export class OperationsService {
         });
       }
       return updated.rows[0];
+    });
+  }
+
+  async activity(actor: Actor) {
+    this.ensureOperation(actor);
+    return this.database.withActor(actor, async (client) => {
+      const events = await client.query<{
+        id: string;
+        action: string;
+        entityType: string;
+        entityId: string;
+        actorRole: string;
+        actorName: string;
+        publicCode: string | null;
+        fromStatus: string | null;
+        toStatus: string | null;
+        createdAt: string;
+      }>(`
+        SELECT
+          audit.id::text,
+          audit.action,
+          audit.entity_type AS "entityType",
+          audit.entity_id::text AS "entityId",
+          audit.actor_role AS "actorRole",
+          actor.display_name AS "actorName",
+          NULLIF(audit.payload ->> 'publicCode', '') AS "publicCode",
+          NULLIF(audit.payload ->> 'from', '') AS "fromStatus",
+          NULLIF(audit.payload ->> 'to', '') AS "toStatus",
+          audit.created_at AS "createdAt"
+        FROM audit_events audit
+        JOIN users actor ON actor.id = audit.actor_id
+        ORDER BY audit.created_at DESC, audit.id DESC
+        LIMIT 150
+      `);
+      const metrics = await client.query<{
+        totalCount: number;
+        lastThirtyDaysCount: number;
+        criticalCount: number;
+        actorCount: number;
+      }>(`
+        SELECT
+          count(*)::int AS "totalCount",
+          count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS "lastThirtyDaysCount",
+          count(*) FILTER (
+            WHERE created_at >= now() - interval '30 days'
+              AND (
+                action IN (
+                  'proposal.accepted',
+                  'booking.cancelled',
+                  'support_case.status_changed',
+                  'partner_referral.status_changed',
+                  'provider_verification.status_changed',
+                  'provider_verification.document_reviewed'
+                )
+                OR action LIKE 'finance.sandbox_%'
+              )
+          )::int AS "criticalCount",
+          count(DISTINCT actor_id)::int AS "actorCount"
+        FROM audit_events
+      `);
+
+      return {
+        metrics: metrics.rows[0],
+        events: events.rows.map((event) => {
+          const copy = auditActivityCopy[event.action] ?? {
+            category: "operation",
+            title: "Evento auditado",
+            detail: "Ação registrada pelo sistema.",
+          };
+          const transition = event.fromStatus && event.toStatus
+            ? `${event.fromStatus} → ${event.toStatus}`
+            : null;
+          const prefix = auditEntityPrefix[event.entityType] ?? "EV";
+          return {
+            id: event.id,
+            action: event.action,
+            category: copy.category,
+            title: copy.title,
+            detail: transition ? `${copy.detail} ${transition}.` : copy.detail,
+            reference: event.publicCode ?? `${prefix}-${event.entityId.replaceAll("-", "").slice(0, 6).toUpperCase()}`,
+            entityType: event.entityType,
+            actorRole: event.actorRole,
+            actorName: event.actorName,
+            createdAt: event.createdAt,
+          };
+        }),
+      };
     });
   }
 }

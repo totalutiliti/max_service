@@ -15,6 +15,14 @@ function actorFromHeaders(role: string | undefined, id: string | undefined) {
 export class OperationsController {
   constructor(private readonly operations: OperationsService) {}
 
+  @Get("activity")
+  async activity(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.operations.activity(actorFromHeaders(role, id));
+  }
+
   @Get("cases")
   async cases(
     @Headers("x-demo-role") role: string | undefined,

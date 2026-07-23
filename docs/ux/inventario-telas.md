@@ -53,7 +53,7 @@
 37. Catálogo/regiões
 38. Regras comerciais versionadas
 39. Termos/notificações/campanhas
-40. Auditoria
+40. Auditoria pesquisável por área e responsável
 
 ## Validação visual mínima
 

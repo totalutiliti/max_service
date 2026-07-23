@@ -35,3 +35,16 @@ export class ChangePartnerSupportStatusDto {
   @MaxLength(1000)
   note!: string;
 }
+
+export class TriagePartnerSupportCaseDto {
+  @IsIn(["normal", "high"])
+  priority!: "normal" | "high";
+
+  @IsUUID()
+  assigneeId!: string;
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  note!: string;
+}

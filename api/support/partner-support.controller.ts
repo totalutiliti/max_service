@@ -4,6 +4,7 @@ import {
   AddPartnerSupportMessageDto,
   ChangePartnerSupportStatusDto,
   CreatePartnerSupportCaseDto,
+  TriagePartnerSupportCaseDto,
 } from "./partner-support.dto.js";
 import { PartnerSupportService } from "./partner-support.service.js";
 
@@ -96,6 +97,24 @@ export class OperationSupportController {
   ) {
     return {
       case: await this.support.changeStatus(actorFromHeaders(role, id), caseId, input.status, input.note),
+    };
+  }
+
+  @Post("cases/:caseId/triage")
+  async triage(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
+    @Body() input: TriagePartnerSupportCaseDto,
+  ) {
+    return {
+      case: await this.support.triage(
+        actorFromHeaders(role, id),
+        caseId,
+        input.priority,
+        input.assigneeId,
+        input.note,
+      ),
     };
   }
 }

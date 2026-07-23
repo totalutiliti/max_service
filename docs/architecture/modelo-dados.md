@@ -33,7 +33,7 @@
 
 ### Operação
 
-`notifications`, `support_cases`, `support_case_events`, `audit_events`, `outbox_events` e `feature_flags`.
+`notifications`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `audit_events`, `outbox_events` e `feature_flags`.
 
 ## Invariantes
 
@@ -53,6 +53,9 @@
 - captura por link ou QR exige código ativo, consentimento datado e versão do aviso de privacidade; repetição do mesmo e-mail na rede não cria nova indicação;
 - a triagem segue `invited → in_review → approved | rejected`; aprovação significa aptidão para onboarding e não cria conta nem ativa automaticamente o profissional;
 - cada mudança da triagem exige justificativa e gera `partner_referral_events` append-only e `audit_events`; o parceiro consulta o status, mas os eventos internos são exclusivos da operação;
+- cada atendimento do parceiro pertence à sua rede, pode vincular somente uma indicação da mesma rede e aceita mensagens apenas enquanto não estiver resolvido;
+- a Operação pode atribuir o atendimento apenas a um usuário operacional e elevar a prioridade de normal para alta, nunca reduzi-la durante o caso; cada mudança exige justificativa, evento append-only e auditoria;
+- a política `SUPPORT-SLA-2026-01` define primeira resposta/resolução em 4 h/48 h no fluxo normal e 1 h/8 h na prioridade alta; os prazos ficam persistidos e o primeiro prazo é preservado depois da resposta;
 - a ordem das categorias é positiva e única; somente a operação altera `active` ou `sort_order`, sempre com justificativa, `service_category_events` append-only e auditoria;
 - o catálogo mantém ao menos uma categoria ativa; uma categoria inativa é rejeitada em novos pedidos e indicações, mas continua visível nos relacionamentos históricos;
 - uma verificação só sai de `submitted` para `in_review`; a decisão final é `approved` ou `changes_requested`;

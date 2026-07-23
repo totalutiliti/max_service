@@ -14,11 +14,16 @@ const supportCaseSelect = `
     support.status,
     support.subject,
     support.resolution,
+    support.sla_policy_version AS "slaPolicyVersion",
+    support.first_response_due_at AS "firstResponseDueAt",
+    support.resolution_due_at AS "resolutionDueAt",
+    support.first_responded_at AS "firstRespondedAt",
     support.created_at AS "createdAt",
     support.updated_at AS "updatedAt",
     support.resolved_at AS "resolvedAt",
     partner.display_name AS "partnerName",
     partner.public_code AS "partnerCode",
+    support.assigned_to AS "assignedToId",
     CASE
       WHEN support.assigned_to IS NULL THEN NULL
       ELSE COALESCE(assignee.display_name, 'Equipe Max')
@@ -41,6 +46,18 @@ const supportCaseSelect = `
       WHEN latest_event.actor_id IS NOT NULL THEN 'operation'
       ELSE NULL
     END AS "latestActorRole",
+    CASE
+      WHEN support.first_responded_at IS NULL AND now() > support.first_response_due_at THEN 'breached'
+      WHEN support.first_responded_at > support.first_response_due_at THEN 'breached'
+      WHEN support.first_responded_at IS NOT NULL THEN 'met'
+      ELSE 'pending'
+    END AS "firstResponseSla",
+    CASE
+      WHEN support.resolved_at IS NULL AND now() > support.resolution_due_at THEN 'breached'
+      WHEN support.resolved_at > support.resolution_due_at THEN 'breached'
+      WHEN support.resolved_at IS NOT NULL THEN 'met'
+      ELSE 'pending'
+    END AS "resolutionSla",
     (SELECT count(*)::int FROM partner_support_events event WHERE event.case_id = support.id) AS "eventCount"
   FROM partner_support_cases support
   JOIN users partner ON partner.id = support.partner_id
@@ -79,6 +96,16 @@ export class PartnerSupportService {
     return this.database.withActor(actor, async (client) => {
       const cases = await client.query(`${supportCaseSelect}
         ORDER BY
+          CASE
+            WHEN support.status <> 'resolved'
+              AND (
+                (support.first_responded_at IS NULL AND now() > support.first_response_due_at)
+                OR support.first_responded_at > support.first_response_due_at
+                OR now() > support.resolution_due_at
+              )
+            THEN 0
+            ELSE 1
+          END,
           CASE support.status WHEN 'open' THEN 0 WHEN 'in_review' THEN 1 ELSE 2 END,
           CASE support.priority WHEN 'high' THEN 0 ELSE 1 END,
           COALESCE(latest_event.created_at, support.created_at) DESC,
@@ -93,7 +120,19 @@ export class PartnerSupportService {
           count(*) FILTER (
             WHERE support.status <> 'resolved'
               AND latest_event.actor_id = support.partner_id
-          )::int AS "waitingOperationCount"
+          )::int AS "waitingOperationCount",
+          count(*) FILTER (
+            WHERE support.status <> 'resolved'
+              AND support.assigned_to IS NULL
+          )::int AS "unassignedCount",
+          count(*) FILTER (
+            WHERE support.status <> 'resolved'
+              AND (
+                (support.first_responded_at IS NULL AND now() > support.first_response_due_at)
+                OR support.first_responded_at > support.first_response_due_at
+                OR now() > support.resolution_due_at
+              )
+          )::int AS "slaBreachedCount"
         FROM partner_support_cases support
         LEFT JOIN LATERAL (
           SELECT event.actor_id
@@ -118,7 +157,23 @@ export class PartnerSupportService {
             ORDER BY referral.created_at DESC, referral.id DESC
           `, [actor.id])
         : { rows: [] };
-      return { cases: cases.rows, metrics: metrics.rows[0], referrals: referrals.rows };
+      const operators = scope === "operation"
+        ? await client.query(`
+            SELECT
+              id,
+              public_code AS "publicCode",
+              display_name AS "displayName"
+            FROM users
+            WHERE role = 'operation'
+            ORDER BY display_name, id
+          `)
+        : { rows: [] };
+      return {
+        cases: cases.rows,
+        metrics: metrics.rows[0],
+        referrals: referrals.rows,
+        operators: operators.rows,
+      };
     });
   }
 
@@ -191,7 +246,16 @@ export class PartnerSupportService {
         INSERT INTO partner_support_cases (
           id, public_code, partner_id, referral_id, topic, priority, status, subject
         ) VALUES ($1, $2, $3, $4, $5, 'normal', 'open', $6)
-        RETURNING id, public_code AS "publicCode", topic, priority, status, subject, created_at AS "createdAt"
+        RETURNING
+          id,
+          public_code AS "publicCode",
+          topic,
+          priority,
+          status,
+          subject,
+          first_response_due_at AS "firstResponseDueAt",
+          resolution_due_at AS "resolutionDueAt",
+          created_at AS "createdAt"
       `, [caseId, publicCode, actor.id, input.referralId ?? null, input.topic, subject]);
       const eventId = randomUUID();
       await client.query(`
@@ -246,6 +310,15 @@ export class PartnerSupportService {
         VALUES ($1, $2, $3, 'message', $4)
         RETURNING id, event_type AS "eventType", body, created_at AS "createdAt"
       `, [eventId, caseId, actor.id, body]);
+      if (scope === "operation") {
+        await client.query(`
+          UPDATE partner_support_cases
+          SET
+            first_responded_at = COALESCE(first_responded_at, now()),
+            updated_at = now()
+          WHERE id = $1
+        `, [caseId]);
+      }
       await client.query(
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_support_case.message_sent', 'partner_support_case', $3, $4::jsonb)",
         [actor.id, actor.role, caseId, JSON.stringify({ publicCode: current.rows[0].publicCode, eventId })],
@@ -263,6 +336,117 @@ export class PartnerSupportService {
         entityId: caseId,
       });
       return event.rows[0];
+    });
+  }
+
+  async triage(
+    actor: Actor,
+    caseId: string,
+    priority: "normal" | "high",
+    assigneeId: string,
+    rawNote: string,
+  ) {
+    this.ensureScope(actor, "operation");
+    const note = this.normalizeText(rawNote, 10, "Registre uma justificativa com pelo menos 10 caracteres.");
+    return this.database.withActor(actor, async (client) => {
+      const current = await client.query<{
+        status: "open" | "in_review" | "resolved";
+        priority: "normal" | "high";
+        assignedToId: string | null;
+        assignedToName: string | null;
+        partnerId: string;
+        publicCode: string;
+      }>(`
+        SELECT
+          support.status,
+          support.priority,
+          support.assigned_to AS "assignedToId",
+          assignee.display_name AS "assignedToName",
+          support.partner_id AS "partnerId",
+          support.public_code AS "publicCode"
+        FROM partner_support_cases support
+        LEFT JOIN users assignee ON assignee.id = support.assigned_to
+        WHERE support.id = $1
+        FOR UPDATE OF support
+      `, [caseId]);
+      if (!current.rows[0]) throw new NotFoundException("Solicitação de atendimento não encontrada.");
+      if (current.rows[0].status === "resolved") {
+        throw new ConflictException("Solicitações resolvidas não podem ser reclassificadas.");
+      }
+      if (current.rows[0].priority === "high" && priority === "normal") {
+        throw new ConflictException("Uma prioridade alta não pode ser reduzida durante o atendimento.");
+      }
+
+      const assignee = await client.query<{ id: string; displayName: string }>(`
+        SELECT id, display_name AS "displayName"
+        FROM users
+        WHERE id = $1 AND role = 'operation'
+      `, [assigneeId]);
+      if (!assignee.rows[0]) throw new NotFoundException("Responsável operacional não encontrado.");
+      if (current.rows[0].priority === priority && current.rows[0].assignedToId === assigneeId) {
+        throw new ConflictException("A prioridade e o responsável já estão definidos desta forma.");
+      }
+
+      const updated = await client.query(`
+        UPDATE partner_support_cases
+        SET
+          priority = $2,
+          assigned_to = $3,
+          first_response_due_at = CASE
+            WHEN first_responded_at IS NOT NULL THEN first_response_due_at
+            ELSE created_at + CASE
+              WHEN $2 = 'high' THEN interval '1 hour'
+              ELSE interval '4 hours'
+            END
+          END,
+          resolution_due_at = created_at + CASE
+            WHEN $2 = 'high' THEN interval '8 hours'
+            ELSE interval '48 hours'
+          END,
+          updated_at = now()
+        WHERE id = $1
+        RETURNING
+          id,
+          public_code AS "publicCode",
+          priority,
+          assigned_to AS "assignedToId",
+          first_response_due_at AS "firstResponseDueAt",
+          resolution_due_at AS "resolutionDueAt",
+          updated_at AS "updatedAt"
+      `, [caseId, priority, assigneeId]);
+      const priorityLabel = priority === "high" ? "Alta" : "Normal";
+      const previousPriorityLabel = current.rows[0].priority === "high" ? "Alta" : "Normal";
+      const eventBody = [
+        `Prioridade ${previousPriorityLabel} → ${priorityLabel}.`,
+        `Responsável ${current.rows[0].assignedToName ?? "não atribuído"} → ${assignee.rows[0].displayName}.`,
+        note,
+      ].join(" ");
+      const eventId = randomUUID();
+      await client.query(`
+        INSERT INTO partner_support_events (id, case_id, actor_id, event_type, body)
+        VALUES ($1, $2, $3, 'triage_changed', $4)
+      `, [eventId, caseId, actor.id, eventBody]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_support_case.triaged', 'partner_support_case', $3, $4::jsonb)",
+        [actor.id, actor.role, caseId, JSON.stringify({
+          publicCode: current.rows[0].publicCode,
+          fromPriority: current.rows[0].priority,
+          toPriority: priority,
+          fromAssigneeId: current.rows[0].assignedToId,
+          toAssigneeId: assigneeId,
+          eventId,
+        })],
+      );
+      await createNotification(client, {
+        userId: current.rows[0].partnerId,
+        actorId: actor.id,
+        type: "case_updated",
+        title: `Triagem atualizada · ${current.rows[0].publicCode}`,
+        body: eventBody.slice(0, 500),
+        entityType: "partner_support_case",
+        entityId: caseId,
+      });
+      return updated.rows[0];
     });
   }
 
@@ -302,7 +486,8 @@ export class PartnerSupportService {
         UPDATE partner_support_cases
         SET
           status = $2,
-          assigned_to = $3,
+          assigned_to = COALESCE(assigned_to, $3),
+          first_responded_at = COALESCE(first_responded_at, now()),
           resolution = CASE WHEN $2 = 'resolved' THEN $4 ELSE NULL END,
           resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE NULL END,
           updated_at = now()

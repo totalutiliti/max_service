@@ -183,6 +183,7 @@ interface SupportCaseDetail extends SupportCase {
 
 type PartnerSupportTopic = "referral" | "account" | "finance_sandbox" | "other";
 type PartnerSupportStatus = "open" | "in_review" | "resolved";
+type PartnerSupportSlaState = "pending" | "met" | "breached";
 
 interface PartnerSupportCase {
   id: string;
@@ -192,11 +193,18 @@ interface PartnerSupportCase {
   status: PartnerSupportStatus;
   subject: string;
   resolution: string | null;
+  slaPolicyVersion: string;
+  firstResponseDueAt: string;
+  resolutionDueAt: string;
+  firstRespondedAt: string | null;
+  firstResponseSla: PartnerSupportSlaState;
+  resolutionSla: PartnerSupportSlaState;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
   partnerName: string;
   partnerCode: string;
+  assignedToId: string | null;
   assignedToName: string | null;
   referralId: string | null;
   referralCode: string | null;
@@ -204,7 +212,7 @@ interface PartnerSupportCase {
   categoryName: string | null;
   categoryIcon: string | null;
   latestEventBody: string | null;
-  latestEventType: "message" | "status_changed" | null;
+  latestEventType: "message" | "status_changed" | "triage_changed" | null;
   latestEventAt: string | null;
   latestActorName: string | null;
   latestActorRole: "partner" | "operation" | null;
@@ -213,7 +221,7 @@ interface PartnerSupportCase {
 
 interface PartnerSupportEvent {
   id: string;
-  eventType: "message" | "status_changed";
+  eventType: "message" | "status_changed" | "triage_changed";
   fromStatus: PartnerSupportStatus | null;
   toStatus: PartnerSupportStatus | null;
   body: string;
@@ -243,8 +251,11 @@ interface PartnerSupportData {
     inReviewCount: number;
     resolvedCount: number;
     waitingOperationCount: number;
+    unassignedCount: number;
+    slaBreachedCount: number;
   };
   referrals: PartnerSupportReferral[];
+  operators: Array<{ id: string; publicCode: string; displayName: string }>;
 }
 
 interface UserNotification {
@@ -2219,8 +2230,12 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<PartnerSupportCaseDetail | null>(null);
   const [query, setQuery] = useState("");
+  const [caseFilter, setCaseFilter] = useState<"all" | PartnerSupportStatus | "sla">("all");
   const [draft, setDraft] = useState("");
   const [transitionNote, setTransitionNote] = useState("");
+  const [triagePriority, setTriagePriority] = useState<"normal" | "high">("normal");
+  const [triageAssigneeId, setTriageAssigneeId] = useState("");
+  const [triageNote, setTriageNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -2265,14 +2280,18 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
         }
         return payload.case;
       })
-      .then(setDetail)
+      .then((supportCase) => {
+        setDetail(supportCase);
+        setTriagePriority(supportCase.priority);
+        setTriageAssigneeId(supportCase.assignedToId ?? data?.operators[0]?.id ?? "");
+      })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         notify(error instanceof Error ? error.message : "Não foi possível abrir o atendimento.");
       })
       .finally(() => setDetailLoading(false));
     return () => controller.abort();
-  }, [endpoint, notify, refresh, selectedId]);
+  }, [data?.operators, endpoint, notify, refresh, selectedId]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [detail?.events]);
 
@@ -2283,12 +2302,30 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
   };
   const filteredCases = (data?.cases ?? []).filter((item) => {
     const needle = query.trim().toLocaleLowerCase("pt-BR");
-    return !needle || [item.publicCode, item.subject, item.partnerName, item.referralCode, item.referralName]
+    const matchesQuery = !needle || [item.publicCode, item.subject, item.partnerName, item.referralCode, item.referralName]
       .some((value) => value?.toLocaleLowerCase("pt-BR").includes(needle));
+    const matchesFilter = caseFilter === "all"
+      || item.status === caseFilter
+      || (caseFilter === "sla" && item.status !== "resolved"
+        && (item.firstResponseSla === "breached" || item.resolutionSla === "breached"));
+    return matchesQuery && matchesFilter;
   });
   const timestamp = (value: string | null) => value
     ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
     : "Sem interação";
+  const slaState = (item: PartnerSupportCase) => item.firstResponseSla === "breached" || item.resolutionSla === "breached"
+    ? "breached"
+    : item.resolutionSla === "met"
+      ? "met"
+      : "pending";
+  const slaLabel = (item: PartnerSupportCase) => {
+    const state = slaState(item);
+    if (state === "breached") return "Prazo excedido";
+    if (state === "met") return "Concluído no prazo";
+    return item.firstRespondedAt
+      ? `Resolver até ${timestamp(item.resolutionDueAt)}`
+      : `Responder até ${timestamp(item.firstResponseDueAt)}`;
+  };
 
   const sendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -2333,6 +2370,35 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
     }
   };
 
+  const triage = async () => {
+    if (!selectedId || !triageAssigneeId || triageNote.trim().length < 10) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "triage",
+          caseId: selectedId,
+          priority: triagePriority,
+          assigneeId: triageAssigneeId,
+          note: triageNote.trim(),
+        }),
+      });
+      const payload = await response.json() as { case?: PartnerSupportCase; error?: string; message?: string };
+      if (!response.ok || !payload.case) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a triagem.");
+      }
+      setTriageNote("");
+      refreshCenter();
+      notify("Triagem registrada com responsável, prioridade e novos prazos.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a triagem.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <>
       <DashboardHeader role={role} eyebrow={role === "operacao" ? "CENTRAL DE ATENDIMENTOS" : "SUPORTE DA REDE"} title={role === "operacao" ? "Cada solicitação, contexto e decisão em um só lugar." : "Fale com a Max sem perder o contexto da sua rede."}>
@@ -2340,22 +2406,60 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
       </DashboardHeader>
       <section className="partner-support-metrics">
         <article><small>ABERTOS</small><strong>{loading ? "…" : data?.metrics.openCount ?? 0}</strong><span>Aguardando triagem</span></article>
-        <article><small>EM ANÁLISE</small><strong>{loading ? "…" : data?.metrics.inReviewCount ?? 0}</strong><span>Com a equipe Max</span></article>
+        <article><small>{role === "operacao" ? "SEM RESPONSÁVEL" : "EM ANÁLISE"}</small><strong>{loading ? "…" : role === "operacao" ? data?.metrics.unassignedCount ?? 0 : data?.metrics.inReviewCount ?? 0}</strong><span>{role === "operacao" ? "Precisam de atribuição" : "Com a equipe Max"}</span></article>
         <article><small>{role === "operacao" ? "AGUARDANDO OPERAÇÃO" : "RESOLVIDOS"}</small><strong>{loading ? "…" : role === "operacao" ? data?.metrics.waitingOperationCount ?? 0 : data?.metrics.resolvedCount ?? 0}</strong><span>{role === "operacao" ? "Última mensagem do parceiro" : "Histórico disponível"}</span></article>
+        <article className={(data?.metrics.slaBreachedCount ?? 0) > 0 ? "breached" : ""}><small>FORA DO PRAZO</small><strong>{loading ? "…" : data?.metrics.slaBreachedCount ?? 0}</strong><span>Política {data?.cases[0]?.slaPolicyVersion ?? "SUPPORT-SLA"}</span></article>
       </section>
       <section className="partner-support-center">
         <aside className="partner-support-list">
-          <label><span>Buscar atendimento</span><input aria-label="Buscar atendimento" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === "operacao" ? "Código, parceiro ou assunto" : "Código, assunto ou indicação"} /></label>
+          <div className="partner-support-toolbar"><label><span>Buscar atendimento</span><input aria-label="Buscar atendimento" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === "operacao" ? "Código, parceiro ou assunto" : "Código, assunto ou indicação"} /></label><label><span>Filtrar fila</span><select aria-label="Filtrar atendimentos" value={caseFilter} onChange={(event) => setCaseFilter(event.target.value as typeof caseFilter)}><option value="all">Todos</option><option value="open">Abertos</option><option value="in_review">Em análise</option><option value="resolved">Resolvidos</option><option value="sla">Prazo excedido</option></select></label></div>
           <div>
             {loading && <div className="data-state">Carregando atendimentos...</div>}
             {!loading && filteredCases.length === 0 && <div className="data-state"><strong>Nenhum atendimento encontrado.</strong><span>{role === "parceiro" ? "Abra uma solicitação para falar com a equipe Max." : "A fila está em dia."}</span></div>}
-            {filteredCases.map((item) => <button key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => { setDetail(null); setDetailLoading(true); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><footer><span>{role === "operacao" ? item.partnerName : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
+            {filteredCases.map((item) => <button key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => { setDetail(null); setDetailLoading(true); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><div className={`support-sla-chip ${slaState(item)}`}>{slaLabel(item)}</div><footer><span>{role === "operacao" ? `${item.partnerName} · ${item.assignedToName ?? "sem responsável"}` : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
           </div>
         </aside>
         <div className="partner-support-thread">
           {detailLoading && !detail && <div className="data-state"><strong>Abrindo atendimento...</strong></div>}
           {!detailLoading && !detail && <div className="data-state"><strong>Selecione um atendimento.</strong><span>A conversa e a trilha de estado aparecerão aqui.</span></div>}
-          {detail && <><header><div><small>{detail.publicCode} · {partnerSupportTopicLabel[detail.topic]}</small><h2>{detail.subject}</h2><p>{role === "operacao" ? `${detail.partnerName} · ${detail.partnerCode}` : "Equipe Max · canal protegido"}{detail.referralCode ? ` · ${detail.referralCode} · ${detail.referralName}` : ""}</p></div><span className={`status-pill ${detail.status === "resolved" ? "success" : detail.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[detail.status]}</span></header><div className="partner-support-events"><div className="chat-date">HISTÓRICO IMUTÁVEL · {detail.eventCount} EVENTO(S)</div>{detail.events.map((event) => event.eventType === "status_changed" ? <article key={event.id} className="support-status-event"><span>→</span><div><strong>{event.fromStatus ? partnerSupportStatusLabel[event.fromStatus] : ""} → {event.toStatus ? partnerSupportStatusLabel[event.toStatus] : ""}</strong><p>{event.body}</p><small>{event.actorName} · {timestamp(event.createdAt)}</small></div></article> : <article key={event.id} className={`support-message ${event.actorRole === (role === "parceiro" ? "partner" : "operation") ? "sent" : "received"}`}><strong>{event.actorName}</strong><p>{event.body}</p><small>{timestamp(event.createdAt)}</small></article>)}{detail.resolution && <section className="support-resolution"><span>✓</span><div><small>RESOLUÇÃO REGISTRADA</small><strong>{detail.resolution}</strong><p>{detail.resolvedAt ? timestamp(detail.resolvedAt) : ""}</p></div></section>}<div ref={endRef} /></div>{detail.status !== "resolved" && <><form className="support-composer" onSubmit={sendMessage}><label><span>Responder no atendimento</span><textarea aria-label="Mensagem do atendimento" value={draft} minLength={3} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder="Escreva uma mensagem objetiva..." /></label><button className="primary-action" type="submit" disabled={submitting || draft.trim().length < 3}>{submitting ? "Enviando..." : "Enviar mensagem"}</button></form>{role === "operacao" && <section className="support-transition"><div><small>DECISÃO OPERACIONAL</small><strong>{detail.status === "open" ? "Assuma a solicitação para iniciar a análise." : "Registre a solução antes de encerrar."}</strong></div><label><span>Justificativa</span><textarea minLength={10} maxLength={1000} value={transitionNote} onChange={(event) => setTransitionNote(event.target.value)} placeholder="Contextualize a decisão para a trilha de auditoria." /><small>{transitionNote.trim().length}/1000</small></label><button className={detail.status === "open" ? "secondary-action" : "danger-action"} disabled={submitting || transitionNote.trim().length < 10} onClick={() => transition(detail.status === "open" ? "in_review" : "resolved")}>{submitting ? "Salvando..." : detail.status === "open" ? "Assumir análise" : "Resolver atendimento"}</button></section>}</>}</>}
+          {detail && (
+            <>
+              <header>
+                <div><small>{detail.publicCode} · {partnerSupportTopicLabel[detail.topic]}</small><h2>{detail.subject}</h2><p>{role === "operacao" ? `${detail.partnerName} · ${detail.partnerCode}` : "Equipe Max · canal protegido"}{detail.referralCode ? ` · ${detail.referralCode} · ${detail.referralName}` : ""}</p></div>
+                <div className="support-header-badges"><span className={`priority-pill ${detail.priority}`}>{detail.priority === "high" ? "Prioridade alta" : "Prioridade normal"}</span><span className={`status-pill ${detail.status === "resolved" ? "success" : detail.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[detail.status]}</span></div>
+              </header>
+              <section className="support-sla-overview">
+                <article className={detail.firstResponseSla}><small>PRIMEIRA RESPOSTA</small><strong>{detail.firstRespondedAt ? timestamp(detail.firstRespondedAt) : detail.firstResponseSla === "breached" ? "Prazo excedido" : "Aguardando equipe"}</strong><span>Limite {timestamp(detail.firstResponseDueAt)}</span></article>
+                <article className={detail.resolutionSla}><small>RESOLUÇÃO</small><strong>{detail.resolvedAt ? timestamp(detail.resolvedAt) : detail.resolutionSla === "breached" ? "Prazo excedido" : "Em andamento"}</strong><span>Limite {timestamp(detail.resolutionDueAt)}</span></article>
+                <article><small>RESPONSÁVEL</small><strong>{detail.assignedToName ?? "Não atribuído"}</strong><span>{detail.slaPolicyVersion}</span></article>
+              </section>
+              <div className="partner-support-events">
+                <div className="chat-date">HISTÓRICO IMUTÁVEL · {detail.eventCount} EVENTO(S)</div>
+                {detail.events.map((event) => event.eventType !== "message"
+                  ? <article key={event.id} className={`support-status-event ${event.eventType === "triage_changed" ? "triage" : ""}`}><span>{event.eventType === "triage_changed" ? "T" : "→"}</span><div><strong>{event.eventType === "triage_changed" ? "Triagem atualizada" : `${event.fromStatus ? partnerSupportStatusLabel[event.fromStatus] : ""} → ${event.toStatus ? partnerSupportStatusLabel[event.toStatus] : ""}`}</strong><p>{event.body}</p><small>{event.actorName} · {timestamp(event.createdAt)}</small></div></article>
+                  : <article key={event.id} className={`support-message ${event.actorRole === (role === "parceiro" ? "partner" : "operation") ? "sent" : "received"}`}><strong>{event.actorName}</strong><p>{event.body}</p><small>{timestamp(event.createdAt)}</small></article>)}
+                {detail.resolution && <section className="support-resolution"><span>✓</span><div><small>RESOLUÇÃO REGISTRADA</small><strong>{detail.resolution}</strong><p>{detail.resolvedAt ? timestamp(detail.resolvedAt) : ""}</p></div></section>}
+                <div ref={endRef} />
+              </div>
+              {detail.status !== "resolved" && (
+                <>
+                  <form className="support-composer" onSubmit={sendMessage}><label><span>Responder no atendimento</span><textarea aria-label="Mensagem do atendimento" value={draft} minLength={3} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder="Escreva uma mensagem objetiva..." /></label><button className="primary-action" type="submit" disabled={submitting || draft.trim().length < 3}>{submitting ? "Enviando..." : "Enviar mensagem"}</button></form>
+                  {role === "operacao" && (
+                    <>
+                      <section className="support-triage">
+                        <div><small>TRIAGEM E SLA</small><strong>Defina quem assume e eleve a prioridade quando necessário.</strong></div>
+                        <label><span>Prioridade</span><select value={triagePriority} onChange={(event) => setTriagePriority(event.target.value as "normal" | "high")}><option value="normal" disabled={detail.priority === "high"}>Normal · 4h / 48h</option><option value="high">Alta · 1h / 8h</option></select></label>
+                        <label><span>Responsável</span><select value={triageAssigneeId} onChange={(event) => setTriageAssigneeId(event.target.value)}><option value="">Selecione</option>{data?.operators.map((operator) => <option key={operator.id} value={operator.id}>{operator.displayName} · {operator.publicCode}</option>)}</select></label>
+                        <label className="triage-note"><span>Justificativa da triagem</span><textarea minLength={10} maxLength={1000} value={triageNote} onChange={(event) => setTriageNote(event.target.value)} placeholder="Explique a atribuição ou a elevação da prioridade." /><small>{triageNote.trim().length}/1000</small></label>
+                        <button className="secondary-action" disabled={submitting || !triageAssigneeId || triageNote.trim().length < 10 || (triagePriority === detail.priority && triageAssigneeId === detail.assignedToId)} onClick={triage}>{submitting ? "Salvando..." : "Registrar triagem"}</button>
+                      </section>
+                      <section className="support-transition"><div><small>DECISÃO OPERACIONAL</small><strong>{detail.status === "open" ? "Assuma a solicitação para iniciar a análise." : "Registre a solução antes de encerrar."}</strong></div><label><span>Justificativa</span><textarea minLength={10} maxLength={1000} value={transitionNote} onChange={(event) => setTransitionNote(event.target.value)} placeholder="Contextualize a decisão para a trilha de auditoria." /><small>{transitionNote.trim().length}/1000</small></label><button className={detail.status === "open" ? "secondary-action" : "danger-action"} disabled={submitting || transitionNote.trim().length < 10} onClick={() => transition(detail.status === "open" ? "in_review" : "resolved")}>{submitting ? "Salvando..." : detail.status === "open" ? "Assumir análise" : "Resolver atendimento"}</button></section>
+                    </>
+                  )}
+                </>
+              )}
+            </>
+          )}
         </div>
       </section>
       {createOpen && <PartnerSupportCreateDialog referrals={data?.referrals ?? []} onClose={() => setCreateOpen(false)} onCreated={(caseId) => { setCreateOpen(false); setSelectedId(caseId); refreshCenter(); }} notify={notify} />}

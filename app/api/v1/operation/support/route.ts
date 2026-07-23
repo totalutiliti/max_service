@@ -12,10 +12,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const payload = await request.json() as {
-    action?: "message" | "transition";
+    action?: "message" | "transition" | "triage";
     caseId?: string;
     body?: string;
     status?: "in_review" | "resolved";
+    priority?: "normal" | "high";
+    assigneeId?: string;
     note?: string;
   };
   if (!payload.caseId) {
@@ -35,6 +37,14 @@ export async function POST(request: Request) {
       request,
       "operation",
       { status: payload.status, note: payload.note },
+    );
+  }
+  if (payload.action === "triage") {
+    return proxyDemoRequest(
+      `/api/v1/operation/support/cases/${encodeURIComponent(payload.caseId)}/triage`,
+      request,
+      "operation",
+      { priority: payload.priority, assigneeId: payload.assigneeId, note: payload.note },
     );
   }
   return Response.json({ error: "Ação de atendimento inválida." }, { status: 400 });

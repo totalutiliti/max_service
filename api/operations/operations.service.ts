@@ -94,6 +94,7 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "service_category.reordered": { category: "operation", title: "Catálogo reordenado", detail: "Prioridade de exibição de uma categoria alterada." },
   "partner_support_case.created": { category: "growth", title: "Atendimento aberto", detail: "Nova solicitação registrada por um parceiro." },
   "partner_support_case.message_sent": { category: "growth", title: "Mensagem de atendimento", detail: "Interação registrada na central do parceiro." },
+  "partner_support_case.triaged": { category: "operation", title: "Triagem de atendimento", detail: "Prioridade, responsável e prazos operacionais atualizados com justificativa." },
   "partner_support_case.status_changed": { category: "operation", title: "Atendimento atualizado", detail: "Estado da solicitação do parceiro alterado com justificativa." },
 };
 
@@ -561,6 +562,7 @@ export class OperationsService {
                   'provider_verification.document_reviewed',
                   'service_category.status_changed',
                   'service_category.reordered',
+                  'partner_support_case.triaged',
                   'partner_support_case.status_changed'
                 )
                 OR action LIKE 'finance.sandbox_%'

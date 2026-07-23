@@ -181,9 +181,75 @@ interface SupportCaseDetail extends SupportCase {
   events: SupportCaseEvent[];
 }
 
+type PartnerSupportTopic = "referral" | "account" | "finance_sandbox" | "other";
+type PartnerSupportStatus = "open" | "in_review" | "resolved";
+
+interface PartnerSupportCase {
+  id: string;
+  publicCode: string;
+  topic: PartnerSupportTopic;
+  priority: "normal" | "high";
+  status: PartnerSupportStatus;
+  subject: string;
+  resolution: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  partnerName: string;
+  partnerCode: string;
+  assignedToName: string | null;
+  referralId: string | null;
+  referralCode: string | null;
+  referralName: string | null;
+  categoryName: string | null;
+  categoryIcon: string | null;
+  latestEventBody: string | null;
+  latestEventType: "message" | "status_changed" | null;
+  latestEventAt: string | null;
+  latestActorName: string | null;
+  latestActorRole: "partner" | "operation" | null;
+  eventCount: number;
+}
+
+interface PartnerSupportEvent {
+  id: string;
+  eventType: "message" | "status_changed";
+  fromStatus: PartnerSupportStatus | null;
+  toStatus: PartnerSupportStatus | null;
+  body: string;
+  createdAt: string;
+  actorName: string;
+  actorRole: "partner" | "operation";
+}
+
+interface PartnerSupportCaseDetail extends PartnerSupportCase {
+  events: PartnerSupportEvent[];
+}
+
+interface PartnerSupportReferral {
+  id: string;
+  publicCode: string;
+  professionalName: string;
+  status: PartnerReferral["status"];
+  categoryName: string;
+  categoryIcon: string;
+}
+
+interface PartnerSupportData {
+  cases: PartnerSupportCase[];
+  metrics: {
+    totalCount: number;
+    openCount: number;
+    inReviewCount: number;
+    resolvedCount: number;
+    waitingOperationCount: number;
+  };
+  referrals: PartnerSupportReferral[];
+}
+
 interface UserNotification {
   id: string;
-  type: "system" | "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated" | "referral_reviewed";
+  type: "system" | "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated" | "referral_reviewed" | "support_message";
   title: string;
   body: string;
   entityType: string;
@@ -703,6 +769,7 @@ const notificationIcon: Record<UserNotification["type"], string> = {
   case_opened: "!",
   case_updated: "CS",
   referral_reviewed: "RF",
+  support_message: "AT",
 };
 
 function NotificationCenter({ role }: { role: Role }) {
@@ -1854,7 +1921,7 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
 }
 
 function MessagesView({ role, notify }: { role: Role; notify: (message: string) => void }) {
-  if (role !== "cliente" && role !== "prestador") return <NonTransactionalMessages role={role} notify={notify} />;
+  if (role === "parceiro" || role === "operacao") return <PartnerSupportCenter role={role} notify={notify} />;
   return <PersistentMessages role={role} notify={notify} />;
 }
 
@@ -2067,8 +2134,233 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
   );
 }
 
-function NonTransactionalMessages({ role, notify }: { role: "parceiro" | "operacao"; notify: (message: string) => void }) {
-  return <><DashboardHeader role={role} eyebrow={role === "operacao" ? "CENTRAL DE ATENDIMENTOS" : "MENSAGENS DA REDE"} title="Comunicação com contexto e responsabilidade." /><section className="dashboard-section non-transactional-message"><span>◉</span><div><small>PRÓXIMO MÓDULO</small><h2>{role === "operacao" ? "Atendimentos e ocorrências serão vinculados aos casos." : "Conversas com afiliados serão liberadas na gestão da rede."}</h2><p>A conversa transacional já está ativa para clientes e profissionais. Este perfil receberá um canal próprio, com permissões e histórico específicos.</p><button className="secondary-action" onClick={() => notify("Módulo registrado no backlog da plataforma.")}>Ver próxima etapa</button></div></section></>;
+const partnerSupportTopicLabel: Record<PartnerSupportTopic, string> = {
+  referral: "Indicação de profissional",
+  account: "Conta do parceiro",
+  finance_sandbox: "Comissão sandbox",
+  other: "Outro assunto",
+};
+
+const partnerSupportStatusLabel: Record<PartnerSupportStatus, string> = {
+  open: "Aberto",
+  in_review: "Em análise",
+  resolved: "Resolvido",
+};
+
+function PartnerSupportCreateDialog({
+  referrals,
+  onClose,
+  onCreated,
+  notify,
+}: {
+  referrals: PartnerSupportReferral[];
+  onClose: () => void;
+  onCreated: (caseId: string) => void;
+  notify: (message: string) => void;
+}) {
+  const [topic, setTopic] = useState<PartnerSupportTopic>("referral");
+  const [referralId, setReferralId] = useState(referrals[0]?.id ?? "");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { closeRef.current?.focus(); }, []);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (subject.trim().length < 5 || body.trim().length < 10 || (topic === "referral" && !referralId)) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/v1/partner/support", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          topic,
+          subject: subject.trim(),
+          body: body.trim(),
+          referralId: topic === "referral" ? referralId : undefined,
+        }),
+      });
+      const payload = await response.json() as { case?: { id: string; publicCode: string }; error?: string; message?: string };
+      if (!response.ok || !payload.case) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível abrir a solicitação.");
+      }
+      notify(`${payload.case.publicCode} aberto e enviado à equipe Max.`);
+      onCreated(payload.case.id);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível abrir a solicitação.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog partner-support-create" role="dialog" aria-modal="true" aria-labelledby="partner-support-create-title">
+        <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar nova solicitação">×</button>
+        <header><p className="dialog-kicker">CANAL PROTEGIDO · ATENDIMENTO MAX</p><h2 id="partner-support-create-title">Como podemos ajudar?</h2><p>Abra uma solicitação com contexto. A conversa e cada mudança de estado ficarão registradas.</p></header>
+        <form onSubmit={submit}>
+          <label className="field"><span>Assunto do atendimento</span><select value={topic} onChange={(event) => setTopic(event.target.value as PartnerSupportTopic)}>{Object.entries(partnerSupportTopicLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          {topic === "referral" && <label className="field"><span>Indicação relacionada</span><select value={referralId} onChange={(event) => setReferralId(event.target.value)} required><option value="">Selecione uma indicação</option>{referrals.map((referral) => <option key={referral.id} value={referral.id}>{referral.publicCode} · {referral.professionalName} · {referral.categoryName}</option>)}</select><small>Somente indicações pertencentes à sua rede aparecem aqui.</small></label>}
+          <label className="field"><span>Título</span><input value={subject} minLength={5} maxLength={120} onChange={(event) => setSubject(event.target.value)} placeholder="Ex.: Dúvida sobre análise de indicação" required /></label>
+          <label className="field"><span>Mensagem inicial</span><textarea value={body} minLength={10} maxLength={2000} onChange={(event) => setBody(event.target.value)} placeholder="Conte o que aconteceu e qual ajuda você precisa." required /><small>{body.trim().length}/2000</small></label>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button type="submit" className="primary-action" disabled={submitting || subject.trim().length < 5 || body.trim().length < 10 || (topic === "referral" && !referralId)}>{submitting ? "Enviando..." : "Abrir solicitação"}</button></footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao"; notify: (message: string) => void }) {
+  const endpoint = role === "parceiro" ? "/api/v1/partner/support" : "/api/v1/operation/support";
+  const [data, setData] = useState<PartnerSupportData | null>(null);
+  const [selectedId, setSelectedId] = useState("");
+  const [detail, setDetail] = useState<PartnerSupportCaseDetail | null>(null);
+  const [query, setQuery] = useState("");
+  const [draft, setDraft] = useState("");
+  const [transitionNote, setTransitionNote] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(endpoint, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as PartnerSupportData & { error?: string; message?: string };
+        if (!response.ok || !payload.cases || !payload.metrics) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar os atendimentos.");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setDetailLoading(true);
+        setData(payload);
+        setSelectedId((current) => payload.cases.some((item) => item.id === current) ? current : payload.cases[0]?.id ?? "");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar os atendimentos.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [endpoint, notify, refresh]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      const clearDetail = window.setTimeout(() => setDetail(null), 0);
+      return () => window.clearTimeout(clearDetail);
+    }
+    const controller = new AbortController();
+    fetch(`${endpoint}?caseId=${encodeURIComponent(selectedId)}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { case?: PartnerSupportCaseDetail; error?: string; message?: string };
+        if (!response.ok || !payload.case) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível abrir o atendimento.");
+        }
+        return payload.case;
+      })
+      .then(setDetail)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível abrir o atendimento.");
+      })
+      .finally(() => setDetailLoading(false));
+    return () => controller.abort();
+  }, [endpoint, notify, refresh, selectedId]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [detail?.events]);
+
+  const refreshCenter = () => {
+    setLoading(true);
+    setDetailLoading(true);
+    setRefresh((value) => value + 1);
+  };
+  const filteredCases = (data?.cases ?? []).filter((item) => {
+    const needle = query.trim().toLocaleLowerCase("pt-BR");
+    return !needle || [item.publicCode, item.subject, item.partnerName, item.referralCode, item.referralName]
+      .some((value) => value?.toLocaleLowerCase("pt-BR").includes(needle));
+  });
+  const timestamp = (value: string | null) => value
+    ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+    : "Sem interação";
+
+  const sendMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedId || draft.trim().length < 3) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "message", caseId: selectedId, body: draft.trim() }),
+      });
+      const payload = await response.json() as { event?: PartnerSupportEvent; error?: string; message?: string };
+      if (!response.ok || !payload.event) throw new Error(payload.error ?? payload.message ?? "Não foi possível enviar a mensagem.");
+      setDraft("");
+      refreshCenter();
+      notify("Mensagem registrada no atendimento.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível enviar a mensagem.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const transition = async (status: "in_review" | "resolved") => {
+    if (!selectedId || transitionNote.trim().length < 10) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "transition", caseId: selectedId, status, note: transitionNote.trim() }),
+      });
+      const payload = await response.json() as { case?: PartnerSupportCase; error?: string; message?: string };
+      if (!response.ok || !payload.case) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o atendimento.");
+      setTransitionNote("");
+      refreshCenter();
+      notify(status === "resolved" ? "Atendimento resolvido com histórico preservado." : "Atendimento assumido pela Operação.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar o atendimento.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <DashboardHeader role={role} eyebrow={role === "operacao" ? "CENTRAL DE ATENDIMENTOS" : "SUPORTE DA REDE"} title={role === "operacao" ? "Cada solicitação, contexto e decisão em um só lugar." : "Fale com a Max sem perder o contexto da sua rede."}>
+        {role === "parceiro" && <button className="button button-small" onClick={() => setCreateOpen(true)}>+ Novo atendimento</button>}
+      </DashboardHeader>
+      <section className="partner-support-metrics">
+        <article><small>ABERTOS</small><strong>{loading ? "…" : data?.metrics.openCount ?? 0}</strong><span>Aguardando triagem</span></article>
+        <article><small>EM ANÁLISE</small><strong>{loading ? "…" : data?.metrics.inReviewCount ?? 0}</strong><span>Com a equipe Max</span></article>
+        <article><small>{role === "operacao" ? "AGUARDANDO OPERAÇÃO" : "RESOLVIDOS"}</small><strong>{loading ? "…" : role === "operacao" ? data?.metrics.waitingOperationCount ?? 0 : data?.metrics.resolvedCount ?? 0}</strong><span>{role === "operacao" ? "Última mensagem do parceiro" : "Histórico disponível"}</span></article>
+      </section>
+      <section className="partner-support-center">
+        <aside className="partner-support-list">
+          <label><span>Buscar atendimento</span><input aria-label="Buscar atendimento" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === "operacao" ? "Código, parceiro ou assunto" : "Código, assunto ou indicação"} /></label>
+          <div>
+            {loading && <div className="data-state">Carregando atendimentos...</div>}
+            {!loading && filteredCases.length === 0 && <div className="data-state"><strong>Nenhum atendimento encontrado.</strong><span>{role === "parceiro" ? "Abra uma solicitação para falar com a equipe Max." : "A fila está em dia."}</span></div>}
+            {filteredCases.map((item) => <button key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => { setDetail(null); setDetailLoading(true); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><footer><span>{role === "operacao" ? item.partnerName : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
+          </div>
+        </aside>
+        <div className="partner-support-thread">
+          {detailLoading && !detail && <div className="data-state"><strong>Abrindo atendimento...</strong></div>}
+          {!detailLoading && !detail && <div className="data-state"><strong>Selecione um atendimento.</strong><span>A conversa e a trilha de estado aparecerão aqui.</span></div>}
+          {detail && <><header><div><small>{detail.publicCode} · {partnerSupportTopicLabel[detail.topic]}</small><h2>{detail.subject}</h2><p>{role === "operacao" ? `${detail.partnerName} · ${detail.partnerCode}` : "Equipe Max · canal protegido"}{detail.referralCode ? ` · ${detail.referralCode} · ${detail.referralName}` : ""}</p></div><span className={`status-pill ${detail.status === "resolved" ? "success" : detail.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[detail.status]}</span></header><div className="partner-support-events"><div className="chat-date">HISTÓRICO IMUTÁVEL · {detail.eventCount} EVENTO(S)</div>{detail.events.map((event) => event.eventType === "status_changed" ? <article key={event.id} className="support-status-event"><span>→</span><div><strong>{event.fromStatus ? partnerSupportStatusLabel[event.fromStatus] : ""} → {event.toStatus ? partnerSupportStatusLabel[event.toStatus] : ""}</strong><p>{event.body}</p><small>{event.actorName} · {timestamp(event.createdAt)}</small></div></article> : <article key={event.id} className={`support-message ${event.actorRole === (role === "parceiro" ? "partner" : "operation") ? "sent" : "received"}`}><strong>{event.actorName}</strong><p>{event.body}</p><small>{timestamp(event.createdAt)}</small></article>)}{detail.resolution && <section className="support-resolution"><span>✓</span><div><small>RESOLUÇÃO REGISTRADA</small><strong>{detail.resolution}</strong><p>{detail.resolvedAt ? timestamp(detail.resolvedAt) : ""}</p></div></section>}<div ref={endRef} /></div>{detail.status !== "resolved" && <><form className="support-composer" onSubmit={sendMessage}><label><span>Responder no atendimento</span><textarea aria-label="Mensagem do atendimento" value={draft} minLength={3} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder="Escreva uma mensagem objetiva..." /></label><button className="primary-action" type="submit" disabled={submitting || draft.trim().length < 3}>{submitting ? "Enviando..." : "Enviar mensagem"}</button></form>{role === "operacao" && <section className="support-transition"><div><small>DECISÃO OPERACIONAL</small><strong>{detail.status === "open" ? "Assuma a solicitação para iniciar a análise." : "Registre a solução antes de encerrar."}</strong></div><label><span>Justificativa</span><textarea minLength={10} maxLength={1000} value={transitionNote} onChange={(event) => setTransitionNote(event.target.value)} placeholder="Contextualize a decisão para a trilha de auditoria." /><small>{transitionNote.trim().length}/1000</small></label><button className={detail.status === "open" ? "secondary-action" : "danger-action"} disabled={submitting || transitionNote.trim().length < 10} onClick={() => transition(detail.status === "open" ? "in_review" : "resolved")}>{submitting ? "Salvando..." : detail.status === "open" ? "Assumir análise" : "Resolver atendimento"}</button></section>}</>}</>}
+        </div>
+      </section>
+      {createOpen && <PartnerSupportCreateDialog referrals={data?.referrals ?? []} onClose={() => setCreateOpen(false)} onCreated={(caseId) => { setCreateOpen(false); setSelectedId(caseId); refreshCenter(); }} notify={notify} />}
+    </>
+  );
 }
 
 const catalogActionCopy: Record<CatalogAction, { title: string; verb: string; detail: string }> = {

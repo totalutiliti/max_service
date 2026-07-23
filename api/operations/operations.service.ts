@@ -92,6 +92,9 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "finance.sandbox_refund": { category: "finance", title: "Estorno sandbox processado", detail: "Lançamentos inversos registrados no ledger." },
   "service_category.status_changed": { category: "operation", title: "Categoria atualizada", detail: "Disponibilidade do catálogo alterada com justificativa." },
   "service_category.reordered": { category: "operation", title: "Catálogo reordenado", detail: "Prioridade de exibição de uma categoria alterada." },
+  "partner_support_case.created": { category: "growth", title: "Atendimento aberto", detail: "Nova solicitação registrada por um parceiro." },
+  "partner_support_case.message_sent": { category: "growth", title: "Mensagem de atendimento", detail: "Interação registrada na central do parceiro." },
+  "partner_support_case.status_changed": { category: "operation", title: "Atendimento atualizado", detail: "Estado da solicitação do parceiro alterado com justificativa." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -109,6 +112,7 @@ const auditEntityPrefix: Record<string, string> = {
   provider_document_file: "DF",
   payment_intent: "PG",
   service_category: "CT",
+  partner_support_case: "AT",
 };
 
 @Injectable()
@@ -556,7 +560,8 @@ export class OperationsService {
                   'provider_verification.status_changed',
                   'provider_verification.document_reviewed',
                   'service_category.status_changed',
-                  'service_category.reordered'
+                  'service_category.reordered',
+                  'partner_support_case.status_changed'
                 )
                 OR action LIKE 'finance.sandbox_%'
               )

@@ -15,7 +15,7 @@
 ## P1 - operar o piloto
 
 - PWA instalável e push notifications;
-- painel de suporte e disputas;
+- ampliar a central de suporte já persistente com SLA, atribuição entre múltiplos operadores, anexos privados e fluxo formal de disputa;
 - campanhas e cupons;
 - anúncios contextuais moderados;
 - relatórios operacionais e reconciliação;

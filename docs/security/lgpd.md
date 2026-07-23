@@ -12,6 +12,7 @@ Finalidade explícita, minimização, transparência, acesso restrito, retençã
 | localização | combinar oferta e demanda | partes no momento necessário | granularidade reduzida após encerramento |
 | documentos | verificação manual | moderação autorizada | prazo legal/operacional definido |
 | chat | execução e disputa | membros; suporte por caso | janela contratual aprovada |
+| atendimento do parceiro | suporte da rede e esclarecimento de indicações | parceiro titular; Operação autorizada | janela contratual e de defesa aprovada |
 | pagamento | cobrança/reconciliação | financeiro mínimo | obrigação fiscal/contratual |
 | auditoria | segurança e responsabilização | segurança/admin restrito | append-only com política específica |
 
@@ -26,6 +27,8 @@ Finalidade explícita, minimização, transparência, acesso restrito, retençã
 - registro de cada solicitação e decisão.
 
 No piloto, a captura pública de indicação guarda `consent_at` e `privacy_notice_version` junto ao interesse. O formulário informa a finalidade de contato, não cria conta definitiva, não coleta IP para atribuição e não autoriza score, crédito ou consulta automatizada de antecedentes.
+
+A central do parceiro expõe à Operação apenas o contexto necessário ao atendimento. O vínculo com indicação é opcional e limitado à rede do próprio parceiro por RLS; mensagens e mudanças de estado são append-only. Antes de produção, a retenção do conteúdo, o processo de exportação e a anonimização após o prazo de defesa precisam ser aprovados.
 
 ## Restrições
 

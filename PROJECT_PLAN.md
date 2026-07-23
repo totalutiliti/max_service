@@ -28,7 +28,8 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 ## Progresso implementado
 
 - Fases 1 e 3 possuem jornadas persistentes demonstráveis no Docker local.
-- A Fase 4 já inclui rede do parceiro, captura pública por link/QR com consentimento, triagem operacional de indicações, fila de ocorrências, moderação manual de profissionais, atividade auditável pesquisável e gestão versionada do catálogo para a Operação.
+- A Fase 4 já inclui rede do parceiro, captura pública por link/QR com consentimento, triagem operacional de indicações, central compartilhada de atendimento parceiro–Operação, fila interna de ocorrências, moderação manual de profissionais, atividade auditável pesquisável e gestão versionada do catálogo para a Operação.
+- A central da rede separa comunicação externa de notas internas, vincula opcionalmente cada caso a uma indicação do próprio parceiro, bloqueia mensagens após a resolução e restringe transições justificadas à Operação.
 - O catálogo piloto é persistente e único para cliente, parceiro e captura pública; a Operação pode ordenar, ativar ou desativar categorias com justificativa, RLS, evento append-only e proteção contra catálogo vazio.
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.

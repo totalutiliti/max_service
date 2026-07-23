@@ -16,7 +16,8 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - moderação manual de prestador;
 - atividade operacional real, pesquisável por área, referência, ação ou responsável;
 - gestão operacional do catálogo compartilhado por cliente, parceiro e captura pública, sem apagar histórico ao desativar uma categoria;
-- mensagens e notificações internas persistentes, contadores reais de não lidas e sincronização incremental automática; push e e-mail permanecem como integrações posteriores;
+- mensagens transacionais e notificações internas persistentes, contadores reais de não lidas e sincronização incremental automática;
+- central persistente de atendimento parceiro–Operação, com contexto opcional da indicação, conversa append-only e transições justificadas; push, e-mail e SLA automatizado permanecem como integrações posteriores;
 - PSP fake e visualização de divisão financeira, sem transação real;
 - dados 100% fictícios.
 

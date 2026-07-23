@@ -17,6 +17,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | chamado operacional | consulta estado dos próprios | consulta estado dos próprios | nenhum | fila completa e tratamento | auditado |
 | notas/eventos internos | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
 | notificações | somente próprias | somente próprias | somente próprias | somente próprias | auditado |
+| preferências/histórico de notificações | somente próprios | somente próprios | somente próprios | somente próprios | auditoria agregada |
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | eventos de revisão da indicação | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
 | categorias de serviço | ativas para novos pedidos; histórico referenciado | ativas e histórico referenciado | ativas para indicar; histórico da rede | leitura completa e alteração justificada | auditado |
@@ -59,6 +60,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - notas internas de chamados retornam zero linhas para cliente, prestador e parceiro;
 - chamado resolvido bloqueia novas notas e transições duplicadas;
 - destinatário não lê nem marca notificação de outro usuário;
+- cada perfil lê e altera somente as próprias preferências de entrega; a fila técnica não concede leitura ao runtime e reconcilia somente o ator corrente;
 - emissão transacional exige vínculo comprovado com a entidade de origem;
 - parceiro não consulta nem registra convite na rede de outro parceiro;
 - contexto público sem link validado retorna zero indicações; consentimento ausente, código pausado, origem inválida e tentativa de gravar em outra rede são bloqueados;

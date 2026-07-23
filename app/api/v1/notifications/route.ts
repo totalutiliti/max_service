@@ -20,16 +20,20 @@ export async function GET(request: Request) {
   if (searchParams.get("channel") === "push") {
     return proxyDemoRequest("/api/v1/notifications/push", request, role);
   }
+  if (searchParams.get("channel") === "preferences") {
+    return proxyDemoRequest("/api/v1/notifications/preferences", request, role);
+  }
   return proxyDemoRequest("/api/v1/notifications", request, role);
 }
 
 export async function POST(request: Request) {
   const payload = await request.json() as {
     role?: string;
-    action?: "read" | "read-all" | "subscribe-push" | "status-push" | "unsubscribe-push";
+    action?: "read" | "read-all" | "subscribe-push" | "status-push" | "unsubscribe-push" | "update-preferences";
     notificationId?: string;
     endpoint?: unknown;
     subscription?: unknown;
+    preferences?: unknown;
   };
   const role = roleFor(payload.role);
   if (!role) return Response.json({ error: "Perfil inválido." }, { status: 403 });
@@ -50,6 +54,11 @@ export async function POST(request: Request) {
   if (payload.action === "unsubscribe-push") {
     return proxyDemoRequest("/api/v1/notifications/push/unsubscribe", request, role, {
       endpoint: payload.endpoint,
+    });
+  }
+  if (payload.action === "update-preferences") {
+    return proxyDemoRequest("/api/v1/notifications/preferences", request, role, {
+      preferences: payload.preferences,
     });
   }
   return Response.json({ error: "Ação de notificação inválida." }, { status: 400 });

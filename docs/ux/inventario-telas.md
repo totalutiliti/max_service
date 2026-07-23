@@ -52,7 +52,7 @@
 36. Ocorrências/disputas
 37. Catálogo/regiões
 38. Regras comerciais versionadas
-39. Termos/notificações/campanhas
+39. Termos, consentimentos e preferências persistentes de notificações por assunto/horário
 40. Auditoria pesquisável por área e responsável
 
 No piloto, a tela 37 está materializada em **Configurações** da Operação com métricas, demanda por categoria, disponibilidade, reordenação e justificativa obrigatória. As telas 8, 10, 28 e 34 consomem o mesmo catálogo persistente e respeitam imediatamente as categorias ativas.

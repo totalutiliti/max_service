@@ -19,6 +19,20 @@ export class NotificationsController {
     return this.notifications.list(actorFromHeaders(role, id));
   }
 
+  @Get("preferences")
+  async preferences(@Headers("x-demo-role") role: string | undefined, @Headers("x-demo-actor-id") id: string | undefined) {
+    return this.notifications.preferences(actorFromHeaders(role, id));
+  }
+
+  @Post("preferences")
+  async updatePreferences(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() body: { preferences?: unknown },
+  ) {
+    return this.notifications.updatePreferences(actorFromHeaders(role, id), body.preferences);
+  }
+
   @Post(":notificationId/read")
   async markRead(
     @Headers("x-demo-role") role: string | undefined,

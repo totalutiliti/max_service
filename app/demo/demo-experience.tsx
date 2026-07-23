@@ -269,6 +269,7 @@ interface PartnerSupportData {
 interface UserNotification {
   id: string;
   type: "system" | "proposal_received" | "proposal_accepted" | "message_received" | "booking_started" | "booking_completed" | "booking_cancelled" | "review_received" | "case_opened" | "case_updated" | "referral_reviewed" | "support_message";
+  category: "marketplace" | "messages" | "support" | "system";
   title: string;
   body: string;
   entityType: string;
@@ -276,6 +277,33 @@ interface UserNotification {
   readAt: string | null;
   createdAt: string;
   actorName: string | null;
+}
+
+interface NotificationPreferencesRecord {
+  marketplacePush: boolean;
+  messagesPush: boolean;
+  supportPush: boolean;
+  systemPush: boolean;
+  quietHoursEnabled: boolean;
+  quietStart: string;
+  quietEnd: string;
+  timeZone: string;
+  version: number;
+  updatedAt: string;
+}
+
+interface NotificationPreferencesData {
+  preferences: NotificationPreferencesRecord;
+  history: Array<{ id: string; version: number; createdAt: string }>;
+  timeZones: Array<{ value: string; label: string }>;
+  channels: {
+    inApp: { available: boolean; enabled: boolean };
+    push: { available: boolean; enabled: boolean; subscriptionCount: number };
+    email: { available: boolean; enabled: boolean };
+    sms: { available: boolean; enabled: boolean };
+  };
+  changed?: boolean;
+  suppressedDeliveries?: number;
 }
 
 interface PartnerReferral {
@@ -1216,6 +1244,7 @@ function NotificationCenter({ role }: { role: Role }) {
               {pushState !== "active" && pushState !== "checking" && (
                 <small>O conteúdo pode aparecer na tela bloqueada.</small>
               )}
+              {pushState === "active" && <small>Assuntos e horário de silêncio ficam em Conta.</small>}
               {pushMessage && <small role="alert">{pushMessage}</small>}
             </div>
             {pushState === "active" && <button onClick={disablePush}>Desativar</button>}
@@ -3644,6 +3673,158 @@ function OnboardingForm({
   );
 }
 
+function NotificationPreferencesPanel({ role, notify }: { role: Role; notify: (message: string) => void }) {
+  const [data, setData] = useState<NotificationPreferencesData | null>(null);
+  const [draft, setDraft] = useState<NotificationPreferencesRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/notifications?role=${encodeURIComponent(role)}&channel=preferences`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json() as NotificationPreferencesData & { error?: string; message?: string };
+        if (!response.ok || !payload.preferences || !payload.channels) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar as preferências.");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setData(payload);
+        setDraft(payload.preferences);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar as preferências.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh, role]);
+
+  const updateDraft = (key: keyof NotificationPreferencesRecord, value: boolean | string) => {
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!draft) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/notifications", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          role,
+          action: "update-preferences",
+          preferences: {
+            marketplacePush: draft.marketplacePush,
+            messagesPush: draft.messagesPush,
+            supportPush: draft.supportPush,
+            systemPush: draft.systemPush,
+            quietHoursEnabled: draft.quietHoursEnabled,
+            quietStart: draft.quietStart,
+            quietEnd: draft.quietEnd,
+            timeZone: draft.timeZone,
+          },
+        }),
+      });
+      const payload = await response.json() as NotificationPreferencesData & { error?: string; message?: string };
+      if (!response.ok || !payload.preferences) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível salvar as preferências.");
+      }
+      setData(payload);
+      setDraft(payload.preferences);
+      const suppressed = payload.suppressedDeliveries ?? 0;
+      notify(payload.changed
+        ? `Preferências salvas na versão ${payload.preferences.version}.${suppressed > 0 ? ` ${suppressed} entrega(s) pendente(s) foram interrompidas.` : ""}`
+        : "As preferências já estavam atualizadas.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível salvar as preferências.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !data) {
+    return <section id="notification-preferences" className="dashboard-section notification-preferences-panel"><div className="data-state">Carregando canais e horários...</div></section>;
+  }
+  if (!data || !draft) {
+    return <section id="notification-preferences" className="dashboard-section notification-preferences-panel"><div className="data-state"><strong>Preferências indisponíveis.</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Tentar novamente</button></div></section>;
+  }
+
+  const categories = [
+    { key: "marketplacePush" as const, label: "Pedidos e serviços", detail: "Propostas, agenda, andamento, cancelamentos e avaliações.", mark: "MS" },
+    { key: "messagesPush" as const, label: "Mensagens", detail: "Novas mensagens das conversas do marketplace.", mark: "CH" },
+    { key: "supportPush" as const, label: "Atendimento", detail: "Casos, indicações e respostas da central de suporte.", mark: "AT" },
+    { key: "systemPush" as const, label: "Plataforma", detail: "Comunicados operacionais e novidades do ambiente.", mark: "MX" },
+  ];
+  const dirty = [
+    "marketplacePush",
+    "messagesPush",
+    "supportPush",
+    "systemPush",
+    "quietHoursEnabled",
+    "quietStart",
+    "quietEnd",
+    "timeZone",
+  ].some((key) => draft[key as keyof NotificationPreferencesRecord] !== data.preferences[key as keyof NotificationPreferencesRecord]);
+  const enabledCount = categories.filter((category) => draft[category.key]).length;
+  const selectedTimeZone = data.timeZones.find((item) => item.value === draft.timeZone)?.label ?? draft.timeZone;
+
+  return (
+    <section id="notification-preferences" className="dashboard-section notification-preferences-panel">
+      <header>
+        <div><small>COMUNICAÇÃO TRANSACIONAL</small><h2>Notificações sob seu controle</h2><p>A central permanece ativa. Você escolhe quais assuntos podem chegar por Web Push e quando o aparelho deve ficar em silêncio.</p></div>
+        <span className="status-pill success">Versão {data.preferences.version}</span>
+      </header>
+      <div className="notification-channel-grid">
+        <article className="active"><i>✓</i><div><small>CENTRAL MAX</small><strong>Sempre ativa</strong><span>Histórico persistente e contadores de não lidas.</span></div></article>
+        <article className={data.channels.push.enabled ? "active" : ""}><i>{data.channels.push.enabled ? "✓" : "○"}</i><div><small>WEB PUSH</small><strong>{data.channels.push.enabled ? `${data.channels.push.subscriptionCount} aparelho(s)` : data.channels.push.available ? "Nenhum aparelho" : "Indisponível"}</strong><span>{data.channels.push.enabled ? "Permissão ativa em pelo menos um dispositivo." : "Ative pelo sino de notificações deste navegador."}</span></div></article>
+        <article><i>—</i><div><small>E-MAIL E SMS</small><strong>Aguardando provedor</strong><span>Nenhum contato real é usado no piloto.</span></div></article>
+      </div>
+      <form onSubmit={save}>
+        <section className="notification-topic-settings">
+          <header><div><small>ASSUNTOS NO WEB PUSH</small><h3>{enabledCount} de {categories.length} ativos</h3></div><span>A central não é afetada</span></header>
+          <div>
+            {categories.map((category) => (
+              <label key={category.key}>
+                <i>{category.mark}</i>
+                <span><strong>{category.label}</strong><small>{category.detail}</small></span>
+                <input type="checkbox" checked={draft[category.key]} onChange={(event) => updateDraft(category.key, event.target.checked)} />
+                <em aria-hidden="true" />
+              </label>
+            ))}
+          </div>
+        </section>
+        <section className={`quiet-hours-settings ${draft.quietHoursEnabled ? "active" : ""}`}>
+          <header>
+            <div><small>HORÁRIO DE SILÊNCIO</small><h3>Adiar avisos, sem perder nada</h3><p>Durante a janela, as entregas ficam na fila e voltam automaticamente ao final.</p></div>
+            <label className="quiet-hours-toggle"><input type="checkbox" checked={draft.quietHoursEnabled} onChange={(event) => updateDraft("quietHoursEnabled", event.target.checked)} /><span>{draft.quietHoursEnabled ? "Ativo" : "Inativo"}</span><em aria-hidden="true" /></label>
+          </header>
+          <div className="quiet-hours-fields">
+            <label className="field"><span>Silenciar a partir de</span><input type="time" value={draft.quietStart} disabled={!draft.quietHoursEnabled} onChange={(event) => updateDraft("quietStart", event.target.value)} required /></label>
+            <label className="field"><span>Retomar às</span><input type="time" value={draft.quietEnd} disabled={!draft.quietHoursEnabled} onChange={(event) => updateDraft("quietEnd", event.target.value)} required /></label>
+            <label className="field"><span>Fuso horário</span><select value={draft.timeZone} disabled={!draft.quietHoursEnabled} onChange={(event) => updateDraft("timeZone", event.target.value)}>{data.timeZones.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+          </div>
+          <footer><strong>{draft.quietHoursEnabled ? `${draft.quietStart}–${draft.quietEnd} · ${selectedTimeZone}` : "Entregas sem janela de silêncio"}</strong><span>Retentativas técnicas continuam limitadas e auditáveis.</span></footer>
+        </section>
+        <footer className="notification-preferences-footer">
+          <div><strong>Última atualização: {formatted(data.preferences.updatedAt)}</strong><span>{data.history.length} alteração(ões) preservada(s) no histórico.</span></div>
+          <button className="primary-action" disabled={saving || !dirty}>{saving ? "Salvando..." : dirty ? "Salvar preferências →" : "Preferências atualizadas"}</button>
+        </footer>
+      </form>
+    </section>
+  );
+}
+
 function AccountView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   const user = roleDetails[role];
   const isOperational = role === "operacao";
@@ -3659,9 +3840,10 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <div className="plan-price"><small>VALOR MENSAL</small><strong>R$ 0</strong><span>Ambiente demonstrativo</span></div>
         </section>
         {(role === "cliente" || role === "prestador") && <OnboardingPanel role={role} notify={notify} />}
+        <NotificationPreferencesPanel key={role} role={role} notify={notify} />
         <section className="dashboard-section account-options">
           <div className="dashboard-section-title"><div><small>PREFERÊNCIAS</small><h2>Configurações da conta</h2></div></div>
-          <button onClick={() => notify("Preferências de notificação atualizadas.")}><span>Notificações</span><small>E-mail e avisos na plataforma</small><i>→</i></button>
+          <button onClick={() => document.getElementById("notification-preferences")?.scrollIntoView({ behavior: "smooth", block: "start" })}><span>Notificações</span><small>Central, Web Push e horário de silêncio</small><i>→</i></button>
           <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>

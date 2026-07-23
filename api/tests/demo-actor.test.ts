@@ -16,6 +16,10 @@ import {
   validatePartnerSupportAttachment,
 } from "../support/partner-support-attachment-validation.js";
 import { validatePushSubscription } from "../notifications/push-subscription-validation.js";
+import {
+  notificationCategoryForType,
+  validateNotificationPreferences,
+} from "../notifications/notification-preferences.js";
 import { maximumProviderDocumentBytes, validateProviderDocumentFile } from "../verifications/document-file-validation.js";
 
 test("aceita somente a identidade correspondente ao perfil demonstrativo", () => {
@@ -131,6 +135,37 @@ test("aceita somente assinaturas push HTTPS com chaves Web Push válidas", () =>
   assert.throws(
     () => validatePushSubscription({ ...subscription, keys: { ...subscription.keys, auth: "curta" } }),
     /autenticação/,
+  );
+});
+
+test("valida preferências granulares de push e horários locais", () => {
+  const preferences = validateNotificationPreferences({
+    marketplacePush: true,
+    messagesPush: false,
+    supportPush: true,
+    systemPush: true,
+    quietHoursEnabled: true,
+    quietStart: "22:30",
+    quietEnd: "07:15",
+    timeZone: "America/Sao_Paulo",
+  });
+  assert.equal(preferences.messagesPush, false);
+  assert.equal(preferences.quietStart, "22:30");
+  assert.equal(notificationCategoryForType("proposal_received"), "marketplace");
+  assert.equal(notificationCategoryForType("message_received"), "messages");
+  assert.equal(notificationCategoryForType("support_message"), "support");
+  assert.equal(notificationCategoryForType("system"), "system");
+  assert.throws(
+    () => validateNotificationPreferences({ ...preferences, quietStart: "25:00" }),
+    /HH:mm/,
+  );
+  assert.throws(
+    () => validateNotificationPreferences({ ...preferences, quietEnd: "22:30" }),
+    /diferentes/,
+  );
+  assert.throws(
+    () => validateNotificationPreferences({ ...preferences, timeZone: "UTC" }),
+    /Fuso/,
   );
 });
 

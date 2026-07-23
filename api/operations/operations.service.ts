@@ -112,6 +112,9 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "operation_report_goals.updated": { category: "operation", title: "Metas do relatório atualizadas", detail: "Limites operacionais alterados com justificativa." },
   "onboarding.completed": { category: "operation", title: "Onboarding concluído", detail: "Perfil, termos e consentimentos iniciais registrados." },
   "onboarding.updated": { category: "operation", title: "Onboarding atualizado", detail: "Nova versão do perfil e das preferências registrada." },
+  "notification.preferences_updated": { category: "operation", title: "Preferências de avisos atualizadas", detail: "Assuntos e janela silenciosa do destinatário foram versionados." },
+  "notification.push_subscribed": { category: "operation", title: "Aparelho habilitado para avisos", detail: "Nova assinatura Web Push registrada sem expor o endpoint." },
+  "notification.push_unsubscribed": { category: "operation", title: "Aparelho removido dos avisos", detail: "Assinatura Web Push revogada pelo próprio destinatário." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -136,6 +139,8 @@ const auditEntityPrefix: Record<string, string> = {
   operation_report: "RP",
   operation_report_goal: "MG",
   onboarding_profile: "ON",
+  notification_preferences: "NP",
+  push_subscription: "PS",
 };
 
 @Injectable()
@@ -1178,13 +1183,16 @@ export class OperationsService {
             ? `${event.fromStatus} → ${event.toStatus}`
             : null;
           const prefix = auditEntityPrefix[event.entityType] ?? "EV";
+          const entityToken = event.entityType === "notification_preferences"
+            ? event.entityId.replaceAll("-", "").slice(-6).toUpperCase()
+            : event.entityId.replaceAll("-", "").slice(0, 6).toUpperCase();
           return {
             id: event.id,
             action: event.action,
             category: copy.category,
             title: copy.title,
             detail: transition ? `${copy.detail} ${transition}.` : copy.detail,
-            reference: event.publicCode ?? `${prefix}-${event.entityId.replaceAll("-", "").slice(0, 6).toUpperCase()}`,
+            reference: event.publicCode ?? `${prefix}-${entityToken}`,
             entityType: event.entityType,
             actorRole: event.actorRole,
             actorName: event.actorName,

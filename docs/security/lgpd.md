@@ -30,6 +30,8 @@ No piloto, a captura pública de indicação guarda `consent_at` e `privacy_noti
 
 O onboarding guarda cada aceite com usuário, versão, horário e SHA-256 do conteúdo vigente. Comunicação promocional e pesquisa de produto são finalidades opcionais e independentes: a recusa também gera evidência, e mudanças posteriores entram em histórico append-only sem reescrever o evento anterior. Os documentos `pilot-0.1` são minutas e não autorizam coleta de dados reais antes da aprovação jurídica.
 
+Preferências de Web Push são controles de canal para comunicações transacionais e não ampliam consentimento promocional. O titular pode desativar assuntos, revogar cada aparelho ou configurar horário silencioso; a central interna preserva o histórico necessário à execução e ao suporte. Mudanças geram versão e evento append-only sem copiar endpoint ou chaves para a auditoria. E-mail e SMS continuam indisponíveis até que finalidade, provedor, confirmação de contato e retenção sejam aprovados.
+
 A central do parceiro expõe à Operação apenas o contexto necessário ao atendimento. O vínculo com indicação é opcional e limitado à rede do próprio parceiro por RLS; mensagens, anexos, triagens e mudanças de estado são append-only. Os bytes dos anexos ficam no cofre privado e o banco guarda apenas nome normalizado, tipo, tamanho, hash, autoria e vínculo com o evento. Prioridade, responsável e prazos de SLA são metadados operacionais do atendimento, não produzem perfil de risco nem decisão automatizada sobre o titular. Antes de produção, a retenção do conteúdo e dos arquivos, o processo de exportação e a anonimização após o prazo de defesa precisam ser aprovados.
 
 ## Restrições

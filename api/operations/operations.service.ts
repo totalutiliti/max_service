@@ -98,6 +98,9 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "partner_support_case.attachment_downloaded": { category: "operation", title: "Anexo de atendimento acessado", detail: "Download privado registrado na auditoria." },
   "partner_support_case.triaged": { category: "operation", title: "Triagem de atendimento", detail: "Prioridade, responsável e prazos operacionais atualizados com justificativa." },
   "partner_support_case.status_changed": { category: "operation", title: "Atendimento atualizado", detail: "Estado da solicitação do parceiro alterado com justificativa." },
+  "marketing_campaign.created": { category: "growth", title: "Campanha criada", detail: "Nova regra promocional publicada pela Operação." },
+  "marketing_campaign.status_changed": { category: "growth", title: "Campanha atualizada", detail: "Disponibilidade da campanha alterada com justificativa." },
+  "marketing_campaign.reserved": { category: "growth", title: "Cupom reservado", detail: "Benefício promocional vinculado a um pedido." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -117,6 +120,8 @@ const auditEntityPrefix: Record<string, string> = {
   service_category: "CT",
   partner_support_case: "AT",
   partner_support_attachment: "AA",
+  marketing_campaign: "CP",
+  campaign_reservation: "CR",
 };
 
 @Injectable()
@@ -566,7 +571,8 @@ export class OperationsService {
                   'service_category.status_changed',
                   'service_category.reordered',
                   'partner_support_case.triaged',
-                  'partner_support_case.status_changed'
+                  'partner_support_case.status_changed',
+                  'marketing_campaign.status_changed'
                 )
                 OR action LIKE 'finance.sandbox_%'
               )

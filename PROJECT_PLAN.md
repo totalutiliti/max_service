@@ -33,6 +33,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - A triagem da central distribui casos entre múltiplos operadores, permite elevar a prioridade e acompanha SLA versionado de primeira resposta e resolução, com atrasos preservados e visíveis para parceiro e Operação.
 - Mensagens da central aceitam um anexo privado sintético PDF/JPEG/PNG de até 2 MB, guardado no object storage com metadados relacionais, hash de integridade, RLS e auditoria de cada acesso.
 - O catálogo piloto é persistente e único para cliente, parceiro e captura pública; a Operação pode ordenar, ativar ou desativar categorias com justificativa, RLS, evento append-only e proteção contra catálogo vazio.
+- Campanhas e cupons do P1 já são persistentes: a Operação controla janela, tipo de desconto, pedido mínimo e limites de uso; a reserva ocorre no pedido e o desconto é congelado no aceite.
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.
 - A verificação possui cofre S3 local para documentos sintéticos, versões append-only, validação de assinatura/MIME/tamanho, hash SHA-256, download privado e auditoria por ator.

@@ -363,6 +363,50 @@ interface OperationCatalogData {
   categories: OperationCatalogCategory[];
 }
 
+type CampaignDiscountType = "fixed" | "percentage";
+type CampaignAction = "activate" | "pause";
+
+interface CampaignOffer {
+  name: string;
+  code: string;
+  description: string;
+  discountType: CampaignDiscountType;
+  discountValue: number;
+  maxDiscountCents: number | null;
+  minAmountCents: number;
+  endsAt: string;
+}
+
+interface MarketingCampaign extends CampaignOffer {
+  id: string;
+  totalRedemptionLimit: number;
+  perCustomerLimit: number;
+  startsAt: string;
+  status: "active" | "paused";
+  createdAt: string;
+  updatedAt: string;
+  createdByName: string;
+  usedCount: number;
+  redeemedCount: number;
+  discountGrantedCents: number;
+  eventCount: number;
+  latestEventNote: string | null;
+  latestEventAt: string | null;
+  latestActorName: string | null;
+}
+
+interface CampaignData {
+  metrics: {
+    totalCount: number;
+    liveCount: number;
+    scheduledCount: number;
+    inactiveCount: number;
+    redeemedCount: number;
+    discountGrantedCents: number;
+  };
+  campaigns: MarketingCampaign[];
+}
+
 interface PartnerDashboardData {
   link: { id: string; referralCode: string; slug: string; status: "active" | "paused"; createdAt: string };
   metrics: { totalCount: number; activeCount: number; pendingCount: number; activationRate: number };
@@ -432,6 +476,10 @@ interface FinanceRecord {
   bookingId: string;
   requestPublicCode: string;
   serviceTitle: string;
+  listAmountCents: number;
+  discountAmountCents: number;
+  campaignName: string | null;
+  couponCode: string | null;
   grossAmountCents: number;
   status: SandboxPaymentStatus;
   actorAmountCents: number;
@@ -456,6 +504,7 @@ interface FinanceDashboardData {
   summary: {
     recordCount: number;
     grossAmountCents: number;
+    discountAmountCents: number;
     pendingAmountCents: number;
     recognizedAmountCents: number;
     reversedAmountCents: number;
@@ -1136,6 +1185,9 @@ function RequestDialog({
   const [categorySlug, setCategorySlug] = useState(initialCategorySlug || categories[0]?.slug || "");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponOffer, setCouponOffer] = useState<CampaignOffer | null>(null);
+  const [couponChecking, setCouponChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const selectedCategory = categories.find((category) => category.slug === categorySlug) ?? categories[0];
@@ -1165,6 +1217,26 @@ function RequestDialog({
 
   const next = () => setStep((Math.min(4, step + 1)) as RequestStep);
   const back = () => setStep((Math.max(1, step - 1)) as RequestStep);
+  const validateCoupon = async () => {
+    setCouponChecking(true);
+    try {
+      const response = await fetch("/api/v1/campaigns", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: couponCode.trim() }),
+      });
+      const payload = await response.json() as { offer?: CampaignOffer; error?: string; message?: string };
+      if (!response.ok || !payload.offer) throw new Error(payload.error ?? payload.message ?? "Cupom indisponível.");
+      setCouponCode(payload.offer.code);
+      setCouponOffer(payload.offer);
+      notify(`Cupom ${payload.offer.code} validado. Ele será reservado ao confirmar o pedido.`);
+    } catch (error) {
+      setCouponOffer(null);
+      notify(error instanceof Error ? error.message : "Não foi possível validar o cupom.");
+    } finally {
+      setCouponChecking(false);
+    }
+  };
   const finish = async () => {
     setSaving(true);
     try {
@@ -1179,9 +1251,10 @@ function RequestDialog({
           city: "Sorocaba",
           state: "SP",
           preferredWindow: "O quanto antes",
+          couponCode: couponOffer?.code,
         }),
       });
-      const payload = await response.json() as { request?: { id?: string; publicCode?: string }; error?: string; message?: string };
+      const payload = await response.json() as { request?: { id?: string; publicCode?: string; campaign?: CampaignOffer | null }; error?: string; message?: string };
       if (!response.ok || !payload.request?.id) throw new Error(payload.error ?? payload.message ?? "Não foi possível criar o pedido.");
       let uploaded = 0;
       let uploadFailure = "";
@@ -1197,7 +1270,7 @@ function RequestDialog({
       if (uploadFailure) {
         notify(`Pedido ${payload.request.publicCode ?? ""} criado; ${uploaded} de ${photos.length} imagem(ns) guardada(s). ${uploadFailure}`);
       } else {
-        notify(`Pedido ${payload.request.publicCode ?? ""} criado${uploaded ? ` com ${uploaded} imagem(ns) privada(s)` : ""}.`);
+        notify(`Pedido ${payload.request.publicCode ?? ""} criado${uploaded ? ` com ${uploaded} imagem(ns) privada(s)` : ""}${payload.request.campaign ? ` · cupom ${payload.request.campaign.code} reservado` : ""}.`);
       }
       onClose();
     } catch (error) {
@@ -1214,8 +1287,8 @@ function RequestDialog({
         {step < 4 && <><p className="dialog-kicker">NOVO PEDIDO · ETAPA {step} DE 3</p><div className="dialog-progress"><span style={{ width: `${step * 33.33}%` }} /></div></>}
         {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map((category) => <button key={category.id} onClick={() => setCategorySlug(category.slug)} className={categorySlug === category.slug ? "selected" : ""} aria-pressed={categorySlug === category.slug}><span>{category.icon}</span>{category.name}<i aria-hidden="true">✓</i></button>)}</div></div>}
         {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><label className="upload-placeholder"><input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} /><span>＋</span><strong>Adicionar fotos sintéticas</strong><small>Opcional · até 3 JPEG/PNG de 512 KB</small></label>{photos.length > 0 && <ul className="request-photo-selection">{photos.map((photo) => <li key={`${photo.name}-${photo.size}`}><span>{photo.type === "image/png" ? "PNG" : "JPG"}</span><div><strong>{photo.name}</strong><small>{Math.ceil(photo.size / 1024)} KB · privado</small></div><button type="button" onClick={() => setPhotos((current) => current.filter((item) => item !== photo))} aria-label={`Remover ${photo.name}`}>×</button></li>)}</ul>}<p className="synthetic-file-note">Use apenas imagens sintéticas nesta demonstração. Os arquivos ficam privados e sem link público.</p></div>}
-        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Você poderá ajustar os detalhes com o profissional pelo chat.</p><label className="field"><span>Região</span><input value="Jardim Europa, Sorocaba - SP" readOnly /></label><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
-        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{selectedCategory?.icon}</span><div><small>Categoria</small><strong>{selectedCategory?.name}</strong><small>Jardim Europa · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving || !selectedCategory}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
+        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Você poderá ajustar os detalhes com o profissional pelo chat.</p><label className="field"><span>Região</span><input value="Jardim Europa, Sorocaba - SP" readOnly /></label><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="coupon-box"><div><span>CUPOM PROMOCIONAL</span><small>Experimente BEMVINDO20</small></div><div className="coupon-input"><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase().slice(0, 32)); setCouponOffer(null); }} placeholder="DIGITE SEU CUPOM" /><button type="button" onClick={validateCoupon} disabled={couponChecking || couponCode.trim().length < 3}>{couponChecking ? "Validando..." : "Aplicar"}</button></div>{couponOffer && <p className="coupon-success"><strong>{couponOffer.code} aplicado</strong>{couponOffer.description} · válido para propostas a partir de {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(couponOffer.minAmountCents / 100)}.</p>}</div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
+        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{selectedCategory?.icon}</span><div><small>Categoria</small><strong>{selectedCategory?.name}</strong><small>Jardim Europa · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}{couponOffer ? ` · cupom ${couponOffer.code}` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving || !selectedCategory}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
         {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={!selectedCategory || (step === 2 && description.trim().length < 10)}>Continuar →</button></footer>}
       </section>
     </div>
@@ -2899,6 +2972,171 @@ function CatalogActionDialog({
   );
 }
 
+function CampaignManagementPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<CampaignData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [referenceTime, setReferenceTime] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const [pending, setPending] = useState<{ campaign: MarketingCampaign; action: CampaignAction } | null>(null);
+  const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/campaigns", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as CampaignData & { error?: string; message?: string };
+        if (!response.ok || !payload.campaigns || !payload.metrics) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar as campanhas.");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setData(payload);
+        setReferenceTime(Date.now());
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar as campanhas.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const reload = () => {
+    setLoading(true);
+    setRefresh((value) => value + 1);
+  };
+  const displayStatus = (campaign: MarketingCampaign) => {
+    if (campaign.status === "paused") return { label: "Pausada", tone: "neutral" };
+    if (new Date(campaign.endsAt).getTime() <= referenceTime) return { label: "Encerrada", tone: "neutral" };
+    if (new Date(campaign.startsAt).getTime() > referenceTime) return { label: "Agendada", tone: "warning" };
+    return { label: "No ar", tone: "success" };
+  };
+
+  return (
+    <section className="dashboard-section catalog-management campaign-management">
+      <header>
+        <div><small>CRESCIMENTO CONTROLADO</small><h2>Campanhas e cupons</h2><p>Publique benefícios com validade, orçamento de usos e trilha de decisão.</p></div>
+        <div className="campaign-header-actions"><button className="secondary-action" onClick={reload} disabled={loading}>Atualizar ↻</button><button className="primary-action" onClick={() => setCreating(true)}>Nova campanha +</button></div>
+      </header>
+      <div className="catalog-metrics campaign-metrics">
+        <article><strong>{loading ? "…" : data?.metrics.liveCount ?? 0}</strong><span>campanhas no ar</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.redeemedCount ?? 0}</strong><span>cupons convertidos</span></article>
+        <article><strong>{loading ? "…" : money(data?.metrics.discountGrantedCents ?? 0)}</strong><span>benefício concedido</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.inactiveCount ?? 0}</strong><span>pausadas ou encerradas</span></article>
+      </div>
+      <div className="campaign-list">
+        {loading && <div className="data-state">Carregando campanhas...</div>}
+        {!loading && data?.campaigns.length === 0 && <div className="data-state">Nenhuma campanha publicada.</div>}
+        {!loading && data?.campaigns.map((campaign) => {
+          const display = displayStatus(campaign);
+          const benefit = campaign.discountType === "fixed"
+            ? money(campaign.discountValue)
+            : `${(campaign.discountValue / 100).toLocaleString("pt-BR")}% · teto ${money(campaign.maxDiscountCents ?? 0)}`;
+          return (
+            <article key={campaign.id}>
+              <div className="campaign-code"><small>CUPOM</small><strong>{campaign.code}</strong><span>{campaign.name}</span></div>
+              <div className="campaign-benefit"><small>BENEFÍCIO</small><strong>{benefit}</strong><span>mínimo {money(campaign.minAmountCents)}</span></div>
+              <div className="campaign-progress"><div><small>USO</small><strong>{campaign.usedCount} / {campaign.totalRedemptionLimit}</strong></div><progress value={campaign.usedCount} max={campaign.totalRedemptionLimit} /><span>{campaign.redeemedCount} convertido(s) · até {campaign.perCustomerLimit} por cliente</span></div>
+              <div className="campaign-period"><small>JANELA</small><strong>{formatted(campaign.startsAt)}</strong><span>até {formatted(campaign.endsAt)}</span></div>
+              <span className={`status-pill ${display.tone}`}>{display.label}</span>
+              <button className={campaign.status === "active" ? "danger-action" : "secondary-action"} disabled={display.label === "Encerrada"} onClick={() => setPending({ campaign, action: campaign.status === "active" ? "pause" : "activate" })}>{campaign.status === "active" ? "Pausar" : "Ativar"}</button>
+              {campaign.latestEventAt && <div className="campaign-latest"><strong>Última decisão</strong><span>{campaign.latestEventNote} · {campaign.latestActorName} · {formatted(campaign.latestEventAt)}</span></div>}
+            </article>
+          );
+        })}
+      </div>
+      <footer><span>i</span><p><strong>Cálculo confiável:</strong> o cupom é reservado no pedido e recalculado no servidor quando uma proposta é aceita. O valor congelado entra no sandbox financeiro e não pode ser alterado pelo navegador.</p></footer>
+      {creating && <CampaignCreateDialog onClose={() => setCreating(false)} onSaved={() => { setCreating(false); reload(); }} notify={notify} />}
+      {pending && <CampaignStatusDialog pending={pending} onClose={() => setPending(null)} onSaved={() => { setPending(null); reload(); }} notify={notify} />}
+    </section>
+  );
+}
+
+function CampaignCreateDialog({ onClose, onSaved, notify }: { onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+  const now = new Date();
+  const later = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const localDate = (value: Date) => {
+    const adjusted = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
+    return adjusted.toISOString().slice(0, 16);
+  };
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [description, setDescription] = useState("");
+  const [discountType, setDiscountType] = useState<CampaignDiscountType>("fixed");
+  const [discount, setDiscount] = useState("20");
+  const [maxDiscount, setMaxDiscount] = useState("50");
+  const [minimum, setMinimum] = useState("80");
+  const [totalLimit, setTotalLimit] = useState("100");
+  const [customerLimit, setCustomerLimit] = useState("1");
+  const [startsAt, setStartsAt] = useState(localDate(now));
+  const [endsAt, setEndsAt] = useState(localDate(later));
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const discountValue = discountType === "fixed" ? Math.round(Number(discount) * 100) : Math.round(Number(discount) * 100);
+      const response = await fetch("/api/v1/operation/campaigns", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          campaign: {
+            name: name.trim(),
+            code: code.trim(),
+            description: description.trim(),
+            discountType,
+            discountValue,
+            maxDiscountCents: discountType === "percentage" ? Math.round(Number(maxDiscount) * 100) : undefined,
+            minAmountCents: Math.round(Number(minimum) * 100),
+            totalRedemptionLimit: Number(totalLimit),
+            perCustomerLimit: Number(customerLimit),
+            startsAt: new Date(startsAt).toISOString(),
+            endsAt: new Date(endsAt).toISOString(),
+            note: note.trim(),
+          },
+        }),
+      });
+      const payload = await response.json() as { campaign?: MarketingCampaign; error?: string; message?: string };
+      if (!response.ok || !payload.campaign) throw new Error(payload.error ?? payload.message ?? "Não foi possível criar a campanha.");
+      notify(`Campanha ${payload.campaign.code} criada e auditada.`);
+      onSaved();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível criar a campanha.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog campaign-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-create-title"><button className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>%</span><div><p className="dialog-kicker">NOVA REGRA PROMOCIONAL</p><h2 id="campaign-create-title">Crie uma campanha controlada.</h2><p>Todos os limites ficam congelados nos pedidos que usarem este código.</p></div></header><form onSubmit={submit}><div className="campaign-form-grid"><label className="field"><span>Nome da campanha</span><input minLength={3} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} required /></label><label className="field"><span>Código</span><input minLength={3} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{2,31}" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="BEMVINDO20" required /></label><label className="field campaign-wide"><span>Descrição para o cliente</span><textarea minLength={10} maxLength={240} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} required /></label><label className="field"><span>Tipo de desconto</span><select value={discountType} onChange={(event) => setDiscountType(event.target.value as CampaignDiscountType)}><option value="fixed">Valor fixo (R$)</option><option value="percentage">Percentual (%)</option></select></label><label className="field"><span>{discountType === "fixed" ? "Desconto em reais" : "Percentual"}</span><input type="number" min="1" max={discountType === "fixed" ? "10000" : "50"} step={discountType === "fixed" ? ".01" : ".1"} value={discount} onChange={(event) => setDiscount(event.target.value)} required /></label>{discountType === "percentage" && <label className="field"><span>Teto em reais</span><input type="number" min="1" step=".01" value={maxDiscount} onChange={(event) => setMaxDiscount(event.target.value)} required /></label>}<label className="field"><span>Pedido mínimo (R$)</span><input type="number" min="1" step=".01" value={minimum} onChange={(event) => setMinimum(event.target.value)} required /></label><label className="field"><span>Limite total de usos</span><input type="number" min="1" max="100000" value={totalLimit} onChange={(event) => setTotalLimit(event.target.value)} required /></label><label className="field"><span>Limite por cliente</span><input type="number" min="1" max="100" value={customerLimit} onChange={(event) => setCustomerLimit(event.target.value)} required /></label><label className="field"><span>Início</span><input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} required /></label><label className="field"><span>Fim</span><input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} required /></label><label className="field campaign-wide"><span>Justificativa operacional</span><textarea minLength={10} maxLength={1000} rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Objetivo, público e aprovação desta campanha..." required /><small>{note.length}/1000 caracteres</small></label></div><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Publicando..." : "Publicar e auditar →"}</button></footer></form></section></div>;
+}
+
+function CampaignStatusDialog({ pending, onClose, onSaved, notify }: { pending: { campaign: MarketingCampaign; action: CampaignAction }; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/campaigns", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ campaignId: pending.campaign.id, action: pending.action, note: note.trim() }) });
+      const payload = await response.json() as { campaign?: MarketingCampaign; error?: string; message?: string };
+      if (!response.ok || !payload.campaign) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a campanha.");
+      notify(`${pending.campaign.code}: campanha ${pending.action === "pause" ? "pausada" : "ativada"} e auditada.`);
+      onSaved();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a campanha.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog catalog-action-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-status-title"><button className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>%</span><div><p className="dialog-kicker">DECISÃO PROMOCIONAL</p><h2 id="campaign-status-title">{pending.action === "pause" ? "Pausar campanha" : "Ativar campanha"}</h2><p>{pending.campaign.code} · {pending.campaign.name}</p></div></header><form onSubmit={submit}><p className="catalog-action-detail">{pending.action === "pause" ? "Novos pedidos deixarão de reservar este cupom; reservas já criadas serão preservadas." : "O cupom voltará a aceitar reservas dentro da janela e dos limites configurados."}</p><label className="field"><span>Justificativa da mudança</span><textarea minLength={10} maxLength={1000} rows={4} value={note} onChange={(event) => setNote(event.target.value)} required /><small>{note.length}/1000 caracteres</small></label><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Registrando..." : `${pending.action === "pause" ? "Pausar" : "Ativar"} e auditar →`}</button></footer></form></section></div>;
+}
+
 function AccountView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   const user = roleDetails[role];
   const isOperational = role === "operacao";
@@ -2920,6 +3158,7 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
         {isOperational && <CatalogManagementPanel notify={notify} />}
+        {isOperational && <CampaignManagementPanel notify={notify} />}
         <FinancialSandboxPanel key={role} role={role} notify={notify} />
       </div>
     </>
@@ -2986,7 +3225,7 @@ function FinancialSandboxPanel({ role, notify }: { role: Role; notify: (message:
   };
 
   const canProcess = (record: FinanceRecord) => role === "operacao" && record.status === "sandbox_authorized" && (record.bookingStatus === "completed" || record.bookingStatus === "cancelled");
-  return <section className="dashboard-section financial-sandbox"><header><div><small>FINANCEIRO SANDBOX · {data?.rule.version ?? "REGRA VERSIONADA"}</small><h2>{copy.title}</h2><p>{copy.description}</p></div><span className="sandbox-badge">SEM DINHEIRO REAL</span></header><div className="financial-metrics"><article><small>{copy.recognized}</small><strong>{loading ? "…" : money(data?.summary.recognizedAmountCents ?? 0)}</strong><span>Lançamentos líquidos no ledger</span></article><article><small>{copy.pending}</small><strong>{loading ? "…" : money(data?.summary.pendingAmountCents ?? 0)}</strong><span>Enquanto o serviço não é liquidado</span></article><article><small>Volume relacionado</small><strong>{loading ? "…" : money(data?.summary.grossAmountCents ?? 0)}</strong><span>{data?.summary.recordCount ?? 0} intent(s) demonstrativo(s)</span></article><article><small>Regra aplicada</small><strong>12% + 2% + 2%</strong><span>Plataforma · parceiro · cashback</span></article></div>{role === "operacao" && data?.reconciliation && <div className={`reconciliation-strip ${data.reconciliation.matched ? "matched" : "warning"}`}><span>{data.reconciliation.matched ? "✓" : "!"}</span><div><strong>{data.reconciliation.matched ? "Ledger conciliado" : "Divergência encontrada"}</strong><small>Esperado {money(data.reconciliation.expectedLedgerCents)} · ledger {money(data.reconciliation.ledgerNetCents)} · diferença {money(data.reconciliation.differenceCents)}</small></div></div>}<div className="financial-records"><div className="financial-record-head"><span>Serviço</span><span>Valor do serviço</span><span>{role === "operacao" ? "Taxa Max" : "Sua parcela"}</span><span>Status</span></div>{loading && <div className="data-state">Carregando lançamentos...</div>}{!loading && data?.records.length === 0 && <div className="data-state"><strong>Nenhum lançamento neste perfil.</strong><span>Os registros surgem quando uma proposta é aceita.</span></div>}{data?.records.map((record) => <article key={record.id}><div><strong>{record.serviceTitle}</strong><small>{record.requestPublicCode} · {record.publicCode}</small></div><span>{money(record.grossAmountCents)}</span><span>{money(record.actorAmountCents)}</span><div><span className={`status-pill ${record.status === "sandbox_settled" ? "success" : "warning"}`}>{sandboxPaymentStatusLabel[record.status]}</span>{canProcess(record) && <button className="secondary-action" disabled={processingId === record.id} onClick={() => simulate(record)}>{processingId === record.id ? "Processando..." : record.bookingStatus === "cancelled" ? "Simular estorno" : "Simular liquidação"}</button>}</div></article>)}</div><footer><p><strong>Como funciona:</strong> o valor é congelado no aceite, dividido pela regra vigente e reconhecido apenas por evento sandbox assinado. Estornos geram lançamentos inversos; nada é apagado.</p><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar resumo ↻</button></footer></section>;
+  return <section className="dashboard-section financial-sandbox"><header><div><small>FINANCEIRO SANDBOX · {data?.rule.version ?? "REGRA VERSIONADA"}</small><h2>{copy.title}</h2><p>{copy.description}</p></div><span className="sandbox-badge">SEM DINHEIRO REAL</span></header><div className="financial-metrics"><article><small>{copy.recognized}</small><strong>{loading ? "…" : money(data?.summary.recognizedAmountCents ?? 0)}</strong><span>Lançamentos líquidos no ledger</span></article><article><small>{copy.pending}</small><strong>{loading ? "…" : money(data?.summary.pendingAmountCents ?? 0)}</strong><span>Enquanto o serviço não é liquidado</span></article><article><small>Volume relacionado</small><strong>{loading ? "…" : money(data?.summary.grossAmountCents ?? 0)}</strong><span>{data?.summary.recordCount ?? 0} intent(s) · {money(data?.summary.discountAmountCents ?? 0)} em cupons</span></article><article><small>Regra aplicada</small><strong>12% + 2% + 2%</strong><span>Plataforma · parceiro · cashback</span></article></div>{role === "operacao" && data?.reconciliation && <div className={`reconciliation-strip ${data.reconciliation.matched ? "matched" : "warning"}`}><span>{data.reconciliation.matched ? "✓" : "!"}</span><div><strong>{data.reconciliation.matched ? "Ledger conciliado" : "Divergência encontrada"}</strong><small>Esperado {money(data.reconciliation.expectedLedgerCents)} · ledger {money(data.reconciliation.ledgerNetCents)} · diferença {money(data.reconciliation.differenceCents)}</small></div></div>}<div className="financial-records"><div className="financial-record-head"><span>Serviço</span><span>Valor do serviço</span><span>{role === "operacao" ? "Taxa Max" : "Sua parcela"}</span><span>Status</span></div>{loading && <div className="data-state">Carregando lançamentos...</div>}{!loading && data?.records.length === 0 && <div className="data-state"><strong>Nenhum lançamento neste perfil.</strong><span>Os registros surgem quando uma proposta é aceita.</span></div>}{data?.records.map((record) => <article key={record.id}><div><strong>{record.serviceTitle}</strong><small>{record.requestPublicCode} · {record.publicCode}</small></div><span className="financial-service-value">{record.discountAmountCents > 0 && <small><s>{money(record.listAmountCents)}</s> · {record.couponCode}</small>}<strong>{money(record.grossAmountCents)}</strong></span><span>{money(record.actorAmountCents)}</span><div><span className={`status-pill ${record.status === "sandbox_settled" ? "success" : "warning"}`}>{sandboxPaymentStatusLabel[record.status]}</span>{canProcess(record) && <button className="secondary-action" disabled={processingId === record.id} onClick={() => simulate(record)}>{processingId === record.id ? "Processando..." : record.bookingStatus === "cancelled" ? "Simular estorno" : "Simular liquidação"}</button>}</div></article>)}</div><footer><p><strong>Como funciona:</strong> o valor é congelado no aceite, incluindo o desconto promocional, dividido pela regra vigente e reconhecido apenas por evento sandbox assinado. Estornos geram lançamentos inversos; nada é apagado.</p><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar resumo ↻</button></footer></section>;
 }
 
 function Metric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone?: string }) {

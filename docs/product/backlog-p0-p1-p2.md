@@ -16,7 +16,7 @@
 
 - preferências granulares de conteúdo e horários para o Web Push já disponível na PWA;
 - ampliar a central de suporte, que já possui SLA, atribuição entre múltiplos operadores e anexos privados, com escalonamento externo e fluxo formal de disputa;
-- campanhas e cupons;
+- segmentação consentida, monitoramento de abuso e relatórios avançados para as campanhas e cupons já materializados;
 - anúncios contextuais moderados;
 - relatórios operacionais e reconciliação;
 - antifraude de indicação;

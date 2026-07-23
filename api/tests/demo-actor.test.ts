@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { demoActorIds, parseDemoActor } from "../auth/demo-actor.js";
+import { calculateCampaignDiscount, isValidCouponCode, normalizeCouponCode } from "../campaigns/campaign-rules.js";
 import { computeInternalSignature, verifyInternalSignature } from "../auth/internal-signature.js";
 import { computeSandboxSignature, verifySandboxSignature } from "../finance/finance-signature.js";
 import { maximumRequestAttachmentBytes, validateRequestAttachment } from "../marketplace/request-attachment-validation.js";
@@ -125,4 +126,34 @@ test("aceita somente assinaturas push HTTPS com chaves Web Push válidas", () =>
     () => validatePushSubscription({ ...subscription, keys: { ...subscription.keys, auth: "curta" } }),
     /autenticação/,
   );
+});
+
+test("normaliza cupons e reproduz os limites do desconto congelado no banco", () => {
+  assert.equal(normalizeCouponCode("  bemvindo20 "), "BEMVINDO20");
+  assert.equal(isValidCouponCode("BEMVINDO20"), true);
+  assert.equal(isValidCouponCode("cupom com espaço"), false);
+  assert.equal(calculateCampaignDiscount(12_000, {
+    discountType: "fixed",
+    discountValue: 2_000,
+    maxDiscountCents: null,
+    minAmountCents: 8_000,
+  }), 2_000);
+  assert.equal(calculateCampaignDiscount(7_999, {
+    discountType: "fixed",
+    discountValue: 2_000,
+    maxDiscountCents: null,
+    minAmountCents: 8_000,
+  }), 0);
+  assert.equal(calculateCampaignDiscount(50_000, {
+    discountType: "percentage",
+    discountValue: 2_000,
+    maxDiscountCents: 5_000,
+    minAmountCents: 10_000,
+  }), 5_000);
+  assert.equal(calculateCampaignDiscount(1_500, {
+    discountType: "fixed",
+    discountValue: 5_000,
+    maxDiscountCents: null,
+    minAmountCents: 100,
+  }), 1_400);
 });

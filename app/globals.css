@@ -748,6 +748,33 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .catalog-management > footer > span { width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%; background: var(--ink); color: var(--lime); display: grid; place-items: center; font-weight: 900; }
 .catalog-management > footer p { margin: 0; color: var(--muted); font-size: .64rem; line-height: 1.5; }
 .catalog-management > footer strong { color: var(--ink); }
+.campaign-header-actions { display: flex; gap: .55rem; }
+.campaign-metrics { grid-template-columns: repeat(4, 1fr); }
+.campaign-list { display: grid; }
+.campaign-list > article { padding: 1rem 1.15rem; display: grid; grid-template-columns: minmax(150px, 1.2fr) minmax(125px, .85fr) minmax(180px, 1.3fr) minmax(120px, .8fr) auto auto; align-items: center; gap: .8rem; border-bottom: 1px solid #e8ece6; }
+.campaign-code, .campaign-benefit, .campaign-period { display: grid; gap: .18rem; }
+.campaign-list small { color: var(--muted); font-size: .53rem; font-weight: 800; letter-spacing: .07em; }
+.campaign-code strong { width: fit-content; padding: .35rem .5rem; border-radius: 7px; background: var(--ink); color: var(--lime); font: 850 .68rem var(--font-geist-mono), monospace; letter-spacing: .05em; }
+.campaign-code span, .campaign-benefit span, .campaign-period span, .campaign-progress > span { color: var(--muted); font-size: .57rem; }
+.campaign-benefit strong, .campaign-period strong { font-size: .75rem; }
+.campaign-progress { display: grid; gap: .28rem; }
+.campaign-progress > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.campaign-progress > div strong { font-size: .68rem; }
+.campaign-progress progress { width: 100%; height: 7px; accent-color: #68bd13; }
+.campaign-list > article > button { min-height: 34px; padding: .4rem .6rem; font-size: .6rem; }
+.campaign-latest { grid-column: 1 / -1; padding: .55rem .7rem; border-left: 3px solid var(--lime); border-radius: 0 8px 8px 0; background: #f7faf5; display: flex; gap: .6rem; font-size: .58rem; }
+.campaign-latest span { color: var(--muted); }
+.campaign-dialog { width: min(100%, 760px); }
+.campaign-dialog > header { padding: 1.4rem 4rem 1.25rem 1.4rem; display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: center; background: radial-gradient(circle at 85% 20%, rgba(117,230,0,.17), transparent 30%), var(--ink); color: var(--white); }
+.campaign-dialog > header > span { width: 56px; height: 56px; border-radius: 15px; display: grid; place-items: center; background: var(--lime); color: var(--ink); font-size: 1.35rem; font-weight: 900; }
+.campaign-dialog > header .dialog-kicker { padding: 0; color: var(--lime); }
+.campaign-dialog > header h2 { margin: .3rem 0; font-size: 1.55rem; letter-spacing: -.04em; }
+.campaign-dialog > header p:last-child { margin: 0; color: #aeb8b0; font-size: .66rem; }
+.campaign-dialog > form { padding: 1.2rem 1.4rem 0; }
+.campaign-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .8rem; }
+.campaign-form-grid .field select { width: 100%; border: 1px solid #cfd6ce; border-radius: 11px; background: #fbfcfa; padding: .8rem; }
+.campaign-wide { grid-column: 1 / -1; }
+.campaign-dialog .dialog-footer { margin: 0 -1.4rem; }
 .catalog-action-dialog { width: min(100%, 620px); }
 .catalog-action-dialog > header { padding: 1.4rem 4rem 1.25rem 1.4rem; display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: center; color: var(--white); background: radial-gradient(circle at 85% 20%, rgba(117,230,0,.17), transparent 30%), var(--ink); }
 .catalog-action-dialog > header > span { width: 56px; height: 56px; border-radius: 15px; display: grid; place-items: center; background: var(--lime); color: var(--ink); font-size: 1.45rem; }
@@ -785,6 +812,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .financial-records > article > div:first-child { display: grid; gap: .18rem; }
 .financial-records > article > div:first-child small { color: var(--muted); font: .57rem var(--font-geist-mono), monospace; letter-spacing: 0; text-transform: none; }
 .financial-records > article > span { font-weight: 760; }
+.financial-service-value { display: grid; gap: .12rem; }
+.financial-service-value small { color: #5f891f; font-size: .53rem; font-weight: 700; }
+.financial-service-value strong { font-size: .72rem; }
 .financial-records > article > div:last-child { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
 .financial-records > article > div:last-child button { min-height: 32px; padding: .35rem .5rem; font-size: .58rem; }
 .financial-sandbox > footer { padding: .9rem 1.15rem 1.15rem; border-top: 1px solid #e5e9e3; background: #f8faf7; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -880,6 +910,16 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .choice-grid button { min-height: 86px; display: grid; text-align: left; align-content: center; gap: .25rem; border: 1px solid var(--line); border-radius: 12px; background: var(--white); padding: .8rem; cursor: pointer; }
 .choice-grid button.selected { background: #f3fde9; border-color: #78bc2e; }
 .choice-grid small { color: var(--muted); }
+.coupon-box { margin-top: .8rem; padding: .85rem; border: 1px solid #dce7d5; border-radius: 12px; background: #f8fcf4; display: grid; gap: .65rem; }
+.coupon-box > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.coupon-box > div:first-child span { color: #477817; font-size: .62rem; font-weight: 850; letter-spacing: .09em; }
+.coupon-box > div:first-child small { color: var(--muted); font-size: .58rem; }
+.coupon-input { display: grid; grid-template-columns: 1fr auto; gap: .5rem; }
+.coupon-input input { min-width: 0; border: 1px solid #cbd8c4; border-radius: 9px; background: var(--white); padding: .7rem .75rem; font: 800 .7rem var(--font-geist-mono), monospace; letter-spacing: .05em; }
+.coupon-input button { border: 0; border-radius: 9px; background: var(--ink); color: var(--lime); padding: .55rem .85rem; font-size: .64rem; font-weight: 850; cursor: pointer; }
+.coupon-input button:disabled { opacity: .45; cursor: not-allowed; }
+.coupon-success { margin: 0; padding: .65rem .7rem; border-radius: 9px; background: #e8f9d8; color: #46633a; display: grid; gap: .18rem; font-size: .62rem; line-height: 1.4; }
+.coupon-success strong { color: #376d0f; }
 .privacy-tip { display: flex; gap: .7rem; background: #eff5ec; border-radius: 12px; padding: .9rem; margin-top: 1rem; }
 .privacy-tip span { color: #4b820e; }
 .privacy-tip p { margin: 0; color: #586458; font-size: .72rem; line-height: 1.5; }
@@ -956,6 +996,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .access-brand-copy h1 { font-size: clamp(2.8rem, 6vw, 4.5rem); }
   .account-layout { grid-template-columns: 1fr; }
   .plan-card, .account-profile { grid-column: 1; }
+  .campaign-list > article { grid-template-columns: 1fr 1fr 1.2fr auto; }
+  .campaign-period { display: none; }
+  .campaign-list > article > button { grid-column: 4; }
   .financial-metrics { grid-template-columns: repeat(2,1fr); }
   .referral-public-shell { grid-template-columns: 1fr; align-items: start; }
   .referral-public-story { max-width: 780px; }
@@ -1142,6 +1185,15 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .catalog-latest { grid-column: 2 / -1; }
   .catalog-management > header { align-items: stretch; flex-direction: column; }
   .catalog-management > header button { width: 100%; }
+  .campaign-header-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .campaign-metrics { grid-template-columns: 1fr 1fr; }
+  .campaign-list > article { grid-template-columns: 1fr auto; gap: .7rem; }
+  .campaign-benefit, .campaign-progress { grid-column: 1 / -1; }
+  .campaign-list > article > .status-pill { grid-column: 2; grid-row: 1; }
+  .campaign-list > article > button { grid-column: 1 / -1; width: 100%; }
+  .campaign-latest { grid-column: 1 / -1; display: grid; }
+  .campaign-form-grid { grid-template-columns: 1fr; }
+  .campaign-wide { grid-column: auto; }
   .financial-sandbox > header { flex-direction: column; }
   .financial-metrics { grid-template-columns: 1fr; }
   .financial-metrics article { min-height: 92px; border-right: 0; border-bottom: 1px solid #e8ece6; }

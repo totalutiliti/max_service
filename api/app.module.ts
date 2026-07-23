@@ -4,6 +4,8 @@ import { DemoSessionService } from "./auth/demo-session.service.js";
 import { InternalAuthMiddleware } from "./auth/internal-auth.middleware.js";
 import { BookingsController } from "./bookings/bookings.controller.js";
 import { BookingsService } from "./bookings/bookings.service.js";
+import { CampaignsController } from "./campaigns/campaigns.controller.js";
+import { CampaignsService } from "./campaigns/campaigns.service.js";
 import { DatabaseService } from "./database/database.service.js";
 import { FinanceController } from "./finance/finance.controller.js";
 import { FinanceService } from "./finance/finance.service.js";
@@ -36,8 +38,8 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, DemoSessionController, MarketplaceController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
+  controllers: [HealthController, DemoSessionController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
+  providers: [DatabaseService, DemoSessionService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

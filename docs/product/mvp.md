@@ -17,6 +17,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - moderação manual de prestador;
 - atividade operacional real, pesquisável por área, referência, ação ou responsável;
 - gestão operacional do catálogo compartilhado por cliente, parceiro e captura pública, sem apagar histórico ao desativar uma categoria;
+- campanhas e cupons persistentes, com criação e pausa pela Operação, limites de uso, reserva transacional no pedido e desconto congelado no aceite;
 - mensagens transacionais e notificações internas persistentes, contadores reais de não lidas e sincronização incremental automática;
 - Web Push opt-in por aparelho para avisos transacionais, com fila durável e revogação da assinatura pelo próprio usuário;
 - central persistente de atendimento parceiro–Operação, com contexto opcional da indicação, conversa append-only, anexos privados sintéticos, transições justificadas, atribuição entre operadores, prioridade e SLA versionado de primeira resposta e resolução; e-mail e escalonamento externo permanecem como integrações posteriores;

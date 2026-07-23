@@ -14,6 +14,10 @@ interface FinanceRecord {
   bookingId: string;
   requestPublicCode: string;
   serviceTitle: string;
+  listAmountCents: number;
+  discountAmountCents: number;
+  campaignName: string | null;
+  couponCode: string | null;
   grossAmountCents: number;
   status: PaymentStatus;
   actorAmountCents: number;
@@ -59,6 +63,10 @@ export class FinanceService {
           intent.booking_id AS "bookingId",
           intent.request_public_code AS "requestPublicCode",
           intent.service_title AS "serviceTitle",
+          intent.list_amount_cents AS "listAmountCents",
+          intent.discount_amount_cents AS "discountAmountCents",
+          campaign.name AS "campaignName",
+          campaign.coupon_code AS "couponCode",
           intent.gross_amount_cents AS "grossAmountCents",
           intent.status,
           COALESCE(allocation.amount_cents, 0)::int AS "actorAmountCents",
@@ -81,6 +89,7 @@ export class FinanceService {
         LEFT JOIN payment_allocations allocation
           ON allocation.payment_intent_id = intent.id AND allocation.entry_type = $1
         LEFT JOIN bookings booking ON booking.id = intent.booking_id
+        LEFT JOIN marketing_campaigns campaign ON campaign.id = intent.campaign_id
         ORDER BY intent.created_at DESC, intent.id DESC
       `, [allocationTypeByRole[actor.role]]);
 
@@ -88,10 +97,11 @@ export class FinanceService {
       const summary = records.reduce((totals, record) => ({
         recordCount: totals.recordCount + 1,
         grossAmountCents: totals.grossAmountCents + record.grossAmountCents,
+        discountAmountCents: totals.discountAmountCents + record.discountAmountCents,
         pendingAmountCents: totals.pendingAmountCents + (record.status === "sandbox_authorized" ? record.actorAmountCents : 0),
         recognizedAmountCents: totals.recognizedAmountCents + record.recognizedAmountCents,
         reversedAmountCents: totals.reversedAmountCents + record.reversedAmountCents,
-      }), { recordCount: 0, grossAmountCents: 0, pendingAmountCents: 0, recognizedAmountCents: 0, reversedAmountCents: 0 });
+      }), { recordCount: 0, grossAmountCents: 0, discountAmountCents: 0, pendingAmountCents: 0, recognizedAmountCents: 0, reversedAmountCents: 0 });
 
       let reconciliation = null;
       if (actor.role === "operation") {

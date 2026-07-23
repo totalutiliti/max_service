@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
+import { CampaignsService } from "../campaigns/campaigns.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
@@ -39,6 +40,7 @@ export class MarketplaceService {
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: PrivateObjectStorageService,
+    private readonly campaigns: CampaignsService,
   ) {}
 
   async categories() {
@@ -123,12 +125,17 @@ export class MarketplaceService {
         "INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'open', $2, $3)",
         [id, actor.id, "Solicitação criada pelo cliente."],
       );
+      const campaign = await this.campaigns.reserveForRequest(client, actor, id, input.couponCode);
       await client.query(
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_request.created', 'service_request', $3, $4::jsonb)",
-        [actor.id, actor.role, id, JSON.stringify({ publicCode, categorySlug: input.categorySlug })],
+        [actor.id, actor.role, id, JSON.stringify({
+          publicCode,
+          categorySlug: input.categorySlug,
+          campaignReservationId: campaign?.reservationId ?? null,
+        })],
       );
 
-      return created.rows[0];
+      return { ...created.rows[0], campaign };
     });
   }
 

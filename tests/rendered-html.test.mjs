@@ -32,3 +32,13 @@ test("renderiza o carregamento seguro antes de resolver a sessão", async () => 
   assert.match(html, /Plataforma SaaS \| Max Service/);
   assert.doesNotMatch(html, /token|ms_demo_session/i);
 });
+
+test("renderiza a landing pública de indicação sem expor dados da rede", async () => {
+  const response = await render("/convite?codigo=PC-7K2M&origem=link");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Transforme sua experiência/);
+  assert.match(html, /PC-7K2M/);
+  assert.match(html, /Cadastro de interesse/i);
+  assert.doesNotMatch(html, /joao\.martins|partner_id|00000000-0000-4000/i);
+});

@@ -2,6 +2,8 @@
 
 Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Operações privilegiadas usam papel explícito, escopo mínimo e auditoria.
 
+A captura sem sessão usa o contexto restrito `public_referral`: ele consulta somente links ativos e, depois da validação do código, enxerga e inclui indicações apenas naquele `referral_link_id`. Não recebe acesso a usuários, finanças ou outras redes; a visibilidade pública histórica de perfis de prestador também exige agora um papel autenticado.
+
 | Recurso | Cliente | Prestador | Parceiro | Operação | Admin |
 |---|---|---|---|---|---|
 | sessão demonstrativa | somente token próprio | somente token próprio | somente token próprio | somente token próprio | nenhum acesso direto |
@@ -49,6 +51,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - destinatário não lê nem marca notificação de outro usuário;
 - emissão transacional exige vínculo comprovado com a entidade de origem;
 - parceiro não consulta nem registra convite na rede de outro parceiro;
+- contexto público sem link validado retorna zero indicações; consentimento ausente, código pausado, origem inválida e tentativa de gravar em outra rede são bloqueados;
 - cliente não enxerga dados de indicação e prestador vê somente seu vínculo convertido;
 - prestador consulta somente a própria verificação e não altera decisões ou itens;
 - cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;

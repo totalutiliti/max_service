@@ -1,8 +1,8 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
-import type { InviteReferralDto } from "./partners.dto.js";
+import type { CapturePublicReferralDto, InviteReferralDto } from "./partners.dto.js";
 
 @Injectable()
 export class PartnersService {
@@ -58,6 +58,7 @@ export class PartnersService {
     this.ensurePartner(actor);
     const professionalName = input.professionalName.trim();
     const email = input.email.trim().toLowerCase();
+    if (professionalName.length < 3) throw new BadRequestException("Informe o nome completo do profissional.");
     return this.database.withActor(actor, async (client) => {
       const context = await client.query<{ linkId: string; categoryId: string }>(`
         SELECT link.id AS "linkId", category.id AS "categoryId"
@@ -86,4 +87,95 @@ export class PartnersService {
       return result.rows[0];
     });
   }
+
+  async publicDetails(rawCode: string) {
+    const code = normalizeReferralCode(rawCode);
+    return this.database.withPublicReferral(async (client) => {
+      const link = await client.query<{ id: string; referralCode: string }>(`
+        SELECT id, referral_code AS "referralCode"
+        FROM partner_referral_links
+        WHERE referral_code = $1 AND status = 'active'
+      `, [code]);
+      if (!link.rows[0]) throw new NotFoundException("Convite de parceiro indisponível.");
+
+      const categories = await client.query(`
+        SELECT slug, name, icon
+        FROM service_categories
+        WHERE active = true
+        ORDER BY sort_order, name
+      `);
+      return {
+        referralCode: link.rows[0].referralCode,
+        privacyNoticeVersion: "pilot-2026-07",
+        categories: categories.rows,
+      };
+    });
+  }
+
+  async capturePublic(rawCode: string, input: CapturePublicReferralDto) {
+    const code = normalizeReferralCode(rawCode);
+    const professionalName = input.professionalName.trim();
+    const email = input.email.trim().toLowerCase();
+    if (professionalName.length < 3) throw new BadRequestException("Informe seu nome completo.");
+
+    return this.database.withPublicReferral(async (client) => {
+      const link = await client.query<{ id: string; partnerId: string }>(`
+        SELECT id, partner_id AS "partnerId"
+        FROM partner_referral_links
+        WHERE referral_code = $1 AND status = 'active'
+      `, [code]);
+      if (!link.rows[0]) throw new NotFoundException("Convite de parceiro indisponível.");
+      await client.query("SELECT set_config('app.referral_link_id', $1, true)", [link.rows[0].id]);
+
+      const existing = await client.query(`
+        SELECT id
+        FROM partner_referrals
+        WHERE referral_link_id = $1 AND lower(email) = $2
+      `, [link.rows[0].id, email]);
+      if (existing.rows[0]) return { recorded: false };
+
+      const recent = await client.query<{ count: number }>(`
+        SELECT count(*)::int AS count
+        FROM partner_referrals
+        WHERE referral_link_id = $1
+          AND source IN ('link', 'qr')
+          AND created_at >= now() - interval '15 minutes'
+      `, [link.rows[0].id]);
+      if ((recent.rows[0]?.count ?? 0) >= 8) {
+        throw new HttpException("Muitas indicações recentes. Tente novamente em alguns minutos.", HttpStatus.TOO_MANY_REQUESTS);
+      }
+
+      const category = await client.query<{ id: string }>(`
+        SELECT id
+        FROM service_categories
+        WHERE slug = $1 AND active = true
+      `, [input.categorySlug]);
+      if (!category.rows[0]) throw new NotFoundException("Categoria de serviço indisponível.");
+
+      const result = await client.query(`
+        INSERT INTO partner_referrals (
+          id, public_code, referral_link_id, partner_id, service_category_id,
+          professional_name, email, status, source, consent_at, privacy_notice_version
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'invited', $8, now(), 'pilot-2026-07')
+        ON CONFLICT (partner_id, lower(email)) DO NOTHING
+        RETURNING id
+      `, [
+        randomUUID(),
+        `RF-${randomBytes(4).toString("hex").toUpperCase()}`,
+        link.rows[0].id,
+        link.rows[0].partnerId,
+        category.rows[0].id,
+        professionalName,
+        email,
+        input.source,
+      ]);
+      return { recorded: Boolean(result.rows[0]) };
+    });
+  }
+}
+
+function normalizeReferralCode(rawCode: string) {
+  const code = rawCode.trim().toUpperCase();
+  if (!/^PC-[A-Z0-9]{4,16}$/.test(code)) throw new NotFoundException("Convite de parceiro indisponível.");
+  return code;
 }

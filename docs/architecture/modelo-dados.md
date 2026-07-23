@@ -50,6 +50,7 @@
 - leitura de notificação altera apenas `read_at`; conteúdo, origem e destinatário permanecem imutáveis;
 - um parceiro possui um código ativo e enxerga somente indicações vinculadas à própria rede;
 - convite manual nasce como `invited`; ativação exige um prestador convertido e instante de ativação;
+- captura por link ou QR exige código ativo, consentimento datado e versão do aviso de privacidade; repetição do mesmo e-mail na rede não cria nova indicação;
 - uma verificação só sai de `submitted` para `in_review`; a decisão final é `approved` ou `changes_requested`;
 - aprovação exige todos os itens aceitos; correção exige ao menos um item marcado; cada ação gera evento e auditoria;
 - uma avaliação só existe após conclusão e uma vez por autor/booking;

@@ -25,6 +25,8 @@ Finalidade explícita, minimização, transparência, acesso restrito, retençã
 - revogação de consentimento sem apagar bases legais independentes;
 - registro de cada solicitação e decisão.
 
+No piloto, a captura pública de indicação guarda `consent_at` e `privacy_notice_version` junto ao interesse. O formulário informa a finalidade de contato, não cria conta definitiva, não coleta IP para atribuição e não autoriza score, crédito ou consulta automatizada de antecedentes.
+
 ## Restrições
 
 Não registrar senhas, tokens, documentos ou conteúdo sensível em logs. Não usar anexos reais como seed. Decisões automatizadas de risco ficam desativadas.

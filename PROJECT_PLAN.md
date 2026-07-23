@@ -28,14 +28,14 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 ## Progresso implementado
 
 - Fases 1 e 3 possuem jornadas persistentes demonstráveis no Docker local.
-- A Fase 4 já inclui rede do parceiro, fila de ocorrências e moderação manual de profissionais com checklist e auditoria.
+- A Fase 4 já inclui rede do parceiro, captura pública por link/QR com consentimento, fila de ocorrências e moderação manual de profissionais com checklist e auditoria.
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.
 - A verificação possui cofre S3 local para documentos sintéticos, versões append-only, validação de assinatura/MIME/tamanho, hash SHA-256, download privado e auditoria por ator.
 - A solicitação de serviço aceita até três imagens sintéticas privadas, com limite compatível com a borda local, hash, RLS, auditoria e visualização pelo profissional autorizado.
 - A conversa transacional aceita uma imagem sintética privada por mensagem, com legenda opcional, validação de conteúdo, hash, isolamento entre membros e auditoria de envio/download.
 - Mensagens, lista de conversas e contadores possuem sincronização adaptativa; o backend entrega apenas mensagens posteriores ao cursor validado na própria conversa e mantém um cursor de leitura monotônico por membro para calcular não lidas.
-- Captura pública de indicação, autenticação real, processamento antimalware e integrações reguladas continuam condicionados aos gates das fases seguintes.
+- Autenticação real, confirmação de contato, processamento antimalware e integrações reguladas continuam condicionados aos gates das fases seguintes.
 
 ## Não objetivos do MVP
 

@@ -274,9 +274,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .fake-link span { overflow: hidden; text-overflow: ellipsis; }
 .fake-link button { margin-left: auto; border: 0; background: var(--ink); color: white; border-radius: 8px; padding: .55rem .7rem; font-weight: 750; cursor: pointer; }
 .fake-link button:disabled { cursor: not-allowed; opacity: .45; }
-.fake-qr { width: 130px; height: 130px; background: var(--white); border: 8px solid var(--white); display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; box-shadow: 0 10px 25px rgba(20,50,10,.12); }
-.fake-qr i { background: var(--ink); }
-.fake-qr i:nth-child(2), .fake-qr i:nth-child(4), .fake-qr i:nth-child(6), .fake-qr i:nth-child(8) { background: var(--white); border: 5px solid var(--ink); }
+.referral-qr { width: 142px; height: 142px; padding: 6px; border-radius: 10px; background: var(--white); box-shadow: 0 10px 25px rgba(20,50,10,.12); transition: transform .18s ease, box-shadow .18s ease; }
+.referral-qr:hover { transform: translateY(-2px); box-shadow: 0 14px 30px rgba(20,50,10,.18); }
+.referral-qr img { width: 100%; height: 100%; display: block; border-radius: 5px; }
 .affiliate-list { display: grid; }
 .affiliate-list > div { min-height: 62px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .7rem; border-top: 1px solid #edf0eb; }
 .affiliate-list p { display: grid; gap: .12rem; margin: 0; }
@@ -716,6 +716,54 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .success-summary div { display: grid; gap: .15rem; }
 .success-summary small { color: var(--muted); font-size: .65rem; }
 
+.referral-public-page { min-height: 100vh; background: radial-gradient(circle at 14% 22%, rgba(117,230,0,.13), transparent 25%), radial-gradient(circle at 88% 75%, rgba(117,230,0,.07), transparent 22%), var(--ink); color: var(--white); }
+.referral-public-header { min-height: 82px; max-width: 1380px; margin: auto; padding: 0 clamp(1rem, 5vw, 4.5rem); border-bottom: 1px solid rgba(255,255,255,.1); display: flex; align-items: center; justify-content: space-between; }
+.referral-public-header .text-link { color: #c8d0ca; }
+.referral-public-header .text-link:hover { color: var(--lime-soft); }
+.referral-public-shell { width: min(1280px, calc(100% - 2rem)); min-height: calc(100vh - 170px); margin: auto; padding: clamp(3.5rem, 7vw, 7rem) 0; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(420px, .72fr); align-items: center; gap: clamp(3rem, 7vw, 7rem); }
+.referral-public-story h1 { max-width: 730px; margin: 0; font-size: clamp(3.2rem, 6.2vw, 5.8rem); line-height: .94; letter-spacing: -.07em; }
+.referral-public-story h1 em { color: var(--lime); font-style: normal; }
+.referral-public-lede { max-width: 650px; margin: 1.5rem 0; color: #b7c0b9; font-size: clamp(1rem, 1.4vw, 1.18rem); line-height: 1.7; }
+.referral-public-code { width: fit-content; margin: 1.6rem 0 2rem; padding: .7rem .8rem .7rem 1rem; border: 1px solid rgba(117,230,0,.27); border-radius: 12px; background: rgba(117,230,0,.065); display: flex; align-items: center; gap: 1rem; }
+.referral-public-code span { color: #aeb8b0; font-size: .62rem; font-weight: 800; letter-spacing: .12em; }
+.referral-public-code strong { padding: .45rem .7rem; border-radius: 8px; background: var(--lime); color: var(--ink); font: 850 .75rem var(--font-geist-mono), monospace; letter-spacing: .06em; }
+.referral-public-benefits { max-width: 670px; margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; }
+.referral-public-benefits li { min-height: 130px; padding: 1rem; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; background: rgba(255,255,255,.035); display: grid; align-content: start; gap: .65rem; }
+.referral-public-benefits i { color: var(--lime); font: 800 .64rem var(--font-geist-mono), monospace; font-style: normal; }
+.referral-public-benefits span { display: grid; gap: .3rem; color: #98a39a; font-size: .67rem; line-height: 1.45; }
+.referral-public-benefits strong { color: var(--white); font-size: .77rem; }
+.referral-public-card { min-height: 570px; border-radius: 24px; background: var(--white); color: var(--ink); box-shadow: 0 35px 90px rgba(0,0,0,.42); overflow: hidden; }
+.referral-public-card > header { padding: 1.65rem 1.7rem 1.25rem; border-bottom: 1px solid #e6eae4; background: linear-gradient(135deg, #f7faf4, #eef9e5); }
+.referral-public-card > header small, .referral-public-success > small { color: #4b8215; font-size: .63rem; font-weight: 850; letter-spacing: .13em; }
+.referral-public-card > header h2 { margin: .4rem 0; font-size: 1.75rem; letter-spacing: -.045em; }
+.referral-public-card > header p { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
+.referral-public-card form { padding: 1.4rem 1.7rem 1.6rem; }
+.referral-public-card .field { margin-bottom: .9rem; }
+.referral-public-card .field > span { display: block; margin-bottom: .38rem; color: #4b554d; font-size: .7rem; font-weight: 750; }
+.referral-public-card .field input, .referral-public-card .field select { width: 100%; min-height: 48px; border: 1px solid #cdd5cc; border-radius: 11px; background: #fbfcfa; padding: .72rem .8rem; }
+.referral-public-card .field input:focus, .referral-public-card .field select:focus { border-color: #75b933; box-shadow: 0 0 0 3px rgba(117,230,0,.12); outline: none; }
+.referral-consent { margin: 1rem 0; display: grid; grid-template-columns: auto 1fr; align-items: start; gap: .65rem; color: #626d64; font-size: .68rem; line-height: 1.5; cursor: pointer; }
+.referral-consent input { width: 18px; height: 18px; margin: .1rem 0 0; accent-color: #5ba900; }
+.referral-consent strong { color: #3e5e25; }
+.referral-honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.referral-submit { width: 100%; margin-top: .2rem; }
+.referral-submit:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+.referral-form-footnote { margin: .8rem 0 0; color: #879087; font-size: .6rem; line-height: 1.45; text-align: center; }
+.referral-form-error { margin: 0 0 .7rem; padding: .65rem .75rem; border-radius: 9px; background: #fff1f0; color: #a6342e; font-size: .68rem; }
+.referral-public-state { min-height: 300px; padding: 2rem; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: .65rem; font-size: .8rem; }
+.referral-public-invalid { margin: 1.5rem; padding: 1rem; border: 1px solid #edc5c1; border-radius: 13px; background: #fff4f3; display: grid; grid-template-columns: auto 1fr; gap: .8rem; }
+.referral-public-invalid > span { width: 34px; height: 34px; border-radius: 50%; background: #f1c4c0; color: #8f2d27; display: grid; place-items: center; font-weight: 900; }
+.referral-public-invalid strong { font-size: .8rem; }
+.referral-public-invalid p { margin: .2rem 0 0; color: #8b5551; font-size: .7rem; line-height: 1.45; }
+.referral-public-success { padding: 2.2rem; display: grid; place-items: start; align-content: center; }
+.referral-success-mark { width: 58px; height: 58px; margin-bottom: 1.2rem; border-radius: 50%; background: var(--lime); display: grid; place-items: center; font-size: 1.5rem; font-weight: 900; box-shadow: 0 0 0 9px #efffdf; }
+.referral-public-success h2 { margin: .5rem 0 .7rem; font-size: 2.2rem; letter-spacing: -.05em; }
+.referral-public-success > p { margin: 0; color: #5f6a61; line-height: 1.65; }
+.referral-public-notice { margin: 1.3rem 0; padding: .85rem; border-radius: 10px; background: #f2f6ef; color: #657067; font-size: .68rem; line-height: 1.5; }
+.referral-public-footer { max-width: 1280px; min-height: 88px; margin: auto; padding: 1.2rem 0; border-top: 1px solid rgba(255,255,255,.1); color: #7f8b82; display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .65rem; }
+.referral-public-footer span { color: #aab4ac; font-weight: 750; }
+.referral-public-footer p { margin: 0; }
+
 @media (max-width: 1050px) {
   .desktop-nav { display: none; }
   .hero-grid { grid-template-columns: 1fr; gap: 1rem; }
@@ -733,6 +781,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .account-layout { grid-template-columns: 1fr; }
   .plan-card, .account-profile { grid-column: 1; }
   .financial-metrics { grid-template-columns: repeat(2,1fr); }
+  .referral-public-shell { grid-template-columns: 1fr; align-items: start; }
+  .referral-public-story { max-width: 780px; }
+  .referral-public-card { width: min(100%, 620px); }
 }
 
 @media (max-width: 780px) {
@@ -777,7 +828,11 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .referral-invite-dialog > header { padding: 1.2rem 3.8rem 1.2rem 1rem; }
   .referral-invite-dialog > form { padding: 1rem 1rem 0; }
   .referral-invite-dialog .dialog-footer { margin: 0 -1rem; }
-  .fake-qr { display: none; }
+  .referral-qr { display: none; }
+  .referral-public-shell { padding: 3rem 0; }
+  .referral-public-benefits { grid-template-columns: 1fr; }
+  .referral-public-benefits li { min-height: auto; grid-template-columns: auto 1fr; }
+  .referral-public-footer { width: calc(100% - 2rem); align-items: flex-start; flex-direction: column; }
   .table-head { display: none; }
   .table-row { grid-template-columns: 1fr 1fr; gap: .5rem; padding: .9rem 0; }
   .verification-table .table-row { grid-template-columns: 1fr 1fr; }
@@ -916,6 +971,14 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .comparison-offer button { grid-column: 1 / -1; }
   .comparison-footer > span { display: none; }
   .comparison-footer button { width: 100%; }
+  .referral-public-header { min-height: 70px; padding: 0 1rem; }
+  .referral-public-header .brand-lockup span { display: inline; font-size: 1rem; }
+  .referral-public-header .text-link { font-size: .72rem; }
+  .referral-public-story h1 { font-size: clamp(2.7rem, 14vw, 4rem); }
+  .referral-public-code { width: 100%; align-items: flex-start; flex-direction: column; }
+  .referral-public-card { min-height: 540px; border-radius: 19px; }
+  .referral-public-card > header, .referral-public-card form { padding-left: 1.1rem; padding-right: 1.1rem; }
+  .referral-public-success { padding: 1.5rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

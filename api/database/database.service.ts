@@ -55,6 +55,24 @@ export class DatabaseService implements OnModuleDestroy {
     }
   }
 
+  async withPublicReferral<T>(operation: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "SELECT set_config('app.actor_id', '', true), set_config('app.actor_role', 'public_referral', true)",
+      );
+      const result = await operation(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async onModuleDestroy() {
     await this.pool.end();
   }

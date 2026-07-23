@@ -6,6 +6,7 @@ export const demoActorIds = {
 } as const;
 
 export type DemoRole = keyof typeof demoActorIds;
+export type InternalRole = DemoRole | "public_referral";
 
 export interface DemoSession {
   id: string;
@@ -38,7 +39,7 @@ export async function resolveDemoSession(request: Request): Promise<DemoSession 
 export async function signedInternalHeaders(
   method: string,
   path: string,
-  role: DemoRole | "" = "",
+  role: InternalRole | "" = "",
   actorId = "",
 ) {
   const secret = process.env.BFF_INTERNAL_SECRET;

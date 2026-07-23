@@ -38,7 +38,7 @@
 
 ## Parceiro
 
-28. QR/link de indicação
+28. QR/link de indicação e landing pública de interesse
 29. Afiliados
 30. Atribuições e comissões
 31. Período de teste/suporte

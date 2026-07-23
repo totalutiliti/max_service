@@ -73,6 +73,7 @@ interface PersistedMessage {
   senderCode?: string;
   body: string;
   createdAt: string;
+  attachment: RequestAttachment | null;
 }
 
 type BookingStatus = "scheduled" | "in_progress" | "completed" | "cancelled";
@@ -1508,6 +1509,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
   const [selectedId, setSelectedId] = useState("");
   const [messages, setMessages] = useState<PersistedMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -1561,13 +1563,38 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
     timeZone: "America/Sao_Paulo",
   }).format(new Date(value));
 
+  const selectAttachment = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) return;
+    if (!new Set(["image/jpeg", "image/png"]).has(file.type)) {
+      notify("Envie somente uma imagem JPEG ou PNG.");
+      return;
+    }
+    if (file.size < 8 || file.size > 524_288) {
+      notify("A imagem deve ter no máximo 512 KB.");
+      return;
+    }
+    setAttachmentFile(file);
+  };
+
   const send = async (event: React.FormEvent) => {
     event.preventDefault();
     const body = draft.trim();
-    if (!body || !selectedId) return;
+    if ((!body && !attachmentFile) || !selectedId) return;
     setSending(true);
     try {
-      const response = await fetch("/api/v1/messaging", {
+      const requestBody = attachmentFile ? new FormData() : null;
+      if (requestBody && attachmentFile) {
+        requestBody.set("role", role);
+        requestBody.set("conversationId", selectedId);
+        requestBody.set("body", body);
+        requestBody.set("file", attachmentFile);
+      }
+      const response = await fetch("/api/v1/messaging", attachmentFile ? {
+        method: "POST",
+        body: requestBody,
+      } : {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ role, conversationId: selectedId, body }),
@@ -1576,8 +1603,9 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
       if (!response.ok || typeof payload.message !== "object") throw new Error(payload.error ?? (typeof payload.message === "string" ? payload.message : "Não foi possível enviar a mensagem."));
       const sent = { ...payload.message, senderName: roleDetails[role].name };
       setMessages((current) => [...current, sent]);
-      setConversations((current) => current.map((conversation) => conversation.id === selectedId ? { ...conversation, latestMessage: body, latestMessageAt: sent.createdAt } : conversation));
+      setConversations((current) => current.map((conversation) => conversation.id === selectedId ? { ...conversation, latestMessage: sent.body, latestMessageAt: sent.createdAt } : conversation));
       setDraft("");
+      setAttachmentFile(null);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Não foi possível enviar a mensagem.");
     } finally {
@@ -1595,7 +1623,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
           {!loading && conversations.length === 0 && <div className="data-state"><strong>Nenhuma conversa ainda.</strong><span>Ela será criada quando uma proposta for aceita.</span></div>}
           {conversations.map((conversation) => <button key={conversation.id} onClick={() => setSelectedId(conversation.id)} className={conversation.id === selectedId ? "active" : ""}><span className="mini-avatar">{conversation.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><span><strong>{conversation.otherName}</strong><small>{conversation.requestCode} · {conversation.requestTitle}</small><em>{conversation.latestMessage ?? "Conversa liberada"}</em></span>{conversation.bookingStatus === "scheduled" && <i>✓</i>}</button>)}
         </aside>
-        {selected ? <div className="chat-panel"><header><span className="mini-avatar">{selected.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><strong>{selected.otherName}</strong><small><span className="live-dot" /> {selected.requestCode} · {selected.scheduledFor ? `Agendado: ${schedule(selected.scheduledFor)}` : selected.bookingStatus}</small></div><button aria-label="Mais opções">•••</button></header><div className="chat-messages"><div className="chat-date">CONVERSA DO SERVIÇO</div>{messages.length === 0 && <div className="data-state"><strong>Conversa liberada.</strong><span>Envie a primeira mensagem para combinar os detalhes.</span></div>}{messages.map((message) => <p key={message.id} className={`message ${message.senderId === actorId ? "sent" : "received"}`}>{message.body}<small>{time(message.createdAt)}{message.senderId === actorId ? " · ✓" : ""}</small></p>)}<div ref={endRef} /></div><form className="message-composer" onSubmit={send}><button type="button" aria-label="Anexos disponíveis em uma próxima fase" onClick={() => notify("Anexos privados serão habilitados em uma próxima fase.")}>＋</button><input aria-label="Mensagem" value={draft} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder="Escreva uma mensagem..." /><button type="submit" disabled={sending || !draft.trim()}>{sending ? "Enviando..." : "Enviar"}</button></form></div> : <div className="chat-panel empty-chat"><div className="data-state"><strong>Selecione uma conversa.</strong><span>As mensagens ficam vinculadas ao serviço contratado.</span></div></div>}
+        {selected ? <div className="chat-panel"><header><span className="mini-avatar">{selected.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><strong>{selected.otherName}</strong><small><span className="live-dot" /> {selected.requestCode} · {selected.scheduledFor ? `Agendado: ${schedule(selected.scheduledFor)}` : selected.bookingStatus}</small></div><button aria-label="Mais opções">•••</button></header><div className="chat-messages"><div className="chat-date">CONVERSA DO SERVIÇO</div>{messages.length === 0 && <div className="data-state"><strong>Conversa liberada.</strong><span>Envie a primeira mensagem para combinar os detalhes.</span></div>}{messages.map((message) => <article key={message.id} className={`message ${message.senderId === actorId ? "sent" : "received"}`}><span>{message.body}</span>{message.attachment && <a className="message-attachment" href={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} target="_blank" rel="noreferrer"><Image src={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} alt={message.attachment.fileName} width={360} height={220} unoptimized /><em>Imagem privada · abrir em tamanho original</em></a>}<small>{time(message.createdAt)}{message.senderId === actorId ? " · ✓" : ""}</small></article>)}<div ref={endRef} /></div><form className="message-composer" onSubmit={send}>{attachmentFile && <div className="message-attachment-draft"><span>▣ {attachmentFile.name} · {(attachmentFile.size / 1024).toFixed(0)} KB</span><button type="button" onClick={() => setAttachmentFile(null)} aria-label="Remover imagem selecionada">×</button></div>}<label className="message-attachment-button" title="Anexar imagem privada"><span>＋</span><input type="file" accept="image/jpeg,image/png" onChange={selectAttachment} aria-label="Anexar imagem privada" /></label><input aria-label="Mensagem" value={draft} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder={attachmentFile ? "Adicione uma legenda (opcional)..." : "Escreva uma mensagem..."} /><button type="submit" disabled={sending || (!draft.trim() && !attachmentFile)}>{sending ? "Enviando..." : "Enviar"}</button></form></div> : <div className="chat-panel empty-chat"><div className="data-state"><strong>Selecione uma conversa.</strong><span>As mensagens ficam vinculadas ao serviço contratado.</span></div></div>}
       </section>
     </>
   );

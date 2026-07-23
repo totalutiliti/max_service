@@ -545,10 +545,16 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .message small { justify-self: end; color: #7e8980; font-size: .54rem; }
 .message.received { background: var(--white); border: 1px solid #e3e8e1; border-bottom-left-radius: 4px; }
 .message.sent { margin-left: auto; background: #dcffc0; border-bottom-right-radius: 4px; }
+.message-attachment { min-width: 210px; display: grid; gap: 0; border: 1px solid rgba(38,58,34,.16); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,.64); color: #315d12; text-decoration: none; }
+.message-attachment img { width: 100%; height: 180px; display: block; object-fit: cover; background: #e4eae1; }
+.message-attachment em { padding: .45rem .55rem; font-size: .56rem; font-style: normal; font-weight: 800; }
 .message-composer { min-height: 74px; padding: .8rem; display: grid; grid-template-columns: auto 1fr auto; gap: .6rem; border-top: 1px solid #e4e8e2; }
 .message-composer input { min-width: 0; border: 1px solid var(--line); border-radius: 11px; padding: .7rem; }
 .message-composer button { border: 0; border-radius: 10px; padding: .7rem 1rem; background: var(--ink); color: var(--white); font-weight: 750; cursor: pointer; }
-.message-composer button:first-child { background: #edf1eb; color: var(--ink); font-size: 1.15rem; }
+.message-attachment-button { width: 44px; min-height: 44px; border-radius: 10px; display: grid; place-items: center; background: #edf1eb; color: var(--ink); font-size: 1.15rem; cursor: pointer; }
+.message-attachment-button input { position: absolute; width: 1px; height: 1px; padding: 0; border: 0; clip: rect(0 0 0 0); overflow: hidden; }
+.message-attachment-draft { grid-column: 1 / -1; min-height: 32px; padding: .35rem .45rem .35rem .65rem; border: 1px solid #b8d7a2; border-radius: 9px; display: flex; align-items: center; justify-content: space-between; gap: .7rem; background: #f1faea; color: #3e681f; font-size: .62rem; font-weight: 750; }
+.message-attachment-draft button { width: 26px; height: 26px; padding: 0; background: transparent; color: #4a6142; font-size: 1rem; }
 .message-composer button:disabled { cursor: not-allowed; opacity: .45; }
 .empty-chat { place-items: center; }
 .non-transactional-message { min-height: 360px; display: grid; grid-template-columns: auto minmax(0, 620px); align-content: center; justify-content: center; gap: 1.2rem; }
@@ -893,8 +899,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .financial-sandbox > footer button { width: 100%; }
   .message { max-width: 88%; }
   .conversation-list > button { min-width: 230px; }
-  .message-composer { grid-template-columns: 1fr auto; }
-  .message-composer button:first-child { display: none; }
+  .message-composer { grid-template-columns: auto 1fr auto; }
+  .message-attachment { min-width: 180px; }
+  .message-attachment img { height: 150px; }
   .non-transactional-message { min-height: 420px; grid-template-columns: 1fr; justify-items: start; }
   .proposal-request-summary { grid-template-columns: 1fr; }
   .proposal-request-summary > span { width: 46px; height: 46px; }

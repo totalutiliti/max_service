@@ -1,4 +1,4 @@
-import { proxyDemoRequest } from "../_proxy";
+import { proxyDemoBinaryRequest, proxyDemoDownloadRequest, proxyDemoRequest } from "../_proxy";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const role = mapRole(url.searchParams.get("role"));
   if (!role) return Response.json({ error: "Perfil sem acesso a conversas." }, { status: 403 });
+  const attachmentId = url.searchParams.get("attachmentId");
+  if (attachmentId) {
+    return proxyDemoDownloadRequest(`/api/v1/message-attachments/${encodeURIComponent(attachmentId)}`, request, role);
+  }
   const conversationId = url.searchParams.get("conversationId");
   const path = conversationId
     ? `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`
@@ -20,6 +24,45 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (request.headers.get("content-type")?.includes("multipart/form-data")) {
+    const declaredLength = Number(request.headers.get("content-length") ?? 0);
+    if (Number.isFinite(declaredLength) && declaredLength > 600_000) {
+      return Response.json({ error: "A imagem excede o limite de 512 KB." }, { status: 413 });
+    }
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return Response.json({ error: "Formulário de anexo inválido." }, { status: 400 });
+    }
+    const roleValue = form.get("role");
+    const conversationValue = form.get("conversationId");
+    const bodyValue = form.get("body");
+    const role = mapRole(typeof roleValue === "string" ? roleValue : null);
+    const conversationId = typeof conversationValue === "string" ? conversationValue : "";
+    const body = typeof bodyValue === "string" ? bodyValue.trim() : "";
+    const file = form.get("file");
+    if (!role) return Response.json({ error: "Perfil sem acesso a conversas." }, { status: 403 });
+    if (!conversationId) return Response.json({ error: "conversationId é obrigatório." }, { status: 400 });
+    if (!(file instanceof File)) return Response.json({ error: "Selecione uma imagem." }, { status: 400 });
+    if (file.size < 8 || file.size > 524_288) {
+      return Response.json({ error: "A imagem deve ter entre 8 bytes e 512 KB." }, { status: 413 });
+    }
+    if (!new Set(["image/jpeg", "image/png"]).has(file.type)) {
+      return Response.json({ error: "Envie somente imagens JPEG ou PNG." }, { status: 400 });
+    }
+    if (body.length > 2000) return Response.json({ error: "A mensagem deve ter no máximo 2.000 caracteres." }, { status: 400 });
+    return proxyDemoBinaryRequest(
+      `/api/v1/conversations/${encodeURIComponent(conversationId)}/message-attachments`,
+      request,
+      role,
+      await file.arrayBuffer(),
+      file.type,
+      file.name,
+      { "x-message-body": encodeURIComponent(body) },
+    );
+  }
+
   const payload = await request.json() as { role?: string; conversationId?: string; body?: string };
   const role = mapRole(payload.role ?? null);
   if (!role) return Response.json({ error: "Perfil sem acesso a conversas." }, { status: 403 });

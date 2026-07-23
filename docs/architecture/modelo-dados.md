@@ -25,7 +25,7 @@
 
 ### Marketplace
 
-`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `booking_cancellations`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`. `service_request_attachments` está materializada no piloto com metadados no PostgreSQL e bytes no object storage privado; anexos de mensagens permanecem como alvo.
+`service_requests`, `service_request_attachments`, `proposals`, `bookings`, `booking_status_history`, `booking_cancellations`, `conversations`, `conversation_members`, `messages`, `message_attachments`, `service_reviews`. `service_request_attachments` e `message_attachments` estão materializadas no piloto com metadados no PostgreSQL e bytes no object storage privado.
 
 ### Crescimento e receita
 
@@ -66,3 +66,5 @@
 - somente o profissional proprietário e a operação consultam os metadados; o arquivo é entregue como anexo privado, sem URL pública;
 - cada pedido aceita até três imagens append-only JPEG/PNG de 512 KB, com chave de objeto aleatória, hash SHA-256 e validação conjunta de MIME, extensão e assinatura;
 - imagens de pedido são visíveis ao cliente proprietário, aos profissionais enquanto a solicitação é oportunidade aberta e, após o aceite, somente ao profissional contratado e à operação;
+- cada mensagem aceita no máximo uma imagem append-only JPEG/PNG de 512 KB; a chave do objeto, o hash SHA-256 e o remetente são vinculados por constraints à conversa e à mensagem;
+- anexos de mensagem são visíveis exclusivamente aos membros cliente e profissional da conversa; parceiro, operação e conexão sem contexto recebem zero linhas;

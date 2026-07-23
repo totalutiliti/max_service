@@ -17,6 +17,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 | notificações | somente próprias | somente próprias | somente próprias | somente próprias | auditado |
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
+| anexo da conversa | membro | membro | nenhum | nenhum no piloto | excepcional e auditado |
 | checklist de verificação | nenhum acesso | somente o próprio | nenhum | fila completa e decisão | excepcional e auditado |
 | arquivos de verificação | nenhum | somente versões próprias | nenhum | todas as versões para revisão | excepcional e auditado |
 | intents financeiros sandbox | próprios | próprios | somente rede atribuída | visão completa | auditado |
@@ -55,6 +56,8 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - bucket anônimo retorna `403`; downloads do profissional e da operação validam tamanho/hash e geram auditoria;
 - cliente anexa somente ao próprio pedido aberto; quarta imagem, assinatura inválida e excesso de 512 KB são bloqueados;
 - após o booking, prestador não contratado, parceiro e conexão sem contexto retornam zero imagens do pedido;
+- anexo da conversa é listado e baixado pelos dois membros; parceiro, operação, não membro e conexão sem contexto recebem zero linhas;
+- arquivo com assinatura adulterada, MIME fora da allowlist ou mais de 512 KB é rejeitado antes da persistência;
 - cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
 - somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
 - evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;

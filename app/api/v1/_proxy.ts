@@ -40,6 +40,7 @@ export async function proxyDemoBinaryRequest(
   body: ArrayBuffer,
   contentType: string,
   fileName: string,
+  extraHeaders: Record<string, string> = {},
 ) {
   const authorization = await authorize(path, request, role);
   if (authorization instanceof Response) return authorization;
@@ -47,6 +48,7 @@ export async function proxyDemoBinaryRequest(
   headers.set("content-type", contentType);
   headers.set("content-length", String(body.byteLength));
   headers.set("x-file-name", encodeURIComponent(fileName));
+  for (const [name, value] of Object.entries(extraHeaders)) headers.set(name, value);
   try {
     const response = await fetch(`${apiUrl()}${path}`, { method: request.method, headers, body, cache: "no-store" });
     return new Response(await response.text(), {

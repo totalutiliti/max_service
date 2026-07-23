@@ -28,6 +28,7 @@ erDiagram
   BOOKINGS ||--|| CONVERSATIONS : possui
   CONVERSATIONS ||--o{ CONVERSATION_MEMBERS : autoriza
   CONVERSATIONS ||--o{ MESSAGES : contém
+  MESSAGES ||--o| MESSAGE_ATTACHMENTS : anexa
   BOOKINGS ||--o{ SERVICE_REVIEWS : avalia
   USERS ||--o{ SERVICE_REVIEWS : escreve
   USERS ||--o| PARTNER_REFERRAL_LINKS : possui
@@ -45,4 +46,4 @@ erDiagram
   USERS ||--o{ AUDIT_EVENTS : atua
 ```
 
-O núcleo transacional demonstrável está materializado em migrations versionadas. `PROVIDER_DOCUMENT_FILES` e `SERVICE_REQUEST_ATTACHMENTS` representam metadados; os bytes residem em object storage privado. `DEMO_SESSIONS` valida o ciclo local de sessão, não representa uma identidade pública de produção. O financeiro ativo é exclusivamente sandbox; PSP, custódia e movimentação real permanecem ausentes.
+O núcleo transacional demonstrável está materializado em migrations versionadas. `PROVIDER_DOCUMENT_FILES`, `SERVICE_REQUEST_ATTACHMENTS` e `MESSAGE_ATTACHMENTS` representam metadados; os bytes residem em object storage privado. `DEMO_SESSIONS` valida o ciclo local de sessão, não representa uma identidade pública de produção. O financeiro ativo é exclusivamente sandbox; PSP, custódia e movimentação real permanecem ausentes.

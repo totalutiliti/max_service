@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
+import { normalizeReportDays, percentage } from "./reporting.js";
 
 const caseSelect = `
   SELECT
@@ -101,6 +102,7 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "marketing_campaign.created": { category: "growth", title: "Campanha criada", detail: "Nova regra promocional publicada pela Operação." },
   "marketing_campaign.status_changed": { category: "growth", title: "Campanha atualizada", detail: "Disponibilidade da campanha alterada com justificativa." },
   "marketing_campaign.reserved": { category: "growth", title: "Cupom reservado", detail: "Benefício promocional vinculado a um pedido." },
+  "operation_report.generated": { category: "operation", title: "Relatório consolidado", detail: "Indicadores agregados consultados pela Operação." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -122,6 +124,7 @@ const auditEntityPrefix: Record<string, string> = {
   partner_support_attachment: "AA",
   marketing_campaign: "CP",
   campaign_reservation: "CR",
+  operation_report: "RP",
 };
 
 @Injectable()
@@ -515,6 +518,277 @@ export class OperationsService {
         });
       }
       return updated.rows[0];
+    });
+  }
+
+  async reports(actor: Actor, rawDays?: string) {
+    this.ensureOperation(actor);
+    const days = normalizeReportDays(rawDays);
+    const from = new Date();
+    from.setUTCHours(0, 0, 0, 0);
+    from.setUTCDate(from.getUTCDate() - (days - 1));
+    return this.database.withActor(actor, async (client) => {
+      const funnelResult = await client.query<{
+        requestCount: number;
+        proposedRequestCount: number;
+        bookingCount: number;
+        completedCount: number;
+        cancelledCount: number;
+        proposalCount: number;
+        averageFirstProposalMinutes: number;
+      }>(`
+        WITH cohort AS (
+          SELECT request.id, request.created_at
+          FROM service_requests request
+          WHERE request.created_at >= $1
+        )
+        SELECT
+          count(*)::int AS "requestCount",
+          count(*) FILTER (WHERE first_proposal.created_at IS NOT NULL)::int AS "proposedRequestCount",
+          count(*) FILTER (WHERE booking.id IS NOT NULL)::int AS "bookingCount",
+          count(*) FILTER (WHERE booking.status = 'completed')::int AS "completedCount",
+          count(*) FILTER (WHERE booking.status = 'cancelled')::int AS "cancelledCount",
+          COALESCE(sum(proposal_totals.total), 0)::int AS "proposalCount",
+          COALESCE(round(avg(
+            extract(epoch FROM (first_proposal.created_at - cohort.created_at)) / 60
+          ) FILTER (WHERE first_proposal.created_at IS NOT NULL)), 0)::int AS "averageFirstProposalMinutes"
+        FROM cohort
+        LEFT JOIN LATERAL (
+          SELECT min(proposal.created_at) AS created_at
+          FROM proposals proposal
+          WHERE proposal.request_id = cohort.id
+        ) first_proposal ON true
+        LEFT JOIN LATERAL (
+          SELECT count(*)::int AS total
+          FROM proposals proposal
+          WHERE proposal.request_id = cohort.id
+        ) proposal_totals ON true
+        LEFT JOIN bookings booking ON booking.request_id = cohort.id
+      `, [from]);
+      const funnel = funnelResult.rows[0];
+
+      const financialResult = await client.query<{
+        intentCount: number;
+        listAmountCents: number;
+        discountAmountCents: number;
+        netVolumeCents: number;
+        settledAmountCents: number;
+        refundedAmountCents: number;
+        platformFeeCents: number;
+        expectedLedgerCents: number;
+        ledgerNetCents: number;
+        unreconciledCount: number;
+        staleAuthorizedCount: number;
+        generatedAt: string;
+      }>(`
+        SELECT
+          count(*) FILTER (WHERE intent.created_at >= $1)::int AS "intentCount",
+          COALESCE(sum(intent.list_amount_cents) FILTER (WHERE intent.created_at >= $1), 0)::int AS "listAmountCents",
+          COALESCE(sum(intent.discount_amount_cents) FILTER (WHERE intent.created_at >= $1), 0)::int AS "discountAmountCents",
+          COALESCE(sum(intent.gross_amount_cents) FILTER (WHERE intent.created_at >= $1), 0)::int AS "netVolumeCents",
+          COALESCE(sum(intent.gross_amount_cents) FILTER (
+            WHERE intent.created_at >= $1 AND intent.status = 'sandbox_settled'
+          ), 0)::int AS "settledAmountCents",
+          COALESCE(sum(intent.gross_amount_cents) FILTER (
+            WHERE intent.created_at >= $1 AND intent.status = 'sandbox_refunded'
+          ), 0)::int AS "refundedAmountCents",
+          COALESCE((
+            SELECT sum(allocation.amount_cents)
+            FROM payment_allocations allocation
+            JOIN payment_intents period_intent ON period_intent.id = allocation.payment_intent_id
+            WHERE allocation.entry_type = 'platform_fee' AND period_intent.created_at >= $1
+          ), 0)::int AS "platformFeeCents",
+          COALESCE(sum(intent.gross_amount_cents) FILTER (WHERE intent.status = 'sandbox_settled'), 0)::int AS "expectedLedgerCents",
+          COALESCE((
+            SELECT sum(CASE ledger.direction WHEN 'credit' THEN ledger.amount_cents ELSE -ledger.amount_cents END)
+            FROM financial_ledger_entries ledger
+          ), 0)::int AS "ledgerNetCents",
+          count(*) FILTER (
+            WHERE intent.status <> 'sandbox_authorized' AND intent.reconciled_at IS NULL
+          )::int AS "unreconciledCount",
+          count(*) FILTER (
+            WHERE intent.status = 'sandbox_authorized' AND intent.created_at < now() - interval '7 days'
+          )::int AS "staleAuthorizedCount",
+          now() AS "generatedAt"
+        FROM payment_intents intent
+      `, [from]);
+      const financial = financialResult.rows[0];
+
+      const growthResult = await client.query<{
+        referralCount: number;
+        approvedReferralCount: number;
+        activatedReferralCount: number;
+        campaignRedemptionCount: number;
+        campaignDiscountCents: number;
+      }>(`
+        SELECT
+          (SELECT count(*)::int FROM partner_referrals referral WHERE referral.created_at >= $1) AS "referralCount",
+          (SELECT count(*)::int FROM partner_referrals referral
+            WHERE referral.created_at >= $1 AND referral.status IN ('approved', 'active')) AS "approvedReferralCount",
+          (SELECT count(*)::int FROM partner_referrals referral
+            WHERE referral.activated_at >= $1) AS "activatedReferralCount",
+          (SELECT count(*)::int FROM campaign_reservations reservation
+            WHERE reservation.status = 'redeemed' AND reservation.redeemed_at >= $1) AS "campaignRedemptionCount",
+          COALESCE((SELECT sum(reservation.discount_amount_cents)::int FROM campaign_reservations reservation
+            WHERE reservation.status = 'redeemed' AND reservation.redeemed_at >= $1), 0) AS "campaignDiscountCents"
+      `, [from]);
+
+      const operationsResult = await client.query<{
+        cancellationCaseCount: number;
+        cancellationResolvedCount: number;
+        partnerCaseCount: number;
+        partnerResolvedCount: number;
+        overduePartnerCaseCount: number;
+        verificationSubmittedCount: number;
+        verificationApprovedCount: number;
+        verificationPendingCount: number;
+      }>(`
+        SELECT
+          (SELECT count(*)::int FROM support_cases support WHERE support.created_at >= $1) AS "cancellationCaseCount",
+          (SELECT count(*)::int FROM support_cases support WHERE support.resolved_at >= $1) AS "cancellationResolvedCount",
+          (SELECT count(*)::int FROM partner_support_cases support WHERE support.created_at >= $1) AS "partnerCaseCount",
+          (SELECT count(*)::int FROM partner_support_cases support WHERE support.resolved_at >= $1) AS "partnerResolvedCount",
+          (SELECT count(*)::int FROM partner_support_cases support
+            WHERE support.status <> 'resolved'
+              AND (
+                (support.first_responded_at IS NULL AND support.first_response_due_at < now())
+                OR support.resolution_due_at < now()
+              )) AS "overduePartnerCaseCount",
+          (SELECT count(*)::int FROM provider_verifications verification WHERE verification.submitted_at >= $1) AS "verificationSubmittedCount",
+          (SELECT count(*)::int FROM provider_verifications verification
+            WHERE verification.status = 'approved' AND verification.decided_at >= $1) AS "verificationApprovedCount",
+          (SELECT count(*)::int FROM provider_verifications verification
+            WHERE verification.status IN ('submitted', 'in_review')) AS "verificationPendingCount"
+      `, [from]);
+
+      const categoriesResult = await client.query<{
+        id: string;
+        slug: string;
+        name: string;
+        icon: string;
+        requestCount: number;
+        proposedRequestCount: number;
+        bookingCount: number;
+        completedCount: number;
+        averageProposalCents: number;
+        netVolumeCents: number;
+      }>(`
+        SELECT
+          category.id,
+          category.slug,
+          category.name,
+          category.icon,
+          (SELECT count(*)::int FROM service_requests request
+            WHERE request.category_id = category.id AND request.created_at >= $1) AS "requestCount",
+          (SELECT count(DISTINCT request.id)::int
+            FROM service_requests request
+            JOIN proposals proposal ON proposal.request_id = request.id
+            WHERE request.category_id = category.id AND request.created_at >= $1) AS "proposedRequestCount",
+          (SELECT count(*)::int
+            FROM bookings booking
+            JOIN service_requests request ON request.id = booking.request_id
+            WHERE request.category_id = category.id AND request.created_at >= $1) AS "bookingCount",
+          (SELECT count(*)::int
+            FROM bookings booking
+            JOIN service_requests request ON request.id = booking.request_id
+            WHERE request.category_id = category.id
+              AND request.created_at >= $1
+              AND booking.status = 'completed') AS "completedCount",
+          COALESCE((SELECT round(avg(proposal.amount_cents))::int
+            FROM proposals proposal
+            JOIN service_requests request ON request.id = proposal.request_id
+            WHERE request.category_id = category.id AND request.created_at >= $1), 0) AS "averageProposalCents",
+          COALESCE((SELECT sum(intent.gross_amount_cents)::int
+            FROM payment_intents intent
+            JOIN bookings booking ON booking.id = intent.booking_id
+            JOIN service_requests request ON request.id = booking.request_id
+            WHERE request.category_id = category.id AND request.created_at >= $1), 0) AS "netVolumeCents"
+        FROM service_categories category
+        ORDER BY "requestCount" DESC, category.sort_order, category.name
+      `, [from]);
+
+      const bucketStep = days === 90 ? "7 days" : "1 day";
+      const timelineResult = await client.query<{
+        bucketStart: string;
+        requestCount: number;
+        bookingCount: number;
+        netVolumeCents: number;
+      }>(`
+        WITH buckets AS (
+          SELECT
+            bucket_start,
+            bucket_start + $2::interval AS bucket_end
+          FROM generate_series(
+            date_trunc('day', $1::timestamptz),
+            date_trunc('day', now()),
+            $2::interval
+          ) bucket_start
+        )
+        SELECT
+          bucket.bucket_start AS "bucketStart",
+          (SELECT count(*)::int FROM service_requests request
+            WHERE request.created_at >= bucket.bucket_start AND request.created_at < bucket.bucket_end) AS "requestCount",
+          (SELECT count(*)::int FROM bookings booking
+            WHERE booking.created_at >= bucket.bucket_start AND booking.created_at < bucket.bucket_end) AS "bookingCount",
+          COALESCE((SELECT sum(intent.gross_amount_cents)::int FROM payment_intents intent
+            WHERE intent.created_at >= bucket.bucket_start AND intent.created_at < bucket.bucket_end), 0) AS "netVolumeCents"
+        FROM buckets bucket
+        ORDER BY bucket.bucket_start
+      `, [from, bucketStep]);
+
+      const requestCount = funnel.requestCount;
+      const proposedRequestCount = funnel.proposedRequestCount;
+      const bookingCount = funnel.bookingCount;
+      const expectedLedgerCents = financial.expectedLedgerCents;
+      const ledgerNetCents = financial.ledgerNetCents;
+      const reportId = randomUUID();
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'operation_report.generated', 'operation_report', $3, $4::jsonb)",
+        [actor.id, actor.role, reportId, JSON.stringify({
+          days,
+          from: from.toISOString(),
+          requestCount,
+          bookingCount,
+          intentCount: financial.intentCount,
+        })],
+      );
+      return {
+        period: {
+          days,
+          from: from.toISOString(),
+          to: financial.generatedAt,
+          bucket: days === 90 ? "week" : "day",
+        },
+        funnel: {
+          ...funnel,
+          proposalCoverageRate: percentage(proposedRequestCount, requestCount),
+          bookingConversionRate: percentage(bookingCount, requestCount),
+          completionRate: percentage(funnel.completedCount, bookingCount),
+          averageProposalsPerRequest: requestCount > 0
+            ? Math.round((funnel.proposalCount / requestCount) * 100) / 100
+            : 0,
+        },
+        financial: {
+          ...financial,
+          discountRate: percentage(financial.discountAmountCents, financial.listAmountCents),
+          reconciliationDifferenceCents: ledgerNetCents - expectedLedgerCents,
+          reconciled: ledgerNetCents === expectedLedgerCents && financial.unreconciledCount === 0,
+        },
+        growth: {
+          ...growthResult.rows[0],
+          referralApprovalRate: percentage(
+            growthResult.rows[0].approvedReferralCount,
+            growthResult.rows[0].referralCount,
+          ),
+        },
+        operations: operationsResult.rows[0],
+        categories: categoriesResult.rows.map((category) => ({
+          ...category,
+          proposalCoverageRate: percentage(category.proposedRequestCount, category.requestCount),
+          bookingConversionRate: percentage(category.bookingCount, category.requestCount),
+        })),
+        timeline: timelineResult.rows,
+      };
     });
   }
 

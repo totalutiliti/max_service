@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Query, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
 import {
   AddSupportCaseNoteDto,
@@ -26,6 +26,15 @@ export class OperationsController {
     @Headers("x-demo-actor-id") id: string | undefined,
   ) {
     return this.operations.activity(actorFromHeaders(role, id));
+  }
+
+  @Get("reports")
+  async reports(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Query("days") days: string | undefined,
+  ) {
+    return this.operations.reports(actorFromHeaders(role, id), days);
   }
 
   @Get("categories")

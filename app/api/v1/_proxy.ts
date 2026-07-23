@@ -7,7 +7,7 @@ export async function proxyDemoRequest(
   payload?: unknown,
   extraHeaders: Record<string, string> = {},
 ) {
-  const authorization = await authorize(path, request, role);
+  const authorization = await authorize(path.split("?", 1)[0] ?? path, request, role);
   if (authorization instanceof Response) return authorization;
   const headers = authorization;
   for (const [name, value] of Object.entries(extraHeaders)) headers.set(name, value);
@@ -49,7 +49,7 @@ export async function proxyDemoBinaryRequest(
   fileName: string,
   extraHeaders: Record<string, string> = {},
 ) {
-  const authorization = await authorize(path, request, role);
+  const authorization = await authorize(path.split("?", 1)[0] ?? path, request, role);
   if (authorization instanceof Response) return authorization;
   const headers = authorization;
   headers.set("content-type", contentType);
@@ -68,7 +68,7 @@ export async function proxyDemoBinaryRequest(
 }
 
 export async function proxyDemoDownloadRequest(path: string, request: Request, role: DemoRole) {
-  const authorization = await authorize(path, request, role);
+  const authorization = await authorize(path.split("?", 1)[0] ?? path, request, role);
   if (authorization instanceof Response) return authorization;
   try {
     const response = await fetch(`${apiUrl()}${path}`, { method: "GET", headers: authorization, cache: "no-store" });

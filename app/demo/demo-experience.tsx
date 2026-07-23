@@ -342,6 +342,80 @@ interface OperationActivityData {
   events: OperationActivityEvent[];
 }
 
+type ReportPeriodDays = 7 | 30 | 90;
+
+interface OperationReportData {
+  period: { days: ReportPeriodDays; from: string; to: string; bucket: "day" | "week" };
+  funnel: {
+    requestCount: number;
+    proposedRequestCount: number;
+    bookingCount: number;
+    completedCount: number;
+    cancelledCount: number;
+    proposalCount: number;
+    averageFirstProposalMinutes: number;
+    proposalCoverageRate: number;
+    bookingConversionRate: number;
+    completionRate: number;
+    averageProposalsPerRequest: number;
+  };
+  financial: {
+    intentCount: number;
+    listAmountCents: number;
+    discountAmountCents: number;
+    netVolumeCents: number;
+    settledAmountCents: number;
+    refundedAmountCents: number;
+    platformFeeCents: number;
+    expectedLedgerCents: number;
+    ledgerNetCents: number;
+    unreconciledCount: number;
+    staleAuthorizedCount: number;
+    generatedAt: string;
+    discountRate: number;
+    reconciliationDifferenceCents: number;
+    reconciled: boolean;
+  };
+  growth: {
+    referralCount: number;
+    approvedReferralCount: number;
+    activatedReferralCount: number;
+    campaignRedemptionCount: number;
+    campaignDiscountCents: number;
+    referralApprovalRate: number;
+  };
+  operations: {
+    cancellationCaseCount: number;
+    cancellationResolvedCount: number;
+    partnerCaseCount: number;
+    partnerResolvedCount: number;
+    overduePartnerCaseCount: number;
+    verificationSubmittedCount: number;
+    verificationApprovedCount: number;
+    verificationPendingCount: number;
+  };
+  categories: Array<{
+    id: string;
+    slug: string;
+    name: string;
+    icon: string;
+    requestCount: number;
+    proposedRequestCount: number;
+    bookingCount: number;
+    completedCount: number;
+    averageProposalCents: number;
+    netVolumeCents: number;
+    proposalCoverageRate: number;
+    bookingConversionRate: number;
+  }>;
+  timeline: Array<{
+    bucketStart: string;
+    requestCount: number;
+    bookingCount: number;
+    netVolumeCents: number;
+  }>;
+}
+
 type CatalogAction = "activate" | "deactivate" | "move_up" | "move_down";
 
 interface OperationCatalogCategory extends ServiceCategory {
@@ -1556,6 +1630,110 @@ function ReferralInviteDialog({
   return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog referral-invite-dialog" role="dialog" aria-modal="true" aria-labelledby="referral-invite-title"><button ref={closeRef} className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>+</span><div><p className="dialog-kicker">NOVA INDICAÇÃO</p><h2 id="referral-invite-title">Registre um profissional.</h2><p>O cadastro entrará como convidado e ficará vinculado ao seu código.</p></div></header><form onSubmit={submit}><label className="field"><span>Nome do profissional</span><input minLength={3} maxLength={120} value={name} onChange={(event) => setName(event.target.value)} placeholder="Nome completo" required /></label><label className="field"><span>E-mail</span><input type="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="profissional@exemplo.com" required /></label><label className="field"><span>Categoria principal</span><select value={categorySlug} onChange={(event) => setCategorySlug(event.target.value)} disabled={categories.length === 0} required>{categories.map((category) => <option key={category.id} value={category.slug}>{category.icon} {category.name}</option>)}</select></label><div className="commercial-preview"><span>i</span><p><strong>Registro sem disparo automático</strong>A indicação será persistida, mas nenhum e-mail ou mensagem externa será enviado nesta demonstração.</p></div><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || !categorySlug || name.trim().length < 3 || !email.includes("@")}>{saving ? "Registrando..." : "Registrar indicação →"}</button></footer></form></section></div>;
 }
 
+function OperationReportsPanel({ notify }: { notify: (message: string) => void }) {
+  const [period, setPeriod] = useState<ReportPeriodDays>(30);
+  const [data, setData] = useState<OperationReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const money = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+  const compactMoney = (cents: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 }).format(cents / 100);
+  const date = (value: string) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(new Date(value));
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/v1/operation/reports?days=${period}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationReportData & { error?: string; message?: string };
+        if (!response.ok || !payload.period || !payload.funnel) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar o relatório operacional.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar o relatório operacional.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, period, refresh]);
+
+  const exportCsv = () => {
+    if (!data) return;
+    const cell = (value: string | number) => `"${String(value).replaceAll("\"", "\"\"")}"`;
+    const rows = [
+      ["Categoria", "Pedidos", "Com proposta", "Agendados", "Concluídos", "Cobertura (%)", "Conversão (%)", "Proposta média (centavos)", "Volume líquido (centavos)"],
+      ...data.categories.map((category) => [
+        category.name,
+        category.requestCount,
+        category.proposedRequestCount,
+        category.bookingCount,
+        category.completedCount,
+        category.proposalCoverageRate,
+        category.bookingConversionRate,
+        category.averageProposalCents,
+        category.netVolumeCents,
+      ]),
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map(cell).join(";")).join("\r\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `max-service-relatorio-${data.period.days}d.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    notify("Relatório agregado exportado sem dados pessoais.");
+  };
+
+  const maximumTimelineRequests = Math.max(1, ...(data?.timeline.map((item) => item.requestCount) ?? [1]));
+  const funnelSteps = data ? [
+    { label: "Pedidos", value: data.funnel.requestCount, rate: 100 },
+    { label: "Com proposta", value: data.funnel.proposedRequestCount, rate: data.funnel.proposalCoverageRate },
+    { label: "Agendados", value: data.funnel.bookingCount, rate: data.funnel.bookingConversionRate },
+    { label: "Concluídos", value: data.funnel.completedCount, rate: data.funnel.requestCount ? Math.round((data.funnel.completedCount / data.funnel.requestCount) * 10_000) / 100 : 0 },
+  ] : [];
+
+  return (
+    <section className="dashboard-section operation-reports">
+      <header className="report-header">
+        <div><small>INTELIGÊNCIA DO PILOTO</small><h2>Relatório operacional</h2><p>Funil, categorias, aquisição e reconciliação em uma visão sem dados pessoais.</p></div>
+        <div className="report-actions"><div className="period-switch" aria-label="Período do relatório">{([7, 30, 90] as ReportPeriodDays[]).map((days) => <button key={days} className={period === days ? "active" : ""} onClick={() => { if (period !== days) { setLoading(true); setPeriod(days); } }}>{days} dias</button>)}</div><button className="secondary-action" onClick={exportCsv} disabled={!data || loading}>Exportar CSV ↓</button><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }} disabled={loading}>Atualizar ↻</button></div>
+      </header>
+      {loading && !data && <div className="data-state">Consolidando indicadores...</div>}
+      {data && <>
+        <div className="report-scorecards">
+          <article><small>CONVERSÃO EM AGENDAMENTO</small><strong>{data.funnel.bookingConversionRate.toLocaleString("pt-BR")}%</strong><span>{data.funnel.bookingCount} de {data.funnel.requestCount} pedidos</span></article>
+          <article><small>TEMPO ATÉ 1ª PROPOSTA</small><strong>{data.funnel.averageFirstProposalMinutes} min</strong><span>{data.funnel.averageProposalsPerRequest.toLocaleString("pt-BR")} proposta(s) por pedido</span></article>
+          <article><small>VOLUME LÍQUIDO</small><strong>{money(data.financial.netVolumeCents)}</strong><span>{money(data.financial.discountAmountCents)} concedidos em cupons</span></article>
+          <article className={data.financial.reconciled ? "healthy" : "attention"}><small>RECONCILIAÇÃO</small><strong>{data.financial.reconciled ? "Conciliada" : "Atenção"}</strong><span>{data.financial.unreconciledCount} pendência(s) · diferença {money(data.financial.reconciliationDifferenceCents)}</span></article>
+        </div>
+        <div className="report-grid">
+          <section className="report-funnel">
+            <header><div><small>FUNIL DO MARKETPLACE</small><h3>Da necessidade ao serviço concluído</h3></div><span>{date(data.period.from)} — {date(data.period.to)}</span></header>
+            <div>{funnelSteps.map((step, index) => <article key={step.label}><div><span>{String(index + 1).padStart(2, "0")}</span><strong>{step.label}</strong><b>{step.value}</b></div><div className="funnel-track"><i style={{ width: `${Math.max(step.value ? 5 : 0, step.rate)}%` }} /></div><small>{index === 0 ? "base do período" : `${step.rate.toLocaleString("pt-BR")}% dos pedidos`}</small></article>)}</div>
+            <footer><span>{data.funnel.cancelledCount} cancelamento(s)</span><span>{data.funnel.completionRate.toLocaleString("pt-BR")}% dos agendados concluídos</span></footer>
+          </section>
+          <section className="report-timeline">
+            <header><div><small>RITMO DE AQUISIÇÃO</small><h3>Pedidos por {data.period.bucket === "week" ? "semana" : "dia"}</h3></div><span className="report-legend"><i /> pedidos <i /> agendamentos</span></header>
+            <div className="report-bars">{data.timeline.map((item) => <article key={item.bucketStart} title={`${date(item.bucketStart)}: ${item.requestCount} pedido(s), ${item.bookingCount} agendamento(s), ${money(item.netVolumeCents)}`}><div><i style={{ height: `${Math.max(item.requestCount ? 8 : 2, (item.requestCount / maximumTimelineRequests) * 100)}%` }} /><b style={{ height: `${Math.max(item.bookingCount ? 6 : 1, (item.bookingCount / maximumTimelineRequests) * 100)}%` }} /></div><span>{data.timeline.length <= 10 || item === data.timeline[0] || item === data.timeline[data.timeline.length - 1] ? date(item.bucketStart) : ""}</span></article>)}</div>
+            <footer><span>{data.growth.referralCount} indicação(ões) · {data.growth.referralApprovalRate.toLocaleString("pt-BR")}% aprovadas</span><strong>{data.growth.campaignRedemptionCount} cupom(ns) convertido(s)</strong></footer>
+          </section>
+        </div>
+        <section className="report-finance">
+          <div><small>SAÚDE FINANCEIRA · SANDBOX</small><h3>{compactMoney(data.financial.netVolumeCents)} processados no período</h3><p>Lista {money(data.financial.listAmountCents)} · desconto médio {data.financial.discountRate.toLocaleString("pt-BR")}% · taxa Max prevista {money(data.financial.platformFeeCents)}</p></div>
+          <div className="report-finance-values"><span><small>RECONHECIDO</small><strong>{money(data.financial.settledAmountCents)}</strong></span><span><small>ESTORNADO</small><strong>{money(data.financial.refundedAmountCents)}</strong></span><span><small>AUTORIZAÇÕES &gt; 7 DIAS</small><strong>{data.financial.staleAuthorizedCount}</strong></span></div>
+        </section>
+        <section className="report-categories">
+          <header><div><small>DESEMPENHO POR CATEGORIA</small><h3>Onde a demanda encontra oferta</h3></div><span>{data.categories.length} categoria(s) monitorada(s)</span></header>
+          <div className="report-category-head"><span>Categoria</span><span>Pedidos</span><span>Cobertura</span><span>Conversão</span><span>Ticket proposto</span><span>Volume líquido</span></div>
+          {data.categories.map((category) => <article key={category.id}><div><span>{category.icon}</span><strong>{category.name}</strong><small>{category.slug}</small></div><strong>{category.requestCount}</strong><span>{category.proposalCoverageRate.toLocaleString("pt-BR")}%</span><span>{category.bookingConversionRate.toLocaleString("pt-BR")}%</span><span>{money(category.averageProposalCents)}</span><span>{money(category.netVolumeCents)}</span></article>)}
+        </section>
+        <footer className="report-footnote"><span>i</span><p><strong>Leitura de gestão:</strong> indicadores são agregados no servidor com acesso exclusivo da Operação. O CSV contém somente categorias e métricas, sem nomes, contatos, descrições ou identificadores internos.</p><small>Gerado em {new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(data.financial.generatedAt))}</small></footer>
+      </>}
+    </section>
+  );
+}
+
 function OperationsView({ notify }: { notify: (message: string) => void }) {
   const [cases, setCases] = useState<SupportCase[]>([]);
   const [verifications, setVerifications] = useState<ProviderVerification[]>([]);
@@ -1608,6 +1786,7 @@ function OperationsView({ notify }: { notify: (message: string) => void }) {
     <>
       <DashboardHeader role="operacao" eyebrow="Operação e moderação" title="O que precisa de atenção hoje?" />
       <div className="metric-grid"><Metric label="Perfis na fila" value={loading ? "…" : String(profilesInReview.length)} detail="Enviados ou em análise" tone={profilesInReview.length > 0 ? "warning" : undefined} /><Metric label="Indicações na fila" value={loading ? "…" : String(referralsInReview.length)} detail="Convites aguardando decisão" tone={referralsInReview.length > 0 ? "warning" : undefined} /><Metric label="Itens com atenção" value={loading ? "…" : String(documentsRequiringAttention)} detail="Pendentes ou para correção" /><Metric label="Ocorrências abertas" value={loading ? "…" : String(openCases.length)} detail={`${highPriority} em alta prioridade`} tone={highPriority > 0 ? "warning" : undefined} /></div>
+      <OperationReportsPanel notify={notify} />
       <section className="dashboard-section operations-table referral-review-table"><div className="dashboard-section-title"><div><small>AQUISIÇÃO DE PROFISSIONAIS</small><h2>Indicações de parceiros</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Referência</span><span>Profissional</span><span>Parceiro</span><span>Origem</span><span>Status</span></div>{loading && <div className="data-state">Carregando indicações...</div>}{!loading && referrals.length === 0 && <div className="data-state"><strong>Nenhuma indicação encontrada.</strong><span>Cadastros vindos dos links e QR Codes aparecerão nesta fila.</span></div>}{referrals.map((item) => <OperationReferralRow key={item.id} item={item} onOpen={() => setSelectedReferralId(item.id)} />)}</section>
       <section className="dashboard-section operations-table verification-table"><div className="dashboard-section-title"><div><small>MODERAÇÃO DE CADASTROS</small><h2>Verificação de profissionais</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Referência</span><span>Profissional</span><span>Documentos</span><span>Prioridade</span><span>Status</span></div>{loading && <div className="data-state">Carregando verificações...</div>}{!loading && verifications.length === 0 && <div className="data-state"><strong>Nenhuma verificação encontrada.</strong><span>Novos cadastros enviados aparecerão automaticamente nesta fila.</span></div>}{verifications.map((item) => <VerificationRow key={item.id} item={item} onOpen={() => setSelectedVerificationId(item.id)} />)}</section>
       <section className="dashboard-section operations-table"><div className="dashboard-section-title"><div><small>FILA PRIORITÁRIA</small><h2>Cancelamentos e ocorrências</h2></div><button onClick={() => setRefresh((value) => value + 1)}>Atualizar fila ↻</button></div><div className="table-head"><span>Tipo</span><span>Referência</span><span>Motivo</span><span>Espera</span><span>Status</span></div>{loading && <div className="data-state">Carregando ocorrências...</div>}{!loading && cases.length === 0 && <div className="data-state"><strong>Nenhuma ocorrência aberta.</strong><span>Cancelamentos registrados aparecerão automaticamente nesta fila.</span></div>}{cases.map((item) => <OperationRow key={item.id} item={item} wait={waiting(item.createdAt)} onOpen={() => setSelectedCaseId(item.id)} />)}</section>

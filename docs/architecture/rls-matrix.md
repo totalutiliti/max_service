@@ -31,6 +31,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | intents financeiros sandbox | próprios | próprios | somente rede atribuída | visão completa | auditado |
 | alocações e ledger | cashback próprio | recebível próprio | comissão própria | visão completa e conciliação | auditado |
 | auditoria | nenhum | nenhum | nenhum | trilha completa por projeção segura e somente leitura | explícito e somente leitura |
+| relatórios agregados | nenhum | nenhum | nenhum | períodos fechados e exportação sem PII | auditado |
 
 ## Contexto seguro de conexão
 
@@ -78,6 +79,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
 - somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
 - atividade operacional sem sessão recebe `401`; cliente, profissional e parceiro recebem `403` no BFF e zero linhas de auditoria pelo RLS;
+- relatório operacional retorna apenas agregados para a Operação; períodos inválidos voltam ao padrão seguro e a soma por categoria reconcilia com a coorte do funil;
 - a projeção da atividade não retorna `payload`, UUID interno da entidade, hashes, nomes de objeto ou metadados técnicos dos arquivos;
 - evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;
 - sem hash de token, sessões retornam zero linhas; usuário/papel incompatível é rejeitado no insert;

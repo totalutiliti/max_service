@@ -37,6 +37,16 @@ export class ManageServiceCategoryDto {
   note!: string;
 }
 
+export class ManageServiceRegionDto {
+  @IsIn(["activate", "deactivate"])
+  action!: "activate" | "deactivate";
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  note!: string;
+}
+
 export class UpdateOperationReportGoalsDto {
   @IsIn([7, 30, 90])
   periodDays!: 7 | 30 | 90;

@@ -1,12 +1,12 @@
 import {
   ArrayMinSize,
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   Max,
   MaxLength,
   Min,
@@ -14,20 +14,20 @@ import {
 } from "class-validator";
 
 export class CompleteOnboardingDto {
-  @IsString()
-  @MinLength(2)
-  @MaxLength(80)
-  city!: string;
-
-  @IsString()
-  @Matches(/^[A-Za-z]{2}$/)
-  state!: string;
+  @IsOptional()
+  @IsUUID("4")
+  regionId?: string;
 
   @IsOptional()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(80)
-  neighborhood?: string;
+  @IsUUID("4")
+  neighborhoodId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(5)
+  @IsUUID("4", { each: true })
+  serviceRegionIds?: string[];
 
   @IsOptional()
   @IsUUID()

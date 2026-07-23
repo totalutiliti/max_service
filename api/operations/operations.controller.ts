@@ -5,6 +5,7 @@ import {
   ChangePartnerReferralStatusDto,
   ChangeSupportCaseStatusDto,
   ManageServiceCategoryDto,
+  ManageServiceRegionDto,
   UpdateOperationReportGoalsDto,
 } from "./operations.dto.js";
 import { OperationsService } from "./operations.service.js";
@@ -58,6 +59,48 @@ export class OperationsController {
     @Headers("x-demo-actor-id") id: string | undefined,
   ) {
     return this.operations.categories(actorFromHeaders(role, id));
+  }
+
+  @Get("regions")
+  async regions(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.operations.regions(actorFromHeaders(role, id));
+  }
+
+  @Post("regions/:regionId/actions")
+  async manageRegion(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("regionId") regionId: string,
+    @Body() input: ManageServiceRegionDto,
+  ) {
+    return {
+      region: await this.operations.manageRegion(
+        actorFromHeaders(role, id),
+        regionId,
+        input.action,
+        input.note,
+      ),
+    };
+  }
+
+  @Post("region-neighborhoods/:neighborhoodId/actions")
+  async manageRegionNeighborhood(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("neighborhoodId") neighborhoodId: string,
+    @Body() input: ManageServiceRegionDto,
+  ) {
+    return {
+      neighborhood: await this.operations.manageRegionNeighborhood(
+        actorFromHeaders(role, id),
+        neighborhoodId,
+        input.action,
+        input.note,
+      ),
+    };
   }
 
   @Post("categories/:categoryId/actions")

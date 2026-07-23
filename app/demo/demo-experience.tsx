@@ -22,6 +22,15 @@ interface ServiceCategory {
   icon: string;
 }
 
+interface ServiceRegion {
+  id: string;
+  code: string;
+  name: string;
+  city: string;
+  state: string;
+  neighborhoods: Array<{ id: string; slug: string; name: string }>;
+}
+
 interface RequestAttachment {
   id: string;
   fileName: string;
@@ -34,6 +43,8 @@ interface RequestAttachment {
 interface PersistedRequest {
   id: string;
   publicCode: string;
+  regionId: string;
+  neighborhoodId: string;
   title: string;
   description: string;
   neighborhood: string;
@@ -484,6 +495,8 @@ interface OnboardingData {
   status: "pending" | "completed";
   profile: {
     profileType: "customer" | "provider";
+    regionId: string;
+    neighborhoodId: string | null;
     city: string;
     state: string;
     neighborhood: string | null;
@@ -515,6 +528,7 @@ interface OnboardingData {
     productResearch: boolean;
   };
   categories: Array<{ id: string; name: string; icon: string }>;
+  regions: Array<ServiceRegion & { selected: boolean }>;
   history: Array<{
     id: string;
     eventType: "completed" | "updated";
@@ -542,6 +556,50 @@ interface OperationCatalogCategory extends ServiceCategory {
 interface OperationCatalogData {
   metrics: { totalCount: number; activeCount: number; inactiveCount: number };
   categories: OperationCatalogCategory[];
+}
+
+type RegionAction = "activate" | "deactivate";
+
+interface OperationRegionNeighborhood {
+  id: string;
+  slug: string;
+  name: string;
+  active: boolean;
+  sortOrder: number;
+  version: number;
+  updatedAt: string;
+  requestCount: number;
+}
+
+interface OperationRegion {
+  id: string;
+  code: string;
+  name: string;
+  city: string;
+  state: string;
+  active: boolean;
+  sortOrder: number;
+  version: number;
+  updatedAt: string;
+  requestCount: number;
+  openRequestCount: number;
+  providerCount: number;
+  activeNeighborhoodCount: number;
+  latestEventType: string | null;
+  latestEventNote: string | null;
+  latestEventAt: string | null;
+  latestActorName: string | null;
+  neighborhoods: OperationRegionNeighborhood[];
+}
+
+interface OperationRegionData {
+  metrics: {
+    totalCount: number;
+    activeCount: number;
+    plannedCount: number;
+    activeNeighborhoodCount: number;
+  };
+  regions: OperationRegion[];
 }
 
 type CampaignDiscountType = "fixed" | "percentage";
@@ -1307,13 +1365,38 @@ function useServiceCategories(notify: (message: string) => void) {
   return { categories, loading };
 }
 
+function useServiceRegions(notify: (message: string) => void) {
+  const [regions, setRegions] = useState<ServiceRegion[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/regions", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as { regions?: ServiceRegion[]; error?: string; message?: string };
+        if (!response.ok || !payload.regions) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar as regiões do piloto.");
+        }
+        return payload.regions;
+      })
+      .then(setRegions)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar as regiões do piloto.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify]);
+  return { regions, loading };
+}
+
 function CustomerView({ notify }: { notify: (message: string) => void }) {
   const { categories, loading: categoriesLoading } = useServiceCategories(notify);
+  const { regions, loading: regionsLoading } = useServiceRegions(notify);
   const [requestOpen, setRequestOpen] = useState(false);
   const [initialCategorySlug, setInitialCategorySlug] = useState("");
   const openRequest = (categorySlug?: string) => {
-    if (categories.length === 0) {
-      notify(categoriesLoading ? "O catálogo ainda está carregando." : "Nenhuma categoria está disponível agora.");
+    if (categories.length === 0 || regions.length === 0) {
+      notify(categoriesLoading || regionsLoading ? "Catálogo e regiões ainda estão carregando." : "Não há cobertura disponível para um novo pedido.");
       return;
     }
     setInitialCategorySlug(categorySlug ?? categories[0].slug);
@@ -1322,7 +1405,7 @@ function CustomerView({ notify }: { notify: (message: string) => void }) {
   return (
     <>
       <DashboardHeader role="cliente" eyebrow="Quarta-feira, 22 de julho" title="Olá, Marina. O que vamos resolver?">
-        <button className="location-chip" onClick={() => notify("Localização atualizada: Sorocaba, SP.")}>⌖ Sorocaba, SP</button>
+        <button className="location-chip" onClick={() => notify(`${regions.length} região(ões) ativa(s) no piloto.`)}>⌖ {regions[0] ? `${regions[0].city}, ${regions[0].state}` : "Carregando cobertura"}</button>
       </DashboardHeader>
       <section className="dashboard-hero">
         <div><span className="small-label">NOVO PEDIDO</span><h2>Precisa de ajuda em casa?</h2><p>Conte o que precisa e receba propostas de profissionais disponíveis na sua região.</p><button className="button" onClick={() => openRequest()}>Pedir um serviço →</button></div>
@@ -1347,24 +1430,28 @@ function CustomerView({ notify }: { notify: (message: string) => void }) {
           <span className="help-icon">?</span><div><small>PRECISA DE AJUDA?</small><h2>A gente está por perto.</h2><p>Tire dúvidas sobre pedidos, propostas ou segurança.</p></div><button className="secondary-action" onClick={() => notify("Atendimento iniciado. Tempo estimado: 2 minutos.")}>Falar com o suporte</button>
         </section>
       </div>
-      {requestOpen && <RequestDialog categories={categories} initialCategorySlug={initialCategorySlug} onClose={() => setRequestOpen(false)} notify={notify} />}
+      {requestOpen && <RequestDialog categories={categories} regions={regions} initialCategorySlug={initialCategorySlug} onClose={() => setRequestOpen(false)} notify={notify} />}
     </>
   );
 }
 
 function RequestDialog({
   categories,
+  regions,
   initialCategorySlug,
   onClose,
   notify,
 }: {
   categories: ServiceCategory[];
+  regions: ServiceRegion[];
   initialCategorySlug: string;
   onClose: () => void;
   notify: (message: string) => void;
 }) {
   const [step, setStep] = useState<RequestStep>(1);
   const [categorySlug, setCategorySlug] = useState(initialCategorySlug || categories[0]?.slug || "");
+  const [regionId, setRegionId] = useState(regions[0]?.id ?? "");
+  const [neighborhoodId, setNeighborhoodId] = useState(regions[0]?.neighborhoods[0]?.id ?? "");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const [couponCode, setCouponCode] = useState("");
@@ -1373,6 +1460,15 @@ function RequestDialog({
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const selectedCategory = categories.find((category) => category.slug === categorySlug) ?? categories[0];
+  const selectedRegion = regions.find((region) => region.id === regionId) ?? regions[0];
+  const selectedNeighborhood = selectedRegion?.neighborhoods.find((neighborhood) => neighborhood.id === neighborhoodId)
+    ?? selectedRegion?.neighborhoods[0];
+
+  const changeRegion = (nextRegionId: string) => {
+    const nextRegion = regions.find((region) => region.id === nextRegionId);
+    setRegionId(nextRegionId);
+    setNeighborhoodId(nextRegion?.neighborhoods[0]?.id ?? "");
+  };
 
   useEffect(() => { closeRef.current?.focus(); }, []);
   useEffect(() => {
@@ -1429,9 +1525,8 @@ function RequestDialog({
           categorySlug,
           title: description.trim().slice(0, 100),
           description: description.trim(),
-          neighborhood: "Jardim Europa",
-          city: "Sorocaba",
-          state: "SP",
+          regionId: selectedRegion?.id,
+          neighborhoodId: selectedNeighborhood?.id,
           preferredWindow: "O quanto antes",
           couponCode: couponOffer?.code,
         }),
@@ -1469,9 +1564,9 @@ function RequestDialog({
         {step < 4 && <><p className="dialog-kicker">NOVO PEDIDO · ETAPA {step} DE 3</p><div className="dialog-progress"><span style={{ width: `${step * 33.33}%` }} /></div></>}
         {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map((category) => <button key={category.id} onClick={() => setCategorySlug(category.slug)} className={categorySlug === category.slug ? "selected" : ""} aria-pressed={categorySlug === category.slug}><span>{category.icon}</span>{category.name}<i aria-hidden="true">✓</i></button>)}</div></div>}
         {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><label className="upload-placeholder"><input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} /><span>＋</span><strong>Adicionar fotos sintéticas</strong><small>Opcional · até 3 JPEG/PNG de 512 KB</small></label>{photos.length > 0 && <ul className="request-photo-selection">{photos.map((photo) => <li key={`${photo.name}-${photo.size}`}><span>{photo.type === "image/png" ? "PNG" : "JPG"}</span><div><strong>{photo.name}</strong><small>{Math.ceil(photo.size / 1024)} KB · privado</small></div><button type="button" onClick={() => setPhotos((current) => current.filter((item) => item !== photo))} aria-label={`Remover ${photo.name}`}>×</button></li>)}</ul>}<p className="synthetic-file-note">Use apenas imagens sintéticas nesta demonstração. Os arquivos ficam privados e sem link público.</p></div>}
-        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Você poderá ajustar os detalhes com o profissional pelo chat.</p><label className="field"><span>Região</span><input value="Jardim Europa, Sorocaba - SP" readOnly /></label><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="coupon-box"><div><span>CUPOM PROMOCIONAL</span><small>Experimente BEMVINDO20</small></div><div className="coupon-input"><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase().slice(0, 32)); setCouponOffer(null); }} placeholder="DIGITE SEU CUPOM" /><button type="button" onClick={validateCoupon} disabled={couponChecking || couponCode.trim().length < 3}>{couponChecking ? "Validando..." : "Aplicar"}</button></div>{couponOffer && <p className="coupon-success"><strong>{couponOffer.code} aplicado</strong>{couponOffer.description} · válido para propostas a partir de {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(couponOffer.minAmountCents / 100)}.</p>}</div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
-        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Profissionais disponíveis na sua região poderão enviar propostas.</p><div className="success-summary"><span>{selectedCategory?.icon}</span><div><small>Categoria</small><strong>{selectedCategory?.name}</strong><small>Jardim Europa · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}{couponOffer ? ` · cupom ${couponOffer.code}` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving || !selectedCategory}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
-        {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={!selectedCategory || (step === 2 && description.trim().length < 10)}>Continuar →</button></footer>}
+        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Escolha uma área coberta. Você poderá ajustar os detalhes pelo chat.</p><div className="location-fields"><label className="field"><span>Região do piloto</span><select value={selectedRegion?.id ?? ""} onChange={(event) => changeRegion(event.target.value)}>{regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Bairro</span><select value={selectedNeighborhood?.id ?? ""} onChange={(event) => setNeighborhoodId(event.target.value)}>{selectedRegion?.neighborhoods.map((neighborhood) => <option key={neighborhood.id} value={neighborhood.id}>{neighborhood.name}</option>)}</select></label></div><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="coupon-box"><div><span>CUPOM PROMOCIONAL</span><small>Experimente BEMVINDO20</small></div><div className="coupon-input"><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase().slice(0, 32)); setCouponOffer(null); }} placeholder="DIGITE SEU CUPOM" /><button type="button" onClick={validateCoupon} disabled={couponChecking || couponCode.trim().length < 3}>{couponChecking ? "Validando..." : "Aplicar"}</button></div>{couponOffer && <p className="coupon-success"><strong>{couponOffer.code} aplicado</strong>{couponOffer.description} · válido para propostas a partir de {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(couponOffer.minAmountCents / 100)}.</p>}</div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
+        {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Somente profissionais com cobertura ativa poderão enviar propostas.</p><div className="success-summary"><span>{selectedCategory?.icon}</span><div><small>Categoria</small><strong>{selectedCategory?.name}</strong><small>{selectedNeighborhood?.name} · {selectedRegion?.name} · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}{couponOffer ? ` · cupom ${couponOffer.code}` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving || !selectedCategory || !selectedRegion || !selectedNeighborhood}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
+        {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={!selectedCategory || !selectedRegion || !selectedNeighborhood || (step === 2 && description.trim().length < 10)}>Continuar →</button></footer>}
       </section>
     </div>
   );
@@ -3223,6 +3318,153 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
   );
 }
 
+function RegionManagementPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationRegionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [pending, setPending] = useState<{
+    target: "region" | "neighborhood";
+    region: OperationRegion;
+    neighborhood?: OperationRegionNeighborhood;
+    action: RegionAction;
+  } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/regions", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationRegionData & { error?: string; message?: string };
+        if (!response.ok || !payload.regions || !payload.metrics) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a cobertura regional.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a cobertura regional.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const reload = () => {
+    setLoading(true);
+    setRefresh((value) => value + 1);
+  };
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+
+  return (
+    <section className="dashboard-section region-management">
+      <header>
+        <div><small>COBERTURA DO PILOTO</small><h2>Regiões e bairros elegíveis</h2><p>A oferta só recebe pedidos de áreas ativas vinculadas ao cadastro do profissional.</p></div>
+        <button className="secondary-action" onClick={reload} disabled={loading}>Atualizar ↻</button>
+      </header>
+      <div className="region-metrics">
+        <article><strong>{loading ? "…" : data?.metrics.activeCount ?? 0}</strong><span>regiões ativas</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.activeNeighborhoodCount ?? 0}</strong><span>bairros cobertos</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.plannedCount ?? 0}</strong><span>regiões planejadas</span></article>
+      </div>
+      <div className="region-list">
+        {loading && <div className="data-state">Carregando cobertura regional...</div>}
+        {!loading && data?.regions.map((region) => (
+          <article key={region.id} className={region.active ? "" : "inactive"}>
+            <header>
+              <span className="region-mark">{region.code}</span>
+              <div><strong>{region.name} · {region.state}</strong><small>Versão {region.version} · atualizado {formatted(region.updatedAt)}</small></div>
+              <div className="region-facts"><span><strong>{region.openRequestCount}</strong> em andamento</span><span><strong>{region.providerCount}</strong> profissionais</span><span><strong>{region.activeNeighborhoodCount}</strong> bairros</span></div>
+              <span className={`status-pill ${region.active ? "success" : "neutral"}`}>{region.active ? "Ativa" : "Planejada"}</span>
+              <button className={region.active ? "danger-action" : "primary-action"} onClick={() => setPending({ target: "region", region, action: region.active ? "deactivate" : "activate" })}>{region.active ? "Desativar região" : "Ativar região"}</button>
+            </header>
+            <div className="region-neighborhoods">
+              {region.neighborhoods.map((neighborhood) => (
+                <div key={neighborhood.id} className={neighborhood.active ? "" : "inactive"}>
+                  <span aria-hidden="true">{neighborhood.active ? "✓" : "○"}</span>
+                  <div><strong>{neighborhood.name}</strong><small>{neighborhood.requestCount} pedido(s) · versão {neighborhood.version}</small></div>
+                  <button onClick={() => setPending({ target: "neighborhood", region, neighborhood, action: neighborhood.active ? "deactivate" : "activate" })}>{neighborhood.active ? "Pausar" : "Ativar"}</button>
+                </div>
+              ))}
+            </div>
+            {region.latestEventAt && <footer><strong>Última decisão</strong><span>{region.latestEventNote}</span><small>{region.latestActorName} · {formatted(region.latestEventAt)}</small></footer>}
+          </article>
+        ))}
+      </div>
+      <footer className="region-guard"><span>i</span><p><strong>Proteção em duas camadas:</strong> a API deriva cidade e bairro dos identificadores ativos, e as políticas RLS impedem leitura e criação fora da cobertura. A última região e o último bairro ativos não podem ser desativados.</p></footer>
+      {pending && <RegionActionDialog pending={pending} onClose={() => setPending(null)} onSaved={() => { setPending(null); reload(); }} notify={notify} />}
+    </section>
+  );
+}
+
+function RegionActionDialog({
+  pending,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  pending: {
+    target: "region" | "neighborhood";
+    region: OperationRegion;
+    neighborhood?: OperationRegionNeighborhood;
+    action: RegionAction;
+  };
+  onClose: () => void;
+  onSaved: () => void;
+  notify: (message: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const subject = pending.neighborhood?.name ?? pending.region.name;
+  const activating = pending.action === "activate";
+  useEffect(() => { closeRef.current?.focus(); }, []);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/regions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          target: pending.target,
+          id: pending.neighborhood?.id ?? pending.region.id,
+          action: pending.action,
+          note: note.trim(),
+        }),
+      });
+      const payload = await response.json() as { region?: OperationRegion; neighborhood?: OperationRegionNeighborhood; error?: string; message?: string };
+      if (!response.ok || (!payload.region && !payload.neighborhood)) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a cobertura.");
+      }
+      notify(`${subject}: cobertura ${activating ? "ativada" : "desativada"} e auditada.`);
+      onSaved();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a cobertura.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog catalog-action-dialog" role="dialog" aria-modal="true" aria-labelledby="region-action-title">
+        <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
+        <header><span>⌖</span><div><p className="dialog-kicker">DECISÃO DE COBERTURA</p><h2 id="region-action-title">{activating ? "Ativar" : "Desativar"} {pending.target === "region" ? "região" : "bairro"}</h2><p>{subject} · {pending.region.state}</p></div></header>
+        <form onSubmit={submit}>
+          <p className="catalog-action-detail">{activating ? "A área passará a aceitar novos cadastros e pedidos elegíveis." : "Novos pedidos e oportunidades serão bloqueados; o histórico permanecerá disponível."}</p>
+          <label className="field"><span>Justificativa da mudança</span><textarea rows={4} minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explique o motivo e o impacto esperado..." required /><small>{note.length}/1000 caracteres · mínimo de 10</small></label>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Registrando..." : `${activating ? "Ativar" : "Desativar"} e auditar →`}</button></footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 const catalogActionCopy: Record<CatalogAction, { title: string; verb: string; detail: string }> = {
   activate: { title: "Ativar categoria", verb: "Ativar", detail: "A categoria voltará a aparecer em novos pedidos e indicações." },
   deactivate: { title: "Desativar categoria", verb: "Desativar", detail: "A categoria deixará de aceitar novos pedidos e indicações; o histórico será preservado." },
@@ -3563,7 +3805,7 @@ function OnboardingPanel({ role, notify }: { role: "cliente" | "prestador"; noti
     <section className="dashboard-section onboarding-panel completed">
       <header><div><small>IDENTIDADE E CONSENTIMENTOS</small><h2>Onboarding concluído</h2><p>Perfil persistente, documentos vinculados ao hash aceito e preferências separadas.</p></div><span className="status-pill success">Versão {profile?.version}</span></header>
       <div className="onboarding-summary">
-        <article><small>ATUAÇÃO</small><strong>{profile?.city} · {profile?.state}</strong><span>{role === "cliente" ? profile?.neighborhood : `${profile?.serviceCategoryIcon} ${profile?.serviceCategoryName}`}</span></article>
+        <article><small>ATUAÇÃO</small><strong>{profile?.city} · {profile?.state}</strong><span>{role === "cliente" ? profile?.neighborhood : `${profile?.serviceCategoryIcon} ${profile?.serviceCategoryName} · ${data.regions.filter((region) => region.selected).map((region) => region.name).join(", ")}`}</span></article>
         <article><small>TERMOS VIGENTES</small><strong>{data.documents.filter((document) => document.acceptedAt).length} de {data.documents.length}</strong><span>Todos os aceites preservados</span></article>
         <article><small>COMUNICAÇÃO</small><strong>{data.consents.marketingCommunications ? "Autorizada" : "Somente transacional"}</strong><span>Pesquisa {data.consents.productResearch ? "autorizada" : "não autorizada"}</span></article>
         <article><small>ÚLTIMA ATUALIZAÇÃO</small><strong>{profile ? formatted(profile.updatedAt) : "—"}</strong><span>{data.history.length} evento(s) no histórico</span></article>
@@ -3588,9 +3830,14 @@ function OnboardingForm({
   onSaved: (data: OnboardingData) => void;
 }) {
   const profile = data.profile;
-  const [city, setCity] = useState(profile?.city ?? "Sorocaba");
-  const [state, setState] = useState(profile?.state ?? "SP");
-  const [neighborhood, setNeighborhood] = useState(profile?.neighborhood ?? "Jardim Europa");
+  const [regionId, setRegionId] = useState(profile?.regionId ?? data.regions[0]?.id ?? "");
+  const initialRegion = data.regions.find((region) => region.id === (profile?.regionId ?? data.regions[0]?.id));
+  const [neighborhoodId, setNeighborhoodId] = useState(profile?.neighborhoodId ?? initialRegion?.neighborhoods[0]?.id ?? "");
+  const [serviceRegionIds, setServiceRegionIds] = useState(() => new Set(
+    data.regions.filter((region) => region.selected).map((region) => region.id).length > 0
+      ? data.regions.filter((region) => region.selected).map((region) => region.id)
+      : [profile?.regionId ?? data.regions[0]?.id ?? ""].filter(Boolean),
+  ));
   const [serviceCategoryId, setServiceCategoryId] = useState(profile?.serviceCategoryId ?? data.categories[0]?.id ?? "");
   const [yearsExperience, setYearsExperience] = useState(String(profile?.yearsExperience ?? 5));
   const [serviceRadiusKm, setServiceRadiusKm] = useState(String(profile?.serviceRadiusKm ?? 25));
@@ -3601,12 +3848,29 @@ function OnboardingForm({
   const [productResearchConsent, setProductResearchConsent] = useState(data.consents.productResearch);
   const [saving, setSaving] = useState(false);
   const isProvider = role === "prestador";
+  const selectedRegion = data.regions.find((region) => region.id === regionId) ?? data.regions[0];
   const allDocumentsAccepted = data.documents.length > 0 && acceptedDocumentIds.size === data.documents.length;
 
   const toggleDocument = (id: string) => {
     setAcceptedDocumentIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const changeRegion = (nextRegionId: string) => {
+    const region = data.regions.find((item) => item.id === nextRegionId);
+    setRegionId(nextRegionId);
+    setNeighborhoodId(region?.neighborhoods[0]?.id ?? "");
+  };
+
+  const toggleServiceRegion = (id: string) => {
+    setServiceRegionIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 5) next.add(id);
+      else notify("Selecione no máximo 5 regiões de atendimento.");
       return next;
     });
   };
@@ -3619,17 +3883,16 @@ function OnboardingForm({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          city: city.trim(),
-          state: state.trim().toUpperCase(),
           ...(isProvider
             ? {
+                serviceRegionIds: [...serviceRegionIds],
                 serviceCategoryId,
                 yearsExperience: Number(yearsExperience),
                 serviceRadiusKm: Number(serviceRadiusKm),
                 bio: bio.trim(),
                 availabilitySummary: availabilitySummary.trim(),
               }
-            : { neighborhood: neighborhood.trim() }),
+            : { regionId, neighborhoodId }),
           acceptedDocumentIds: [...acceptedDocumentIds],
           marketingConsent,
           productResearchConsent,
@@ -3653,9 +3916,8 @@ function OnboardingForm({
       <header><div><small>ONBOARDING PERSISTENTE</small><h2>{profile ? "Atualize seu cadastro." : "Prepare seu perfil para o piloto."}</h2><p>Preencha somente dados sintéticos nesta etapa. Termos e preferências são registrados separadamente.</p></div><span className="status-pill warning">{profile ? `Versão ${profile.version}` : "Pendente"}</span></header>
       <form onSubmit={submit}>
         <div className="onboarding-fields">
-          <label className="field"><span>Cidade</span><input minLength={2} maxLength={80} value={city} onChange={(event) => setCity(event.target.value)} required /></label>
-          <label className="field compact"><span>UF</span><input minLength={2} maxLength={2} pattern="[A-Za-z]{2}" value={state} onChange={(event) => setState(event.target.value.toUpperCase())} required /></label>
-          {!isProvider && <label className="field"><span>Bairro</span><input minLength={2} maxLength={80} value={neighborhood} onChange={(event) => setNeighborhood(event.target.value)} required /></label>}
+          {!isProvider && <><label className="field"><span>Região do piloto</span><select value={selectedRegion?.id ?? ""} onChange={(event) => changeRegion(event.target.value)} required>{data.regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Bairro de atendimento</span><select value={neighborhoodId} onChange={(event) => setNeighborhoodId(event.target.value)} required>{selectedRegion?.neighborhoods.map((neighborhood) => <option key={neighborhood.id} value={neighborhood.id}>{neighborhood.name}</option>)}</select></label></>}
+          {isProvider && <div className="provider-region-selector onboarding-wide"><div><span>Regiões de atendimento</span><small>Selecione de 1 a 5 áreas ativas. Oportunidades fora delas ficam bloqueadas no banco.</small></div><div>{data.regions.map((region) => <label key={region.id} className={serviceRegionIds.has(region.id) ? "selected" : ""}><input type="checkbox" checked={serviceRegionIds.has(region.id)} onChange={() => toggleServiceRegion(region.id)} /><span><strong>{region.name} · {region.state}</strong><small>{region.neighborhoods.length} bairros ativos</small></span></label>)}</div></div>}
           {isProvider && <><label className="field"><span>Categoria principal</span><select value={serviceCategoryId} onChange={(event) => setServiceCategoryId(event.target.value)} required>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.name}</option>)}</select></label><label className="field"><span>Anos de experiência</span><input type="number" min="0" max="60" value={yearsExperience} onChange={(event) => setYearsExperience(event.target.value)} required /></label><label className="field"><span>Raio de atendimento (km)</span><input type="number" min="1" max="200" value={serviceRadiusKm} onChange={(event) => setServiceRadiusKm(event.target.value)} required /></label><label className="field onboarding-wide"><span>Apresentação profissional</span><textarea minLength={20} maxLength={500} rows={3} value={bio} onChange={(event) => setBio(event.target.value)} required /><small>{bio.trim().length}/500</small></label><label className="field onboarding-wide"><span>Disponibilidade</span><input minLength={5} maxLength={200} value={availabilitySummary} onChange={(event) => setAvailabilitySummary(event.target.value)} required /></label></>}
         </div>
         <section className="onboarding-documents">
@@ -3667,7 +3929,7 @@ function OnboardingForm({
           <label><input type="checkbox" checked={marketingConsent} onChange={(event) => setMarketingConsent(event.target.checked)} /><span><strong>Novidades e campanhas</strong><small>Autorizar comunicações promocionais. Pode ser revogado depois.</small></span></label>
           <label><input type="checkbox" checked={productResearchConsent} onChange={(event) => setProductResearchConsent(event.target.checked)} /><span><strong>Pesquisa de produto</strong><small>Autorizar convites para entrevistas e testes da experiência.</small></span></label>
         </section>
-        <footer className="onboarding-form-footer"><div><strong>Aceites obrigatórios não incluem marketing.</strong><span>O hash do texto, a versão e o horário ficam preservados.</span></div><div>{onCancel && <button type="button" className="secondary-action" onClick={onCancel}>Cancelar</button>}<button className="primary-action" disabled={saving || !allDocumentsAccepted || city.trim().length < 2 || state.length !== 2}>{saving ? "Salvando..." : profile ? "Salvar nova versão →" : "Concluir onboarding →"}</button></div></footer>
+        <footer className="onboarding-form-footer"><div><strong>Aceites obrigatórios não incluem marketing.</strong><span>O hash do texto, a versão e o horário ficam preservados.</span></div><div>{onCancel && <button type="button" className="secondary-action" onClick={onCancel}>Cancelar</button>}<button className="primary-action" disabled={saving || !allDocumentsAccepted || (isProvider ? serviceRegionIds.size === 0 : !selectedRegion || !neighborhoodId)}>{saving ? "Salvando..." : profile ? "Salvar nova versão →" : "Concluir onboarding →"}</button></div></footer>
       </form>
     </section>
   );
@@ -3847,6 +4109,7 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
+        {isOperational && <RegionManagementPanel notify={notify} />}
         {isOperational && <CatalogManagementPanel notify={notify} />}
         {isOperational && <CampaignManagementPanel notify={notify} />}
         <FinancialSandboxPanel key={role} role={role} notify={notify} />

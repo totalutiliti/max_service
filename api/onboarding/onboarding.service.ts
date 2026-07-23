@@ -31,7 +31,7 @@ export class OnboardingService {
 
   async complete(actor: Actor, input: CompleteOnboardingDto) {
     const role = this.requireOnboardingRole(actor);
-    const profile = await this.normalizeProfile(role, input);
+    const profile = this.normalizeProfile(role, input);
     return this.database.withActor(actor, async (client) => {
       const documentsResult = await client.query<LegalDocumentRow>(`
         SELECT
@@ -69,6 +69,7 @@ export class OnboardingService {
         if (!category.rows[0]) throw new BadRequestException("Selecione uma categoria ativa do piloto.");
       }
 
+      const resolvedProfile = await this.resolveProfileLocation(client, role, profile);
       const currentResult = await client.query<{ version: number }>(
         "SELECT version FROM onboarding_profiles WHERE user_id = $1 FOR UPDATE",
         [actor.id],
@@ -79,9 +80,9 @@ export class OnboardingService {
         INSERT INTO onboarding_profiles (
           user_id, profile_type, city, state, neighborhood, service_category_id,
           years_experience, service_radius_km, bio, availability_summary,
-          version, completed_at, updated_at
+          region_id, neighborhood_id, version, completed_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), now()
         )
         ON CONFLICT (user_id) DO UPDATE SET
           city = EXCLUDED.city,
@@ -92,6 +93,8 @@ export class OnboardingService {
           service_radius_km = EXCLUDED.service_radius_km,
           bio = EXCLUDED.bio,
           availability_summary = EXCLUDED.availability_summary,
+          region_id = EXCLUDED.region_id,
+          neighborhood_id = EXCLUDED.neighborhood_id,
           version = EXCLUDED.version,
           completed_at = now(),
           updated_at = now()
@@ -99,17 +102,23 @@ export class OnboardingService {
       `, [
         actor.id,
         role,
-        profile.city,
-        profile.state,
-        profile.neighborhood,
-        profile.serviceCategoryId,
-        profile.yearsExperience,
-        profile.serviceRadiusKm,
-        profile.bio,
-        profile.availabilitySummary,
+        resolvedProfile.city,
+        resolvedProfile.state,
+        resolvedProfile.neighborhood,
+        resolvedProfile.serviceCategoryId,
+        resolvedProfile.yearsExperience,
+        resolvedProfile.serviceRadiusKm,
+        resolvedProfile.bio,
+        resolvedProfile.availabilitySummary,
+        resolvedProfile.regionId,
+        resolvedProfile.neighborhoodId,
         nextVersion,
       ]);
       if (!updated.rows[0]) throw new ConflictException("Não foi possível salvar o onboarding.");
+
+      if (role === "provider") {
+        await this.syncProviderRegions(client, actor, resolvedProfile.serviceRegionIds);
+      }
 
       for (const document of documents) {
         await client.query(`
@@ -149,10 +158,13 @@ export class OnboardingService {
         JSON.stringify(documents.map((document) => document.id)),
         JSON.stringify({
           profileType: role,
-          state: profile.state,
-          serviceCategoryId: profile.serviceCategoryId,
-          yearsExperience: profile.yearsExperience,
-          serviceRadiusKm: profile.serviceRadiusKm,
+          state: resolvedProfile.state,
+          regionId: resolvedProfile.regionId,
+          neighborhoodId: resolvedProfile.neighborhoodId,
+          serviceRegionIds: resolvedProfile.serviceRegionIds,
+          serviceCategoryId: resolvedProfile.serviceCategoryId,
+          yearsExperience: resolvedProfile.yearsExperience,
+          serviceRadiusKm: resolvedProfile.serviceRadiusKm,
         }),
       ]);
       await client.query(
@@ -180,19 +192,15 @@ export class OnboardingService {
     return actor.role;
   }
 
-  private async normalizeProfile(role: OnboardingRole, input: CompleteOnboardingDto) {
-    const city = input.city.trim();
-    const state = input.state.trim().toUpperCase();
-    if (city.length < 2 || !/^[A-Z]{2}$/.test(state)) {
-      throw new BadRequestException("Informe cidade e UF válidas.");
-    }
+  private normalizeProfile(role: OnboardingRole, input: CompleteOnboardingDto) {
     if (role === "customer") {
-      const neighborhood = input.neighborhood?.trim() ?? "";
-      if (neighborhood.length < 2) throw new BadRequestException("Informe o bairro de atendimento.");
+      if (!input.regionId || !input.neighborhoodId) {
+        throw new BadRequestException("Selecione a região e o bairro de atendimento.");
+      }
       return {
-        city,
-        state,
-        neighborhood,
+        regionId: input.regionId,
+        neighborhoodId: input.neighborhoodId,
+        serviceRegionIds: [] as string[],
         serviceCategoryId: null,
         yearsExperience: null,
         serviceRadiusKm: null,
@@ -202,25 +210,123 @@ export class OnboardingService {
     }
     const bio = input.bio?.trim() ?? "";
     const availabilitySummary = input.availabilitySummary?.trim() ?? "";
+    const serviceRegionIds = [...new Set(input.serviceRegionIds ?? [])];
     if (
       !input.serviceCategoryId
+      || serviceRegionIds.length === 0
+      || serviceRegionIds.length > 5
       || input.yearsExperience === undefined
       || input.serviceRadiusKm === undefined
       || bio.length < 20
       || availabilitySummary.length < 5
     ) {
-      throw new BadRequestException("Complete categoria, experiência, raio, apresentação e disponibilidade.");
+      throw new BadRequestException("Complete regiões, categoria, experiência, raio, apresentação e disponibilidade.");
     }
     return {
-      city,
-      state,
-      neighborhood: null,
+      regionId: serviceRegionIds[0],
+      neighborhoodId: null,
+      serviceRegionIds,
       serviceCategoryId: input.serviceCategoryId,
       yearsExperience: input.yearsExperience,
       serviceRadiusKm: input.serviceRadiusKm,
       bio,
       availabilitySummary,
     };
+  }
+
+  private async resolveProfileLocation(
+    client: PoolClient,
+    role: OnboardingRole,
+    profile: ReturnType<OnboardingService["normalizeProfile"]>,
+  ) {
+    if (role === "customer") {
+      const location = await client.query<{
+        regionId: string;
+        neighborhoodId: string;
+        city: string;
+        state: string;
+        neighborhood: string;
+      }>(`
+        SELECT
+          region.id AS "regionId",
+          neighborhood.id AS "neighborhoodId",
+          region.city,
+          region.state,
+          neighborhood.name AS neighborhood
+        FROM service_regions region
+        JOIN service_region_neighborhoods neighborhood
+          ON neighborhood.region_id = region.id
+        WHERE region.id = $1
+          AND neighborhood.id = $2
+          AND region.active = true
+          AND neighborhood.active = true
+      `, [profile.regionId, profile.neighborhoodId]);
+      if (!location.rows[0]) {
+        throw new BadRequestException("A região ou o bairro selecionado não está disponível.");
+      }
+      return { ...profile, ...location.rows[0] };
+    }
+
+    const regions = await client.query<{ id: string; city: string; state: string }>(`
+      SELECT id, city, state
+      FROM service_regions
+      WHERE id = ANY($1::uuid[]) AND active = true
+    `, [profile.serviceRegionIds]);
+    if (regions.rows.length !== profile.serviceRegionIds.length) {
+      throw new BadRequestException("Selecione somente regiões ativas do piloto.");
+    }
+    const primary = regions.rows.find((region) => region.id === profile.regionId);
+    if (!primary) throw new BadRequestException("Região principal indisponível.");
+    return {
+      ...profile,
+      city: primary.city,
+      state: primary.state,
+      neighborhood: null,
+    };
+  }
+
+  private async syncProviderRegions(client: PoolClient, actor: Actor, regionIds: string[]) {
+    const currentResult = await client.query<{ regionId: string; active: boolean }>(`
+      SELECT region_id AS "regionId", active
+      FROM provider_service_regions
+      WHERE provider_id = $1
+      FOR UPDATE
+    `, [actor.id]);
+    const current = new Map(currentResult.rows.map((coverage) => [coverage.regionId, coverage.active]));
+    const selected = new Set(regionIds);
+
+    for (const coverage of currentResult.rows) {
+      if (coverage.active && !selected.has(coverage.regionId)) {
+        await client.query(`
+          UPDATE provider_service_regions
+          SET active = false, source = 'onboarding', updated_at = now()
+          WHERE provider_id = $1 AND region_id = $2
+        `, [actor.id, coverage.regionId]);
+        await client.query(`
+          INSERT INTO provider_service_region_events (
+            id, provider_id, region_id, actor_id, event_type, source
+          ) VALUES ($1, $2, $3, $2, 'removed', 'onboarding')
+        `, [randomUUID(), actor.id, coverage.regionId]);
+      }
+    }
+    for (const regionId of regionIds) {
+      await client.query(`
+        INSERT INTO provider_service_regions (
+          provider_id, region_id, source, active
+        ) VALUES ($1, $2, 'onboarding', true)
+        ON CONFLICT (provider_id, region_id) DO UPDATE SET
+          source = 'onboarding',
+          active = true,
+          updated_at = now()
+      `, [actor.id, regionId]);
+      if (current.get(regionId) !== true) {
+        await client.query(`
+          INSERT INTO provider_service_region_events (
+            id, provider_id, region_id, actor_id, event_type, source
+          ) VALUES ($1, $2, $3, $2, 'added', 'onboarding')
+        `, [randomUUID(), actor.id, regionId]);
+      }
+    }
   }
 
   private async upsertConsent(
@@ -282,6 +388,8 @@ export class OnboardingService {
     `, [role, actor.id]);
     const profileResult = await client.query<{
       profileType: OnboardingRole;
+      regionId: string;
+      neighborhoodId: string | null;
       city: string;
       state: string;
       neighborhood: string | null;
@@ -298,6 +406,8 @@ export class OnboardingService {
     }>(`
       SELECT
         profile.profile_type AS "profileType",
+        profile.region_id AS "regionId",
+        profile.neighborhood_id AS "neighborhoodId",
         profile.city,
         profile.state,
         profile.neighborhood,
@@ -333,6 +443,44 @@ export class OnboardingService {
           ORDER BY sort_order, name
         `)
       : { rows: [] };
+    const regions = await client.query<{
+      id: string;
+      code: string;
+      name: string;
+      city: string;
+      state: string;
+      selected: boolean;
+      neighborhoods: Array<{ id: string; slug: string; name: string }>;
+    }>(`
+      SELECT
+        region.id,
+        region.code,
+        region.name,
+        region.city,
+        region.state,
+        EXISTS (
+          SELECT 1
+          FROM provider_service_regions coverage
+          WHERE coverage.provider_id = $1
+            AND coverage.region_id = region.id
+            AND coverage.active = true
+        ) AS selected,
+        COALESCE(jsonb_agg(
+          jsonb_build_object(
+            'id', neighborhood.id,
+            'slug', neighborhood.slug,
+            'name', neighborhood.name
+          )
+          ORDER BY neighborhood.sort_order, neighborhood.name
+        ) FILTER (WHERE neighborhood.id IS NOT NULL), '[]'::jsonb) AS neighborhoods
+      FROM service_regions region
+      LEFT JOIN service_region_neighborhoods neighborhood
+        ON neighborhood.region_id = region.id AND neighborhood.active = true
+      WHERE region.active = true
+      GROUP BY region.id
+      HAVING count(neighborhood.id) > 0
+      ORDER BY region.sort_order, region.name
+    `, [actor.id]);
     const history = await client.query<{
       id: string;
       eventType: "completed" | "updated";
@@ -360,6 +508,7 @@ export class OnboardingService {
         productResearch: preference("product_research"),
       },
       categories: categories.rows,
+      regions: regions.rows,
       history: history.rows,
     };
   }

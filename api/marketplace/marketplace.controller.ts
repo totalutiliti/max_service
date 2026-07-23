@@ -23,6 +23,11 @@ export class MarketplaceController {
     return { categories: await this.marketplace.categories() };
   }
 
+  @Get("regions")
+  async regions() {
+    return { regions: await this.marketplace.regions() };
+  }
+
   @Get("service-requests")
   async requests(
     @Headers("x-demo-role") role: string | undefined,

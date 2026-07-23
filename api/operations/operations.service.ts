@@ -99,6 +99,8 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "finance.sandbox_refund": { category: "finance", title: "Estorno sandbox processado", detail: "Lançamentos inversos registrados no ledger." },
   "service_category.status_changed": { category: "operation", title: "Categoria atualizada", detail: "Disponibilidade do catálogo alterada com justificativa." },
   "service_category.reordered": { category: "operation", title: "Catálogo reordenado", detail: "Prioridade de exibição de uma categoria alterada." },
+  "service_region.status_changed": { category: "operation", title: "Região do piloto atualizada", detail: "Disponibilidade territorial alterada com justificativa." },
+  "service_region_neighborhood.status_changed": { category: "operation", title: "Bairro do piloto atualizado", detail: "Cobertura de um bairro alterada com justificativa." },
   "partner_support_case.created": { category: "growth", title: "Atendimento aberto", detail: "Nova solicitação registrada por um parceiro." },
   "partner_support_case.message_sent": { category: "growth", title: "Mensagem de atendimento", detail: "Interação registrada na central do parceiro." },
   "partner_support_case.attachment_sent": { category: "growth", title: "Anexo de atendimento enviado", detail: "Arquivo privado vinculado ao histórico do atendimento." },
@@ -132,6 +134,8 @@ const auditEntityPrefix: Record<string, string> = {
   provider_document_file: "DF",
   payment_intent: "PG",
   service_category: "CT",
+  service_region: "RG",
+  service_region_neighborhood: "BR",
   partner_support_case: "AT",
   partner_support_attachment: "AA",
   marketing_campaign: "CP",
@@ -155,6 +159,250 @@ export class OperationsService {
     const normalized = note.trim();
     if (normalized.length < 10) throw new BadRequestException("Registre uma justificativa com pelo menos 10 caracteres.");
     return normalized;
+  }
+
+  async regions(actor: Actor) {
+    this.ensureOperation(actor);
+    return this.database.withActor(actor, async (client) => {
+      const regions = await client.query(`
+        SELECT
+          region.id,
+          region.code,
+          region.name,
+          region.city,
+          region.state,
+          region.active,
+          region.sort_order AS "sortOrder",
+          region.version,
+          region.updated_at AS "updatedAt",
+          (SELECT count(*)::int FROM service_requests request WHERE request.region_id = region.id) AS "requestCount",
+          (
+            SELECT count(*)::int
+            FROM service_requests request
+            WHERE request.region_id = region.id
+              AND request.status IN ('open', 'proposals_received', 'booked', 'in_progress')
+          ) AS "openRequestCount",
+          (
+            SELECT count(*)::int
+            FROM provider_service_regions coverage
+            WHERE coverage.region_id = region.id AND coverage.active = true
+          ) AS "providerCount",
+          (
+            SELECT count(*)::int
+            FROM service_region_neighborhoods neighborhood
+            WHERE neighborhood.region_id = region.id AND neighborhood.active = true
+          ) AS "activeNeighborhoodCount",
+          latest_event.event_type AS "latestEventType",
+          latest_event.note AS "latestEventNote",
+          latest_event.created_at AS "latestEventAt",
+          latest_actor.display_name AS "latestActorName",
+          COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'id', neighborhood.id,
+                'slug', neighborhood.slug,
+                'name', neighborhood.name,
+                'active', neighborhood.active,
+                'sortOrder', neighborhood.sort_order,
+                'version', neighborhood.version,
+                'updatedAt', neighborhood.updated_at,
+                'requestCount', (
+                  SELECT count(*)::int
+                  FROM service_requests request
+                  WHERE request.neighborhood_id = neighborhood.id
+                )
+              )
+              ORDER BY neighborhood.sort_order, neighborhood.name
+            )
+            FROM service_region_neighborhoods neighborhood
+            WHERE neighborhood.region_id = region.id
+          ), '[]'::jsonb) AS neighborhoods
+        FROM service_regions region
+        LEFT JOIN LATERAL (
+          SELECT event.actor_id, event.event_type, event.note, event.created_at
+          FROM service_region_events event
+          WHERE event.region_id = region.id
+          ORDER BY event.created_at DESC, event.id DESC
+          LIMIT 1
+        ) latest_event ON true
+        LEFT JOIN users latest_actor ON latest_actor.id = latest_event.actor_id
+        ORDER BY region.sort_order, region.name
+      `);
+      const metrics = await client.query(`
+        SELECT
+          count(*)::int AS "totalCount",
+          count(*) FILTER (WHERE active)::int AS "activeCount",
+          count(*) FILTER (WHERE NOT active)::int AS "plannedCount",
+          (
+            SELECT count(*)::int
+            FROM service_region_neighborhoods neighborhood
+            JOIN service_regions active_region ON active_region.id = neighborhood.region_id
+            WHERE neighborhood.active = true AND active_region.active = true
+          ) AS "activeNeighborhoodCount"
+        FROM service_regions
+      `);
+      return { metrics: metrics.rows[0], regions: regions.rows };
+    });
+  }
+
+  async manageRegion(
+    actor: Actor,
+    regionId: string,
+    action: "activate" | "deactivate",
+    note: string,
+  ) {
+    this.ensureOperation(actor);
+    const normalizedNote = this.normalizeNote(note);
+    return this.database.withActor(actor, async (client) => {
+      const current = await client.query<{
+        id: string;
+        name: string;
+        active: boolean;
+        version: number;
+        activeRegionCount: number;
+        activeNeighborhoodCount: number;
+      }>(`
+        SELECT
+          region.id,
+          region.name,
+          region.active,
+          region.version,
+          (SELECT count(*)::int FROM service_regions active_region WHERE active_region.active = true) AS "activeRegionCount",
+          (
+            SELECT count(*)::int
+            FROM service_region_neighborhoods neighborhood
+            WHERE neighborhood.region_id = region.id AND neighborhood.active = true
+          ) AS "activeNeighborhoodCount"
+        FROM service_regions region
+        WHERE region.id = $1
+        FOR UPDATE
+      `, [regionId]);
+      if (!current.rows[0]) throw new NotFoundException("Região não encontrada.");
+      const nextActive = action === "activate";
+      if (current.rows[0].active === nextActive) {
+        throw new ConflictException(nextActive ? "A região já está ativa." : "A região já está desativada.");
+      }
+      if (!nextActive && current.rows[0].activeRegionCount <= 1) {
+        throw new ConflictException("O piloto precisa manter ao menos uma região ativa.");
+      }
+      if (nextActive && current.rows[0].activeNeighborhoodCount === 0) {
+        throw new ConflictException("Ative ao menos um bairro antes de ativar a região.");
+      }
+      const updated = await client.query(`
+        UPDATE service_regions
+        SET active = $2, version = version + 1, updated_at = now()
+        WHERE id = $1
+        RETURNING
+          id, code, name, city, state, active,
+          sort_order AS "sortOrder", version, updated_at AS "updatedAt"
+      `, [regionId, nextActive]);
+      const eventId = randomUUID();
+      await client.query(`
+        INSERT INTO service_region_events (
+          id, region_id, actor_id, event_type, from_active, to_active, note
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
+        eventId,
+        regionId,
+        actor.id,
+        nextActive ? "region_activated" : "region_deactivated",
+        current.rows[0].active,
+        nextActive,
+        normalizedNote,
+      ]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_region.status_changed', 'service_region', $3, $4::jsonb)",
+        [actor.id, actor.role, regionId, JSON.stringify({
+          from: current.rows[0].active ? "ativa" : "inativa",
+          to: nextActive ? "ativa" : "inativa",
+          eventId,
+          version: current.rows[0].version + 1,
+        })],
+      );
+      return updated.rows[0];
+    });
+  }
+
+  async manageRegionNeighborhood(
+    actor: Actor,
+    neighborhoodId: string,
+    action: "activate" | "deactivate",
+    note: string,
+  ) {
+    this.ensureOperation(actor);
+    const normalizedNote = this.normalizeNote(note);
+    return this.database.withActor(actor, async (client) => {
+      const current = await client.query<{
+        id: string;
+        regionId: string;
+        name: string;
+        active: boolean;
+        version: number;
+        regionActive: boolean;
+        activeNeighborhoodCount: number;
+      }>(`
+        SELECT
+          neighborhood.id,
+          neighborhood.region_id AS "regionId",
+          neighborhood.name,
+          neighborhood.active,
+          neighborhood.version,
+          region.active AS "regionActive",
+          (
+            SELECT count(*)::int
+            FROM service_region_neighborhoods active_neighborhood
+            WHERE active_neighborhood.region_id = neighborhood.region_id
+              AND active_neighborhood.active = true
+          ) AS "activeNeighborhoodCount"
+        FROM service_region_neighborhoods neighborhood
+        JOIN service_regions region ON region.id = neighborhood.region_id
+        WHERE neighborhood.id = $1
+        FOR UPDATE
+      `, [neighborhoodId]);
+      if (!current.rows[0]) throw new NotFoundException("Bairro não encontrado.");
+      const nextActive = action === "activate";
+      if (current.rows[0].active === nextActive) {
+        throw new ConflictException(nextActive ? "O bairro já está ativo." : "O bairro já está desativado.");
+      }
+      if (!nextActive && current.rows[0].regionActive && current.rows[0].activeNeighborhoodCount <= 1) {
+        throw new ConflictException("Uma região ativa precisa manter ao menos um bairro ativo.");
+      }
+      const updated = await client.query(`
+        UPDATE service_region_neighborhoods
+        SET active = $2, version = version + 1, updated_at = now()
+        WHERE id = $1
+        RETURNING
+          id, region_id AS "regionId", slug, name, active,
+          sort_order AS "sortOrder", version, updated_at AS "updatedAt"
+      `, [neighborhoodId, nextActive]);
+      const eventId = randomUUID();
+      await client.query(`
+        INSERT INTO service_region_events (
+          id, region_id, neighborhood_id, actor_id, event_type,
+          from_active, to_active, note
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        eventId,
+        current.rows[0].regionId,
+        neighborhoodId,
+        actor.id,
+        nextActive ? "neighborhood_activated" : "neighborhood_deactivated",
+        current.rows[0].active,
+        nextActive,
+        normalizedNote,
+      ]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_region_neighborhood.status_changed', 'service_region_neighborhood', $3, $4::jsonb)",
+        [actor.id, actor.role, neighborhoodId, JSON.stringify({
+          regionId: current.rows[0].regionId,
+          from: current.rows[0].active ? "ativo" : "inativo",
+          to: nextActive ? "ativo" : "inativo",
+          eventId,
+          version: current.rows[0].version + 1,
+        })],
+      );
+      return updated.rows[0];
+    });
   }
 
   async categories(actor: Actor) {

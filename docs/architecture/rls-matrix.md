@@ -36,6 +36,8 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | metas e alertas do relatório | nenhum | nenhum | nenhum | leitura e atualização versionada | justificativa e evento append-only |
 | documentos legais | somente audiência cliente | somente audiência profissional | nenhum | visão completa | conteúdo versionado e hash |
 | perfil de onboarding | próprio | próprio | nenhum | visão completa | versão e evento append-only |
+| regiões e bairros | somente ativos | somente ativos | nenhum | visão completa e gestão | ao menos uma região e um bairro ativos |
+| cobertura profissional | nenhum | somente própria | nenhum | visão completa | oportunidades exigem vínculo regional ativo |
 | aceites e consentimentos | próprios | próprios | nenhum | visão completa | evidência por versão e finalidade |
 
 ## Contexto seguro de conexão

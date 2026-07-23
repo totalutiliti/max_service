@@ -17,7 +17,7 @@
 
 ### Perfis e geografia
 
-`customer_profiles`, `provider_profiles`, `partner_profiles`, `advertiser_profiles`, `addresses`, `regions`, `provider_service_areas`.
+`service_regions`, `service_region_neighborhoods`, `provider_service_regions` e seus eventos append-only estão materializados no piloto. Pedidos e perfis de onboarding mantêm as chaves regionais e um snapshot textual da localização. `customer_profiles`, `provider_profiles`, `partner_profiles`, `advertiser_profiles` e endereços completos permanecem como alvo posterior.
 
 ### Catálogo e verificação
 

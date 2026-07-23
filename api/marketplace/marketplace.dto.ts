@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from "class-validator";
+import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from "class-validator";
 
 export class CreateServiceRequestDto {
   @IsString()
@@ -16,20 +16,11 @@ export class CreateServiceRequestDto {
   @MaxLength(500)
   description!: string;
 
-  @IsString()
-  @MinLength(2)
-  @MaxLength(80)
-  neighborhood!: string;
+  @IsUUID("4")
+  regionId!: string;
 
-  @IsString()
-  @MinLength(2)
-  @MaxLength(80)
-  city!: string;
-
-  @IsString()
-  @MinLength(2)
-  @MaxLength(2)
-  state!: string;
+  @IsUUID("4")
+  neighborhoodId!: string;
 
   @IsString()
   @MinLength(2)

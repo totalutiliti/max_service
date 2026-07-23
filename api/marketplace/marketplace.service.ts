@@ -20,6 +20,8 @@ interface RequestAttachmentRow {
 interface ServiceRequestRow {
   id: string;
   publicCode: string;
+  regionId: string;
+  neighborhoodId: string;
   title: string;
   description: string;
   neighborhood: string;
@@ -53,12 +55,48 @@ export class MarketplaceService {
     return result.rows;
   }
 
+  async regions() {
+    const result = await this.database.query<{
+      id: string;
+      code: string;
+      name: string;
+      city: string;
+      state: string;
+      neighborhoods: Array<{ id: string; slug: string; name: string }>;
+    }>(`
+      SELECT
+        region.id,
+        region.code,
+        region.name,
+        region.city,
+        region.state,
+        COALESCE(jsonb_agg(
+          jsonb_build_object(
+            'id', neighborhood.id,
+            'slug', neighborhood.slug,
+            'name', neighborhood.name
+          )
+          ORDER BY neighborhood.sort_order, neighborhood.name
+        ) FILTER (WHERE neighborhood.id IS NOT NULL), '[]'::jsonb) AS neighborhoods
+      FROM service_regions region
+      LEFT JOIN service_region_neighborhoods neighborhood
+        ON neighborhood.region_id = region.id AND neighborhood.active = true
+      WHERE region.active = true
+      GROUP BY region.id
+      HAVING count(neighborhood.id) > 0
+      ORDER BY region.sort_order, region.name
+    `);
+    return result.rows;
+  }
+
   async listRequests(actor: Actor) {
     return this.database.withActor(actor, async (client) => {
       const result = await client.query<ServiceRequestRow>(`
         SELECT
           r.id,
           r.public_code AS "publicCode",
+          r.region_id AS "regionId",
+          r.neighborhood_id AS "neighborhoodId",
           r.title,
           r.description,
           r.neighborhood,
@@ -109,17 +147,57 @@ export class MarketplaceService {
       );
       if (!category.rows[0]) throw new BadRequestException("Categoria indisponível.");
 
+      const location = await client.query<{
+        regionId: string;
+        neighborhoodId: string;
+        city: string;
+        state: string;
+        neighborhood: string;
+      }>(`
+        SELECT
+          region.id AS "regionId",
+          neighborhood.id AS "neighborhoodId",
+          region.city,
+          region.state,
+          neighborhood.name AS neighborhood
+        FROM service_regions region
+        JOIN service_region_neighborhoods neighborhood
+          ON neighborhood.region_id = region.id
+        WHERE region.id = $1
+          AND neighborhood.id = $2
+          AND region.active = true
+          AND neighborhood.active = true
+      `, [input.regionId, input.neighborhoodId]);
+      if (!location.rows[0]) {
+        throw new BadRequestException("Selecione uma região e um bairro ativos do piloto.");
+      }
+
       const id = randomUUID();
       const publicCode = `SV-${randomBytes(3).toString("hex").toUpperCase()}`;
+      const selectedLocation = location.rows[0];
       const created = await client.query<ServiceRequestRow>(`
         INSERT INTO service_requests (
           id, public_code, customer_id, category_id, title, description,
-          neighborhood, city, state, preferred_window, status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'open')
+          neighborhood, city, state, preferred_window, status, region_id, neighborhood_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'open', $11, $12)
         RETURNING
-          id, public_code AS "publicCode", title, description, neighborhood, city,
+          id, public_code AS "publicCode", region_id AS "regionId",
+          neighborhood_id AS "neighborhoodId", title, description, neighborhood, city,
           state, preferred_window AS "preferredWindow", status, created_at AS "createdAt"
-      `, [id, publicCode, actor.id, category.rows[0].id, input.title, input.description, input.neighborhood, input.city, input.state.toUpperCase(), input.preferredWindow]);
+      `, [
+        id,
+        publicCode,
+        actor.id,
+        category.rows[0].id,
+        input.title,
+        input.description,
+        selectedLocation.neighborhood,
+        selectedLocation.city,
+        selectedLocation.state,
+        input.preferredWindow,
+        selectedLocation.regionId,
+        selectedLocation.neighborhoodId,
+      ]);
 
       await client.query(
         "INSERT INTO request_status_history (request_id, status, actor_id, note) VALUES ($1, 'open', $2, $3)",
@@ -131,6 +209,8 @@ export class MarketplaceService {
         [actor.id, actor.role, id, JSON.stringify({
           publicCode,
           categorySlug: input.categorySlug,
+          regionId: selectedLocation.regionId,
+          neighborhoodId: selectedLocation.neighborhoodId,
           campaignReservationId: campaign?.reservationId ?? null,
         })],
       );

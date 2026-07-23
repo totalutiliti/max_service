@@ -4,7 +4,7 @@
 
 - autenticação e confirmação reais sobre as sessões revogáveis já materializadas;
 - aprovação jurídica das minutas, enquanto onboarding, aceites e consentimentos de cliente/prestador já estão materializados;
-- catálogo piloto persistente, gestão operacional auditável e regiões;
+- expansão do catálogo e das regiões já persistentes, após validação do piloto em Sorocaba;
 - solicitação, propostas, chat, agenda e estados;
 - cancelamentos, avaliações e notificações;
 - parceiro, atribuição, painel, captura pública por link/QR e triagem operacional;

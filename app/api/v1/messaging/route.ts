@@ -81,3 +81,18 @@ export async function POST(request: Request) {
     { body: payload.body },
   );
 }
+
+export async function PATCH(request: Request) {
+  const payload = await request.json() as { role?: string; conversationId?: string; messageId?: string };
+  const role = mapRole(payload.role ?? null);
+  if (!role) return Response.json({ error: "Perfil sem acesso a conversas." }, { status: 403 });
+  if (!payload.conversationId || !payload.messageId) {
+    return Response.json({ error: "conversationId e messageId são obrigatórios." }, { status: 400 });
+  }
+  return proxyDemoRequest(
+    `/api/v1/conversations/${encodeURIComponent(payload.conversationId)}/read`,
+    request,
+    role,
+    { messageId: payload.messageId },
+  );
+}

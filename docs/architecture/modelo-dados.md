@@ -69,3 +69,4 @@
 - cada mensagem aceita no máximo uma imagem append-only JPEG/PNG de 512 KB; a chave do objeto, o hash SHA-256 e o remetente são vinculados por constraints à conversa e à mensagem;
 - anexos de mensagem são visíveis exclusivamente aos membros cliente e profissional da conversa; parceiro, operação e conexão sem contexto recebem zero linhas;
 - o cursor de sincronização referencia uma mensagem visível da própria conversa e avança pela tupla imutável `(created_at, id)`, comparada integralmente no PostgreSQL para preservar precisão;
+- cada membro mantém um cursor de leitura que referencia uma mensagem da mesma conversa, avança de forma monotônica e contabiliza como não lidas somente as mensagens posteriores enviadas pela outra parte;

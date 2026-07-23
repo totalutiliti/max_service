@@ -63,6 +63,7 @@ interface PersistedConversation {
   otherCode: string;
   latestMessage: string | null;
   latestMessageAt: string | null;
+  unreadCount: number;
 }
 
 interface PersistedMessage {
@@ -557,7 +558,7 @@ function Shell({ role, section, setSection, changeRole, onSignOut, authBusy, chi
           {(Object.keys(sectionLabels[role]) as Section[]).map((item, index) => (
             <button key={item} onClick={() => setSection(item)} className={section === item ? "active" : ""} aria-current={section === item ? "page" : undefined}>
               <span aria-hidden="true">{["⌂", "▤", "◉", "⚙"][index]}</span>{sectionLabels[role][item]}
-              {item === "mensagens" && <i>2</i>}
+              {item === "mensagens" && (role === "cliente" || role === "prestador") && <UnreadMessageBadge role={role} />}
             </button>
           ))}
         </nav>
@@ -573,6 +574,47 @@ function Shell({ role, section, setSection, changeRole, onSignOut, authBusy, chi
       <div className="demo-main" id="painel">{children}</div>
     </main>
   );
+}
+
+function UnreadMessageBadge({ role }: { role: "cliente" | "prestador" }) {
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let syncing = false;
+    let active = true;
+    const syncUnread = async () => {
+      if (syncing || document.visibilityState !== "visible") return;
+      syncing = true;
+      try {
+        const response = await fetch(`/api/v1/messaging?role=${role}`, { cache: "no-store", signal: controller.signal });
+        const payload = await response.json() as { conversations?: PersistedConversation[] };
+        if (!response.ok || !payload.conversations) return;
+        if (active) setUnreadCount(payload.conversations.reduce((total, conversation) => total + conversation.unreadCount, 0));
+      } catch {
+        // Preserva a última contagem válida durante indisponibilidade transitória.
+      } finally {
+        syncing = false;
+      }
+    };
+    const initialSync = window.setTimeout(() => void syncUnread(), 0);
+    const timer = window.setInterval(() => void syncUnread(), 15_000);
+    const syncWhenVisible = () => void syncUnread();
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    window.addEventListener("max-service:messages-read", syncWhenVisible);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(initialSync);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+      window.removeEventListener("max-service:messages-read", syncWhenVisible);
+    };
+  }, [role]);
+
+  if (unreadCount === 0) return null;
+  const label = `${unreadCount} mensagem${unreadCount === 1 ? "" : "s"} não lida${unreadCount === 1 ? "" : "s"}`;
+  return <i aria-label={label}>{unreadCount > 99 ? "99+" : unreadCount}</i>;
 }
 
 function DashboardHeader({ role, eyebrow, title, children }: { role: Role; eyebrow: string; title: string; children?: React.ReactNode }) {
@@ -1531,6 +1573,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const messageCursorRef = useRef<string | null>(null);
+  const readCursorRef = useRef<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1571,6 +1614,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
 
   useEffect(() => {
     messageCursorRef.current = null;
+    readCursorRef.current = null;
     if (!selectedId) {
       const clearMessages = window.setTimeout(() => setMessages([]), 0);
       return () => window.clearTimeout(clearMessages);
@@ -1578,6 +1622,26 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
     const controller = new AbortController();
     let syncing = false;
     let active = true;
+    const acknowledgeRead = async (messageId: string) => {
+      if (readCursorRef.current === messageId) return;
+      readCursorRef.current = messageId;
+      try {
+        const response = await fetch("/api/v1/messaging", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ role, conversationId: selectedId, messageId }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Não foi possível confirmar a leitura.");
+        if (!active) return;
+        setConversations((current) => current.map((conversation) => conversation.id === selectedId
+          ? { ...conversation, unreadCount: 0 }
+          : conversation));
+        window.dispatchEvent(new Event("max-service:messages-read"));
+      } catch {
+        if (readCursorRef.current === messageId) readCursorRef.current = null;
+      }
+    };
     const syncMessages = async (initial = false) => {
       if (syncing || (!initial && document.visibilityState !== "visible")) return;
       const after = initial ? null : messageCursorRef.current;
@@ -1605,6 +1669,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
           }
         }
         messageCursorRef.current = payload.cursor ?? messageCursorRef.current;
+        if (payload.cursor && document.visibilityState === "visible") void acknowledgeRead(payload.cursor);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError") && initial) {
           notify(error instanceof Error ? error.message : "Não foi possível carregar as mensagens.");
@@ -1699,7 +1764,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
           <div className="conversation-search"><input aria-label="Buscar conversa" placeholder="Buscar conversa" /></div>
           {loading && <div className="data-state">Carregando conversas...</div>}
           {!loading && conversations.length === 0 && <div className="data-state"><strong>Nenhuma conversa ainda.</strong><span>Ela será criada quando uma proposta for aceita.</span></div>}
-          {conversations.map((conversation) => <button key={conversation.id} onClick={() => { setSelectedId(conversation.id); setAttachmentFile(null); }} className={conversation.id === selectedId ? "active" : ""}><span className="mini-avatar">{conversation.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><span><strong>{conversation.otherName}</strong><small>{conversation.requestCode} · {conversation.requestTitle}</small><em>{conversation.latestMessage ?? "Conversa liberada"}</em></span>{conversation.bookingStatus === "scheduled" && <i>✓</i>}</button>)}
+          {conversations.map((conversation) => <button key={conversation.id} onClick={() => { setSelectedId(conversation.id); setAttachmentFile(null); }} className={conversation.id === selectedId ? "active" : ""}><span className="mini-avatar">{conversation.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><span><strong>{conversation.otherName}</strong><small>{conversation.requestCode} · {conversation.requestTitle}</small><em>{conversation.latestMessage ?? "Conversa liberada"}</em></span>{conversation.unreadCount > 0 ? <i aria-label={`${conversation.unreadCount} mensagem${conversation.unreadCount === 1 ? "" : "s"} não lida${conversation.unreadCount === 1 ? "" : "s"}`}>{conversation.unreadCount > 9 ? "9+" : conversation.unreadCount}</i> : conversation.bookingStatus === "scheduled" && <i aria-label="Serviço agendado">✓</i>}</button>)}
         </aside>
         {selected ? <div className="chat-panel"><header><span className="mini-avatar">{selected.otherName.split(" ").map((part) => part[0]).slice(0,2).join("")}</span><div><strong>{selected.otherName}</strong><small><span className="live-dot" /> Sincronização automática · {selected.requestCode} · {selected.scheduledFor ? `Agendado: ${schedule(selected.scheduledFor)}` : selected.bookingStatus}</small></div><button aria-label="Mais opções">•••</button></header><div className="chat-messages"><div className="chat-date">CONVERSA DO SERVIÇO</div>{messages.length === 0 && <div className="data-state"><strong>Conversa liberada.</strong><span>Envie a primeira mensagem para combinar os detalhes.</span></div>}{messages.map((message) => <article key={message.id} className={`message ${message.senderId === actorId ? "sent" : "received"}`}><span>{message.body}</span>{message.attachment && <a className="message-attachment" href={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} target="_blank" rel="noreferrer"><Image src={`/api/v1/messaging?role=${role}&attachmentId=${encodeURIComponent(message.attachment.id)}`} alt={message.attachment.fileName} width={360} height={220} unoptimized /><em>Imagem privada · abrir em tamanho original</em></a>}<small>{time(message.createdAt)}{message.senderId === actorId ? " · ✓" : ""}</small></article>)}<div ref={endRef} /></div><form className="message-composer" onSubmit={send}>{attachmentFile && <div className="message-attachment-draft"><span>▣ {attachmentFile.name} · {(attachmentFile.size / 1024).toFixed(0)} KB</span><button type="button" onClick={() => setAttachmentFile(null)} aria-label="Remover imagem selecionada">×</button></div>}<label className="message-attachment-button" title="Anexar imagem privada"><span>＋</span><input type="file" accept="image/jpeg,image/png" onChange={selectAttachment} aria-label="Anexar imagem privada" /></label><input aria-label="Mensagem" value={draft} maxLength={2000} onChange={(event) => setDraft(event.target.value)} placeholder={attachmentFile ? "Adicione uma legenda (opcional)..." : "Escreva uma mensagem..."} /><button type="submit" disabled={sending || (!draft.trim() && !attachmentFile)}>{sending ? "Enviando..." : "Enviar"}</button></form></div> : <div className="chat-panel empty-chat"><div className="data-state"><strong>Selecione uma conversa.</strong><span>As mensagens ficam vinculadas ao serviço contratado.</span></div></div>}
       </section>

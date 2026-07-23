@@ -17,6 +17,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 | notificações | somente próprias | somente próprias | somente próprias | somente próprias | auditado |
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
+| cursor de leitura da conversa | somente o próprio | somente o próprio | nenhum | nenhum no piloto | excepcional e auditado |
 | anexo da conversa | membro | membro | nenhum | nenhum no piloto | excepcional e auditado |
 | checklist de verificação | nenhum acesso | somente o próprio | nenhum | fila completa e decisão | excepcional e auditado |
 | arquivos de verificação | nenhum | somente versões próprias | nenhum | todas as versões para revisão | excepcional e auditado |
@@ -59,6 +60,7 @@ Princípio: sem `app.actor_id` válido, dados privados retornam zero linhas. Ope
 - anexo da conversa é listado e baixado pelos dois membros; parceiro, operação, não membro e conexão sem contexto recebem zero linhas;
 - arquivo com assinatura adulterada, MIME fora da allowlist ou mais de 512 KB é rejeitado antes da persistência;
 - cursor inexistente, malformado ou pertencente a outra conversa é rejeitado sem revelar mensagens e sem alterar a sessão;
+- somente o membro autenticado avança o próprio cursor de leitura; regressão, alteração do cursor da outra parte, parceiro e operação atualizam zero linhas;
 - cliente, profissional e parceiro não enxergam as parcelas financeiras uns dos outros;
 - somente a operação processa evento sandbox; alteração direta de intent por outro papel atualiza zero linhas;
 - evento repetido não duplica transação ou ledger e assinatura inválida é rejeitada;

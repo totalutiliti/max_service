@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Headers, Param, Post, Req, Res, StreamableFile, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Patch, Post, Req, Res, StreamableFile, UnauthorizedException } from "@nestjs/common";
 import type { IncomingMessage } from "node:http";
 import { parseDemoActor } from "../auth/demo-actor.js";
 import { decodeFileName, readLimitedBody, setPrivateFileHeaders, type HeaderResponse } from "../storage/private-file-http.js";
 import { maximumPrivateImageBytes } from "../storage/private-image-validation.js";
-import { SendMessageDto } from "./messaging.dto.js";
+import { MarkConversationReadDto, SendMessageDto } from "./messaging.dto.js";
 import { MessagingService } from "./messaging.service.js";
 
 function actorFromHeaders(role: string | undefined, id: string | undefined) {
@@ -44,6 +44,22 @@ export class MessagingController {
     @Body() input: SendMessageDto,
   ) {
     return { message: await this.messaging.send(actorFromHeaders(role, id), conversationId, input.body) };
+  }
+
+  @Patch("conversations/:conversationId/read")
+  async markRead(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("conversationId") conversationId: string,
+    @Body() input: MarkConversationReadDto,
+  ) {
+    return {
+      receipt: await this.messaging.markRead(
+        actorFromHeaders(role, id),
+        conversationId,
+        input.messageId,
+      ),
+    };
   }
 
   @Post("conversations/:conversationId/message-attachments")

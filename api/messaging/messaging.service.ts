@@ -27,16 +27,32 @@ export class MessagingService {
           other.display_name AS "otherName",
           other.public_code AS "otherCode",
           latest.body AS "latestMessage",
-          latest.created_at AS "latestMessageAt"
+          latest.created_at AS "latestMessageAt",
+          (
+            SELECT count(*)::int
+            FROM messages unread
+            WHERE unread.conversation_id = c.id
+              AND unread.sender_id <> $1
+              AND (
+                membership.last_read_message_id IS NULL
+                OR (unread.created_at, unread.id) > (
+                  SELECT cursor.created_at, cursor.id
+                  FROM messages cursor
+                  WHERE cursor.id = membership.last_read_message_id
+                    AND cursor.conversation_id = c.id
+                )
+              )
+          ) AS "unreadCount"
         FROM conversations c
         JOIN bookings b ON b.id = c.booking_id
         JOIN service_requests r ON r.id = b.request_id
+        JOIN conversation_members membership ON membership.conversation_id = c.id AND membership.user_id = $1
         JOIN users other ON other.id = CASE WHEN b.customer_id = $1 THEN b.provider_id ELSE b.customer_id END
         LEFT JOIN LATERAL (
           SELECT m.body, m.created_at
           FROM messages m
           WHERE m.conversation_id = c.id
-          ORDER BY m.created_at DESC
+          ORDER BY m.created_at DESC, m.id DESC
           LIMIT 1
         ) latest ON true
         ORDER BY COALESCE(latest.created_at, c.created_at) DESC
@@ -116,6 +132,56 @@ export class MessagingService {
           `, [conversationId, null]);
       const cursor = result.rows.at(-1)?.id ?? after;
       return { messages: result.rows, cursor, hasMore: result.rows.length === 200 };
+    });
+  }
+
+  async markRead(actor: Actor, conversationId: string, messageId: string) {
+    if (actor.role !== "customer" && actor.role !== "provider") {
+      throw new ForbiddenException("Este perfil não pode confirmar leitura nesta conversa.");
+    }
+    return this.database.withActor(actor, async (client) => {
+      const target = await client.query(`
+        SELECT id
+        FROM messages
+        WHERE id = $1 AND conversation_id = $2
+      `, [messageId, conversationId]);
+      if (!target.rows[0]) throw new NotFoundException("Mensagem da conversa não encontrada.");
+
+      const updated = await client.query(`
+        UPDATE conversation_members membership
+        SET last_read_message_id = target.id, last_read_at = now()
+        FROM messages target
+        WHERE membership.conversation_id = $1
+          AND membership.user_id = $2
+          AND target.id = $3
+          AND target.conversation_id = membership.conversation_id
+          AND (
+            membership.last_read_message_id IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM messages current
+              WHERE current.id = membership.last_read_message_id
+                AND current.conversation_id = membership.conversation_id
+                AND (current.created_at, current.id) <= (target.created_at, target.id)
+            )
+          )
+        RETURNING
+          membership.conversation_id AS "conversationId",
+          membership.last_read_message_id AS "lastReadMessageId",
+          membership.last_read_at AS "readAt"
+      `, [conversationId, actor.id, messageId]);
+      if (updated.rows[0]) return updated.rows[0];
+
+      const current = await client.query(`
+        SELECT
+          conversation_id AS "conversationId",
+          last_read_message_id AS "lastReadMessageId",
+          last_read_at AS "readAt"
+        FROM conversation_members
+        WHERE conversation_id = $1 AND user_id = $2
+      `, [conversationId, actor.id]);
+      if (!current.rows[0]) throw new NotFoundException("Conversa não encontrada.");
+      return current.rows[0];
     });
   }
 

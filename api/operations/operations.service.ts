@@ -101,6 +101,7 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "service_category.reordered": { category: "operation", title: "Catálogo reordenado", detail: "Prioridade de exibição de uma categoria alterada." },
   "service_region.status_changed": { category: "operation", title: "Região do piloto atualizada", detail: "Disponibilidade territorial alterada com justificativa." },
   "service_region_neighborhood.status_changed": { category: "operation", title: "Bairro do piloto atualizado", detail: "Cobertura de um bairro alterada com justificativa." },
+  "provider_matching.updated": { category: "operation", title: "Matching profissional atualizado", detail: "Disponibilidade e limites de oportunidades foram versionados." },
   "partner_support_case.created": { category: "growth", title: "Atendimento aberto", detail: "Nova solicitação registrada por um parceiro." },
   "partner_support_case.message_sent": { category: "growth", title: "Mensagem de atendimento", detail: "Interação registrada na central do parceiro." },
   "partner_support_case.attachment_sent": { category: "growth", title: "Anexo de atendimento enviado", detail: "Arquivo privado vinculado ao histórico do atendimento." },
@@ -136,6 +137,7 @@ const auditEntityPrefix: Record<string, string> = {
   service_category: "CT",
   service_region: "RG",
   service_region_neighborhood: "BR",
+  provider_matching: "MT",
   partner_support_case: "AT",
   partner_support_attachment: "AA",
   marketing_campaign: "CP",
@@ -159,6 +161,100 @@ export class OperationsService {
     const normalized = note.trim();
     if (normalized.length < 10) throw new BadRequestException("Registre uma justificativa com pelo menos 10 caracteres.");
     return normalized;
+  }
+
+  async matching(actor: Actor) {
+    this.ensureOperation(actor);
+    return this.database.withActor(actor, async (client) => {
+      const result = await client.query<{
+        providerId: string;
+        providerCode: string;
+        providerName: string;
+        primaryCategoryId: string | null;
+        categoryName: string | null;
+        categoryIcon: string | null;
+        categoryActive: boolean | null;
+        availabilityStatus: "available_now" | "scheduled" | "paused" | null;
+        acceptsUrgent: boolean | null;
+        activeProposalLimit: number | null;
+        activeJobLimit: number | null;
+        version: number | null;
+        updatedAt: Date | null;
+        verificationStatus: "submitted" | "in_review" | "changes_requested" | "approved" | null;
+        activeRegionCount: number;
+        activeProposalCount: number;
+        activeJobCount: number;
+      }>(`
+        SELECT
+          provider.id AS "providerId",
+          provider.public_code AS "providerCode",
+          provider.display_name AS "providerName",
+          matching.primary_category_id AS "primaryCategoryId",
+          category.name AS "categoryName",
+          category.icon AS "categoryIcon",
+          category.active AS "categoryActive",
+          matching.availability_status AS "availabilityStatus",
+          matching.accepts_urgent AS "acceptsUrgent",
+          matching.active_proposal_limit AS "activeProposalLimit",
+          matching.active_job_limit AS "activeJobLimit",
+          matching.version,
+          matching.updated_at AS "updatedAt",
+          verification.status AS "verificationStatus",
+          (
+            SELECT count(*)::int
+            FROM provider_service_regions coverage
+            JOIN service_regions region ON region.id = coverage.region_id
+            WHERE coverage.provider_id = provider.id
+              AND coverage.active = true
+              AND region.active = true
+          ) AS "activeRegionCount",
+          (
+            SELECT count(*)::int
+            FROM proposals proposal
+            WHERE proposal.provider_id = provider.id
+              AND proposal.status = 'sent'
+          ) AS "activeProposalCount",
+          (
+            SELECT count(*)::int
+            FROM bookings booking
+            WHERE booking.provider_id = provider.id
+              AND booking.status IN ('scheduled', 'in_progress')
+          ) AS "activeJobCount"
+        FROM users provider
+        LEFT JOIN provider_matching_profiles matching ON matching.provider_id = provider.id
+        LEFT JOIN service_categories category ON category.id = matching.primary_category_id
+        LEFT JOIN provider_verifications verification ON verification.provider_id = provider.id
+        WHERE provider.role = 'provider'
+        ORDER BY provider.display_name
+      `);
+      const providers = result.rows.map((provider) => {
+        const blockers: Array<{ code: string; label: string }> = [];
+        if (!provider.primaryCategoryId) blockers.push({ code: "missing_profile", label: "Matching não configurado" });
+        if (provider.verificationStatus !== "approved") blockers.push({ code: "verification", label: "Verificação pendente" });
+        if (provider.activeRegionCount === 0) blockers.push({ code: "coverage", label: "Sem região ativa" });
+        if (provider.availabilityStatus === "paused") blockers.push({ code: "paused", label: "Oportunidades pausadas" });
+        if (provider.categoryActive === false) blockers.push({ code: "category", label: "Categoria indisponível" });
+        if (
+          provider.activeProposalLimit !== null
+          && provider.activeProposalCount >= provider.activeProposalLimit
+        ) blockers.push({ code: "proposal_capacity", label: "Limite de propostas atingido" });
+        if (
+          provider.activeJobLimit !== null
+          && provider.activeJobCount >= provider.activeJobLimit
+        ) blockers.push({ code: "job_capacity", label: "Capacidade de serviços atingida" });
+        return { ...provider, blockers, eligible: blockers.length === 0 };
+      });
+      return {
+        metrics: {
+          providerCount: providers.length,
+          eligibleCount: providers.filter((provider) => provider.eligible).length,
+          verificationBlockedCount: providers.filter((provider) => provider.blockers.some((blocker) => blocker.code === "verification")).length,
+          coverageBlockedCount: providers.filter((provider) => provider.blockers.some((blocker) => blocker.code === "coverage")).length,
+          capacityBlockedCount: providers.filter((provider) => provider.blockers.some((blocker) => blocker.code.endsWith("_capacity"))).length,
+        },
+        providers,
+      };
+    });
   }
 
   async regions(actor: Actor) {

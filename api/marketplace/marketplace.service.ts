@@ -1,11 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { CampaignsService } from "../campaigns/campaigns.service.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
-import type { CreateProposalDto, CreateServiceRequestDto } from "./marketplace.dto.js";
+import type { CreateProposalDto, CreateServiceRequestDto, UpdateProviderMatchingDto } from "./marketplace.dto.js";
 import { maximumRequestAttachmentCount, validateRequestAttachment } from "./request-attachment-validation.js";
 
 interface RequestAttachmentRow {
@@ -34,7 +35,28 @@ interface ServiceRequestRow {
   categoryIcon: string;
   proposalCount: number;
   hasActorProposal: boolean;
+  matchScore: number;
+  matchReasons: string[];
+  isUrgent: boolean;
   attachments: RequestAttachmentRow[];
+}
+
+interface ProviderMatchingRow {
+  providerId: string;
+  primaryCategoryId: string;
+  categoryName: string;
+  categoryIcon: string;
+  categoryActive: boolean;
+  availabilityStatus: "available_now" | "scheduled" | "paused";
+  acceptsUrgent: boolean;
+  activeProposalLimit: number;
+  activeJobLimit: number;
+  version: number;
+  updatedAt: Date;
+  verificationStatus: "submitted" | "in_review" | "changes_requested" | "approved" | null;
+  activeRegionCount: number;
+  activeProposalCount: number;
+  activeJobCount: number;
 }
 
 @Injectable()
@@ -113,6 +135,36 @@ export class MarketplaceService {
             WHERE own_proposal.request_id = r.id
               AND own_proposal.provider_id = $2::uuid
           ) AS "hasActorProposal",
+          CASE WHEN $1::text = 'provider' THEN LEAST(100,
+            70
+            + CASE WHEN r.preferred_window ILIKE '%quanto antes%'
+              AND COALESCE((
+                SELECT matching.accepts_urgent
+                FROM provider_matching_profiles matching
+                WHERE matching.provider_id = $2::uuid
+              ), false) THEN 20 ELSE 0 END
+            + CASE WHEN r.created_at >= now() - interval '60 minutes' THEN 10 ELSE 0 END
+            + CASE WHEN EXISTS (
+              SELECT 1 FROM proposals own_proposal
+              WHERE own_proposal.request_id = r.id
+                  AND own_proposal.provider_id = $2::uuid
+              ) THEN 15 ELSE 0 END
+            )
+          ELSE 0 END AS "matchScore",
+          CASE WHEN $1::text = 'provider' THEN to_jsonb(array_remove(ARRAY[
+            'Categoria principal'::text,
+            'Cobertura ativa'::text,
+            'Perfil aprovado'::text,
+            CASE WHEN r.preferred_window ILIKE '%quanto antes%'
+              AND COALESCE((
+                SELECT matching.accepts_urgent
+                FROM provider_matching_profiles matching
+                WHERE matching.provider_id = $2::uuid
+              ), false) THEN 'Aceita urgência'::text ELSE NULL END,
+            CASE WHEN r.created_at >= now() - interval '60 minutes'
+              THEN 'Pedido recente'::text ELSE NULL END
+          ], NULL)) ELSE '[]'::jsonb END AS "matchReasons",
+          (r.preferred_window ILIKE '%quanto antes%') AS "isUrgent",
           COALESCE((
             SELECT jsonb_agg(jsonb_build_object(
               'id', attachment.id,
@@ -130,10 +182,90 @@ export class MarketplaceService {
         LEFT JOIN proposals p ON p.request_id = r.id
         WHERE ($1::text <> 'provider' OR r.status IN ('open', 'proposals_received'))
         GROUP BY r.id, c.id
-        ORDER BY r.created_at DESC
+        ORDER BY "matchScore" DESC, r.created_at DESC
         LIMIT 50
       `, [actor.role, actor.id]);
       return result.rows;
+    });
+  }
+
+  async providerMatching(actor: Actor) {
+    if (actor.role !== "provider") {
+      throw new ForbiddenException("Somente profissionais podem configurar oportunidades.");
+    }
+    return this.database.withActor(actor, (client) => this.loadProviderMatchingView(client, actor));
+  }
+
+  async updateProviderMatching(actor: Actor, input: UpdateProviderMatchingDto) {
+    if (actor.role !== "provider") {
+      throw new ForbiddenException("Somente profissionais podem configurar oportunidades.");
+    }
+    return this.database.withActor(actor, async (client) => {
+      const currentResult = await client.query<{
+        availabilityStatus: UpdateProviderMatchingDto["availabilityStatus"];
+        acceptsUrgent: boolean;
+        activeProposalLimit: number;
+        activeJobLimit: number;
+        version: number;
+      }>(`
+        SELECT
+          availability_status AS "availabilityStatus",
+          accepts_urgent AS "acceptsUrgent",
+          active_proposal_limit AS "activeProposalLimit",
+          active_job_limit AS "activeJobLimit",
+          version
+        FROM provider_matching_profiles
+        WHERE provider_id = $1
+        FOR UPDATE
+      `, [actor.id]);
+      const current = currentResult.rows[0];
+      if (!current) throw new NotFoundException("Perfil de oportunidades não configurado.");
+      const changed = current.availabilityStatus !== input.availabilityStatus
+        || current.acceptsUrgent !== input.acceptsUrgent
+        || current.activeProposalLimit !== input.activeProposalLimit
+        || current.activeJobLimit !== input.activeJobLimit;
+      if (changed) {
+        const version = current.version + 1;
+        await client.query(`
+          UPDATE provider_matching_profiles
+          SET
+            availability_status = $2,
+            accepts_urgent = $3,
+            active_proposal_limit = $4,
+            active_job_limit = $5,
+            version = $6,
+            updated_at = now()
+          WHERE provider_id = $1
+        `, [
+          actor.id,
+          input.availabilityStatus,
+          input.acceptsUrgent,
+          input.activeProposalLimit,
+          input.activeJobLimit,
+          version,
+        ]);
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO provider_matching_events (
+            id, provider_id, actor_id, event_type, profile_version, snapshot
+          ) VALUES ($1, $2, $2, 'updated', $3, $4::jsonb)
+        `, [
+          eventId,
+          actor.id,
+          version,
+          JSON.stringify({
+            availabilityStatus: input.availabilityStatus,
+            acceptsUrgent: input.acceptsUrgent,
+            activeProposalLimit: input.activeProposalLimit,
+            activeJobLimit: input.activeJobLimit,
+          }),
+        ]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_matching.updated', 'provider_matching', $3, $4::jsonb)",
+          [actor.id, actor.role, actor.id, JSON.stringify({ version, eventId, source: "provider_dashboard" })],
+        );
+      }
+      return this.loadProviderMatchingView(client, actor);
     });
   }
 
@@ -341,6 +473,14 @@ export class MarketplaceService {
   async createProposal(actor: Actor, requestId: string, input: CreateProposalDto) {
     if (actor.role !== "provider") throw new ForbiddenException("Somente profissionais podem enviar propostas.");
     return this.database.withActor(actor, async (client) => {
+      const matching = await this.loadProviderMatching(client, actor.id);
+      if (!matching) throw new ConflictException("Configure o perfil de oportunidades antes de enviar propostas.");
+      const existingProposal = await client.query<{ id: string }>(
+        "SELECT id FROM proposals WHERE request_id = $1 AND provider_id = $2",
+        [requestId, actor.id],
+      );
+      const blockers = this.providerMatchingBlockers(matching, Boolean(existingProposal.rows[0]));
+      if (blockers.length > 0) throw new ConflictException(blockers[0]);
       const request = await client.query<{ id: string; status: string; customerId: string; publicCode: string }>(
         "SELECT id, status, customer_id AS \"customerId\", public_code AS \"publicCode\" FROM service_requests WHERE id = $1 AND status IN ('open', 'proposals_received')",
         [requestId],
@@ -384,6 +524,102 @@ export class MarketplaceService {
       });
       return result.rows[0];
     });
+  }
+
+  private async loadProviderMatching(client: PoolClient, providerId: string) {
+    const result = await client.query<ProviderMatchingRow>(`
+      SELECT
+        matching.provider_id AS "providerId",
+        matching.primary_category_id AS "primaryCategoryId",
+        category.name AS "categoryName",
+        category.icon AS "categoryIcon",
+        category.active AS "categoryActive",
+        matching.availability_status AS "availabilityStatus",
+        matching.accepts_urgent AS "acceptsUrgent",
+        matching.active_proposal_limit AS "activeProposalLimit",
+        matching.active_job_limit AS "activeJobLimit",
+        matching.version,
+        matching.updated_at AS "updatedAt",
+        verification.status AS "verificationStatus",
+        (
+          SELECT count(*)::int
+          FROM provider_service_regions coverage
+          JOIN service_regions region ON region.id = coverage.region_id
+          WHERE coverage.provider_id = matching.provider_id
+            AND coverage.active = true
+            AND region.active = true
+        ) AS "activeRegionCount",
+        (
+          SELECT count(*)::int
+          FROM proposals proposal
+          WHERE proposal.provider_id = matching.provider_id
+            AND proposal.status = 'sent'
+        ) AS "activeProposalCount",
+        (
+          SELECT count(*)::int
+          FROM bookings booking
+          WHERE booking.provider_id = matching.provider_id
+            AND booking.status IN ('scheduled', 'in_progress')
+        ) AS "activeJobCount"
+      FROM provider_matching_profiles matching
+      JOIN service_categories category ON category.id = matching.primary_category_id
+      LEFT JOIN provider_verifications verification ON verification.provider_id = matching.provider_id
+      WHERE matching.provider_id = $1
+    `, [providerId]);
+    return result.rows[0] ?? null;
+  }
+
+  private providerMatchingBlockers(matching: ProviderMatchingRow, ignoreCapacity = false) {
+    const blockers: string[] = [];
+    if (matching.verificationStatus !== "approved") blockers.push("O perfil profissional precisa estar aprovado.");
+    if (!matching.categoryActive) blockers.push("A categoria principal está indisponível.");
+    if (matching.activeRegionCount === 0) blockers.push("Ative ao menos uma região de atendimento.");
+    if (matching.availabilityStatus === "paused") blockers.push("O recebimento de oportunidades está pausado.");
+    if (!ignoreCapacity && matching.activeProposalCount >= matching.activeProposalLimit) blockers.push("O limite de propostas ativas foi atingido.");
+    if (!ignoreCapacity && matching.activeJobCount >= matching.activeJobLimit) blockers.push("A capacidade de serviços em andamento foi atingida.");
+    return blockers;
+  }
+
+  private async loadProviderMatchingView(client: PoolClient, actor: Actor) {
+    const matching = await this.loadProviderMatching(client, actor.id);
+    if (!matching) throw new NotFoundException("Perfil de oportunidades não configurado.");
+    const regions = await client.query<{ id: string; name: string; state: string }>(`
+      SELECT region.id, region.name, region.state
+      FROM provider_service_regions coverage
+      JOIN service_regions region ON region.id = coverage.region_id
+      WHERE coverage.provider_id = $1
+        AND coverage.active = true
+        AND region.active = true
+      ORDER BY region.sort_order, region.name
+    `, [actor.id]);
+    const history = await client.query<{
+      id: string;
+      eventType: "configured" | "updated";
+      profileVersion: number;
+      createdAt: Date;
+    }>(`
+      SELECT
+        id,
+        event_type AS "eventType",
+        profile_version AS "profileVersion",
+        created_at AS "createdAt"
+      FROM provider_matching_events
+      WHERE provider_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 10
+    `, [actor.id]);
+    const blockers = this.providerMatchingBlockers(matching);
+    return {
+      profile: {
+        ...matching,
+        eligible: blockers.length === 0,
+        remainingProposalCapacity: Math.max(0, matching.activeProposalLimit - matching.activeProposalCount),
+        remainingJobCapacity: Math.max(0, matching.activeJobLimit - matching.activeJobCount),
+      },
+      blockers,
+      regions: regions.rows,
+      history: history.rows,
+    };
   }
 
   async acceptProposal(actor: Actor, proposalId: string) {

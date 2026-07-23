@@ -17,7 +17,7 @@
 
 ### Perfis e geografia
 
-`service_regions`, `service_region_neighborhoods`, `provider_service_regions` e seus eventos append-only estão materializados no piloto. Pedidos e perfis de onboarding mantêm as chaves regionais e um snapshot textual da localização. `customer_profiles`, `provider_profiles`, `partner_profiles`, `advertiser_profiles` e endereços completos permanecem como alvo posterior.
+`service_regions`, `service_region_neighborhoods`, `provider_service_regions`, `provider_matching_profiles`, `provider_matching_events` e seus históricos append-only estão materializados no piloto. Pedidos e perfis de onboarding mantêm as chaves regionais e um snapshot textual da localização. O perfil de matching preserva categoria principal, disponibilidade, aceite de urgências e limites de capacidade com versão monotônica. `customer_profiles`, `provider_profiles`, `partner_profiles`, `advertiser_profiles` e endereços completos permanecem como alvo posterior.
 
 ### Catálogo e verificação
 
@@ -38,6 +38,9 @@
 ## Invariantes
 
 - uma proposta pertence a uma solicitação e a um prestador elegível;
+- uma oportunidade aberta só é visível quando categoria, região ativa, verificação aprovada e disponibilidade do profissional são compatíveis;
+- uma nova proposta respeita os limites persistidos de propostas ativas e serviços simultâneos; atualização da própria proposta não consome capacidade adicional;
+- toda alteração do perfil de matching incrementa a versão e gera evento append-only e auditoria no mesmo fluxo transacional;
 - apenas o cliente proprietário aceita proposta;
 - um booking nasce de exatamente uma proposta aceita;
 - o ciclo básico de booking é `scheduled → in_progress → completed`; apenas o prestador vinculado executa essas transições;

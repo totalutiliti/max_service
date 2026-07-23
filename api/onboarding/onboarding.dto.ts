@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -56,6 +57,26 @@ export class CompleteOnboardingDto {
   @MinLength(5)
   @MaxLength(200)
   availabilitySummary?: string;
+
+  @IsOptional()
+  @IsIn(["available_now", "scheduled", "paused"])
+  availabilityStatus?: "available_now" | "scheduled" | "paused";
+
+  @IsOptional()
+  @IsBoolean()
+  acceptsUrgent?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  activeProposalLimit?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  activeJobLimit?: number;
 
   @IsArray()
   @ArrayMinSize(1)

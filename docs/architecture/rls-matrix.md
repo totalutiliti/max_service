@@ -38,6 +38,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | perfil de onboarding | próprio | próprio | nenhum | visão completa | versão e evento append-only |
 | regiões e bairros | somente ativos | somente ativos | nenhum | visão completa e gestão | ao menos uma região e um bairro ativos |
 | cobertura profissional | nenhum | somente própria | nenhum | visão completa | oportunidades exigem vínculo regional ativo |
+| perfil/eventos de matching | nenhum | perfil e histórico próprios | nenhum | visão completa e cockpit de bloqueios | categoria, verificação, disponibilidade e capacidade são revalidadas no insert |
 | aceites e consentimentos | próprios | próprios | nenhum | visão completa | evidência por versão e finalidade |
 
 ## Contexto seguro de conexão
@@ -74,6 +75,9 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - desativação repetida, movimento além dos limites da lista e tentativa de desativar a última categoria ativa são bloqueados;
 - decisão sem análise, justificativa curta, repetição de estado e nova transição após decisão final são bloqueadas;
 - prestador consulta somente a própria verificação e não altera decisões ou itens;
+- prestador vê somente pedidos de sua categoria em cobertura ativa quando está aprovado e disponível; pausa, categoria incompatível ou ausência de cobertura retornam zero oportunidades;
+- tentativa direta de inserir proposta incompatível, sem aprovação ou acima da capacidade é rejeitada pelo gatilho, mesmo que a interface seja contornada;
+- prestador altera somente o próprio perfil de matching; eventos preservam as versões e são visíveis apenas ao titular e à Operação;
 - cliente e parceiro não consultam verificações; apenas a operação revisa itens e muda estados;
 - aprovação com item pendente e correção sem item marcado são bloqueadas;
 - profissional não associa arquivo à verificação de outro; cliente e parceiro enxergam zero metadados;

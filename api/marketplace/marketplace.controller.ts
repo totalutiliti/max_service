@@ -2,7 +2,7 @@ import { Body, Controller, Get, Headers, Param, Post, Req, Res, StreamableFile, 
 import type { IncomingMessage } from "node:http";
 import { parseDemoActor } from "../auth/demo-actor.js";
 import { decodeFileName, readLimitedBody, setPrivateFileHeaders, type HeaderResponse } from "../storage/private-file-http.js";
-import { CreateProposalDto, CreateServiceRequestDto } from "./marketplace.dto.js";
+import { CreateProposalDto, CreateServiceRequestDto, UpdateProviderMatchingDto } from "./marketplace.dto.js";
 import { MarketplaceService } from "./marketplace.service.js";
 import { maximumRequestAttachmentBytes } from "./request-attachment-validation.js";
 
@@ -34,6 +34,23 @@ export class MarketplaceController {
     @Headers("x-demo-actor-id") id: string | undefined,
   ) {
     return { requests: await this.marketplace.listRequests(actorFromHeaders(role, id)) };
+  }
+
+  @Get("provider/matching")
+  async providerMatching(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.marketplace.providerMatching(actorFromHeaders(role, id));
+  }
+
+  @Post("provider/matching")
+  async updateProviderMatching(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Body() input: UpdateProviderMatchingDto,
+  ) {
+    return this.marketplace.updateProviderMatching(actorFromHeaders(role, id), input);
   }
 
   @Post("service-requests")

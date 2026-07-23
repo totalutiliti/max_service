@@ -56,7 +56,43 @@ interface PersistedRequest {
   categoryIcon: string;
   proposalCount: number;
   hasActorProposal?: boolean;
+  matchScore: number;
+  matchReasons: string[];
+  isUrgent: boolean;
   attachments: RequestAttachment[];
+}
+
+type ProviderAvailabilityStatus = "available_now" | "scheduled" | "paused";
+
+interface ProviderMatchingData {
+  profile: {
+    providerId: string;
+    primaryCategoryId: string;
+    categoryName: string;
+    categoryIcon: string;
+    categoryActive: boolean;
+    availabilityStatus: ProviderAvailabilityStatus;
+    acceptsUrgent: boolean;
+    activeProposalLimit: number;
+    activeJobLimit: number;
+    version: number;
+    updatedAt: string;
+    verificationStatus: VerificationStatus | null;
+    activeRegionCount: number;
+    activeProposalCount: number;
+    activeJobCount: number;
+    eligible: boolean;
+    remainingProposalCapacity: number;
+    remainingJobCapacity: number;
+  };
+  blockers: string[];
+  regions: Array<{ id: string; name: string; state: string }>;
+  history: Array<{
+    id: string;
+    eventType: "configured" | "updated";
+    profileVersion: number;
+    createdAt: string;
+  }>;
 }
 
 interface PersistedProposal {
@@ -529,6 +565,13 @@ interface OnboardingData {
   };
   categories: Array<{ id: string; name: string; icon: string }>;
   regions: Array<ServiceRegion & { selected: boolean }>;
+  matchingProfile: {
+    availabilityStatus: ProviderAvailabilityStatus;
+    acceptsUrgent: boolean;
+    activeProposalLimit: number;
+    activeJobLimit: number;
+    version: number;
+  } | null;
   history: Array<{
     id: string;
     eventType: "completed" | "updated";
@@ -600,6 +643,39 @@ interface OperationRegionData {
     activeNeighborhoodCount: number;
   };
   regions: OperationRegion[];
+}
+
+interface OperationMatchingProvider {
+  providerId: string;
+  providerCode: string;
+  providerName: string;
+  primaryCategoryId: string | null;
+  categoryName: string | null;
+  categoryIcon: string | null;
+  categoryActive: boolean | null;
+  availabilityStatus: ProviderAvailabilityStatus | null;
+  acceptsUrgent: boolean | null;
+  activeProposalLimit: number | null;
+  activeJobLimit: number | null;
+  version: number | null;
+  updatedAt: string | null;
+  verificationStatus: VerificationStatus | null;
+  activeRegionCount: number;
+  activeProposalCount: number;
+  activeJobCount: number;
+  blockers: Array<{ code: string; label: string }>;
+  eligible: boolean;
+}
+
+interface OperationMatchingData {
+  metrics: {
+    providerCount: number;
+    eligibleCount: number;
+    verificationBlockedCount: number;
+    coverageBlockedCount: number;
+    capacityBlockedCount: number;
+  };
+  providers: OperationMatchingProvider[];
 }
 
 type CampaignDiscountType = "fixed" | "percentage";
@@ -1585,6 +1661,122 @@ const verificationDocumentStatusLabel: Record<VerificationDocumentStatus, string
   changes_requested: "Corrigir",
 };
 
+const providerAvailabilityLabel: Record<ProviderAvailabilityStatus, string> = {
+  available_now: "Disponível agora",
+  scheduled: "Com agenda",
+  paused: "Pausado",
+};
+
+function ProviderMatchingPanel({
+  notify,
+  onChanged,
+}: {
+  notify: (message: string) => void;
+  onChanged: () => void;
+}) {
+  const [data, setData] = useState<ProviderMatchingData | null>(null);
+  const [draft, setDraft] = useState<{
+    availabilityStatus: ProviderAvailabilityStatus;
+    acceptsUrgent: boolean;
+    activeProposalLimit: number;
+    activeJobLimit: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/provider/matching", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as ProviderMatchingData & { error?: string; message?: string };
+        if (!response.ok || !payload.profile) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar o matching.");
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setData(payload);
+        setDraft({
+          availabilityStatus: payload.profile.availabilityStatus,
+          acceptsUrgent: payload.profile.acceptsUrgent,
+          activeProposalLimit: payload.profile.activeProposalLimit,
+          activeJobLimit: payload.profile.activeJobLimit,
+        });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar o matching.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const save = async () => {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/provider/matching", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const payload = await response.json() as ProviderMatchingData & { error?: string; message?: string };
+      if (!response.ok || !payload.profile) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o matching.");
+      }
+      setData(payload);
+      setDraft({
+        availabilityStatus: payload.profile.availabilityStatus,
+        acceptsUrgent: payload.profile.acceptsUrgent,
+        activeProposalLimit: payload.profile.activeProposalLimit,
+        activeJobLimit: payload.profile.activeJobLimit,
+      });
+      notify(`Matching atualizado na versão ${payload.profile.version}.`);
+      onChanged();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar o matching.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !data) return <section className="dashboard-section provider-matching-panel"><div className="data-state">Calculando elegibilidade e capacidade...</div></section>;
+  if (!data || !draft) return <section className="dashboard-section provider-matching-panel"><div className="data-state"><strong>Matching indisponível.</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Tentar novamente</button></div></section>;
+  const dirty = draft.availabilityStatus !== data.profile.availabilityStatus
+    || draft.acceptsUrgent !== data.profile.acceptsUrgent
+    || draft.activeProposalLimit !== data.profile.activeProposalLimit
+    || draft.activeJobLimit !== data.profile.activeJobLimit;
+
+  return (
+    <section className={`dashboard-section provider-matching-panel ${data.profile.eligible ? "eligible" : "blocked"}`}>
+      <header>
+        <div><small>MATCHING PERSISTENTE · V{data.profile.version}</small><h2>Controle as oportunidades que chegam até você.</h2><p>Categoria, cobertura, verificação e capacidade são conferidas novamente no servidor antes de cada proposta.</p></div>
+        <span className={`status-pill ${data.profile.eligible ? "success" : "warning"}`}>{data.profile.eligible ? "Elegível para receber" : `${data.blockers.length} bloqueio(s)`}</span>
+      </header>
+      <div className="matching-profile-strip">
+        <article><span>{data.profile.categoryIcon}</span><div><small>CATEGORIA PRINCIPAL</small><strong>{data.profile.categoryName}</strong></div></article>
+        <article><span>⌖</span><div><small>COBERTURA ATIVA</small><strong>{data.regions.map((region) => region.name).join(", ") || "Nenhuma região"}</strong></div></article>
+        <article><span>✓</span><div><small>VERIFICAÇÃO</small><strong>{data.profile.verificationStatus ? verificationStatusLabel[data.profile.verificationStatus] : "Não iniciada"}</strong></div></article>
+      </div>
+      {data.blockers.length > 0 && <div className="matching-blockers">{data.blockers.map((blocker) => <span key={blocker}>! {blocker}</span>)}</div>}
+      <div className="matching-control-grid">
+        <section>
+          <small>DISPONIBILIDADE</small>
+          <div className="matching-status-choice">{(["available_now", "scheduled", "paused"] as const).map((status) => <button key={status} className={draft.availabilityStatus === status ? "selected" : ""} onClick={() => setDraft({ ...draft, availabilityStatus: status })}>{providerAvailabilityLabel[status]}</button>)}</div>
+          <label className="matching-urgent-toggle"><input type="checkbox" checked={draft.acceptsUrgent} onChange={(event) => setDraft({ ...draft, acceptsUrgent: event.target.checked })} /><span><strong>Aceitar urgências</strong><small>Pedidos “o quanto antes” ganham prioridade no ranking.</small></span><em aria-hidden="true" /></label>
+        </section>
+        <section>
+          <small>LIMITES DE CAPACIDADE</small>
+          <label><span>Propostas ativas</span><strong>{data.profile.activeProposalCount} / {draft.activeProposalLimit}</strong><input type="range" min="1" max="20" value={draft.activeProposalLimit} onChange={(event) => setDraft({ ...draft, activeProposalLimit: Number(event.target.value) })} /></label>
+          <label><span>Serviços simultâneos</span><strong>{data.profile.activeJobCount} / {draft.activeJobLimit}</strong><input type="range" min="1" max="20" value={draft.activeJobLimit} onChange={(event) => setDraft({ ...draft, activeJobLimit: Number(event.target.value) })} /></label>
+        </section>
+      </div>
+      <footer><div><strong>{data.profile.remainingProposalCapacity} nova(s) proposta(s) e {data.profile.remainingJobCapacity} serviço(s) disponíveis</strong><span>{data.history.length} alteração(ões) preservada(s) no histórico.</span></div><button className="primary-action" disabled={saving || !dirty} onClick={save}>{saving ? "Salvando..." : dirty ? "Salvar matching →" : "Matching atualizado"}</button></footer>
+    </section>
+  );
+}
+
 function ProviderView({ notify }: { notify: (message: string) => void }) {
   const [opportunities, setOpportunities] = useState<PersistedRequest[]>([]);
   const [verification, setVerification] = useState<ProviderVerification | null>(null);
@@ -1655,6 +1847,7 @@ function ProviderView({ notify }: { notify: (message: string) => void }) {
     <>
       <DashboardHeader role="prestador" eyebrow="Área do profissional" title="Bom trabalho começa com boas oportunidades."><span className={`status-pill ${verificationTone}`}>● {verificationLoading ? "Consultando perfil" : verification ? verificationStatusLabel[verification.status] : "Perfil indisponível"}</span></DashboardHeader>
       <div className="metric-grid"><Metric label="Novas oportunidades" value={loading ? "…" : String(opportunities.length)} detail="Pedidos disponíveis agora" tone="lime" /><Metric label="Propostas ativas" value={String(opportunities.filter((item) => item.hasActorProposal).length)} detail="Enviadas por você" /><Metric label="Serviços no mês" value="12" detail="+20% desde junho" /><Metric label="Avaliação" value="4,9" detail="126 avaliações" /></div>
+      <ProviderMatchingPanel notify={notify} onChanged={() => { setLoading(true); setRefresh((value) => value + 1); }} />
       <div className="dashboard-columns wide-left">
         <section className="dashboard-section"><div className="dashboard-section-title"><div><small>OPORTUNIDADES PRÓXIMAS</small><h2>Pedidos disponíveis</h2></div><button onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar ↻</button></div><div className="opportunity-list">{loading && <div className="data-state">Buscando oportunidades...</div>}{!loading && opportunities.length === 0 && <div className="data-state"><strong>Nenhum pedido disponível agora.</strong><span>Novos pedidos aparecerão aqui automaticamente.</span></div>}{opportunities.slice(0, 5).map((request) => <Opportunity key={request.id} request={request} onSelect={() => setSelected(request)} />)}</div></section>
         <section className="dashboard-section profile-progress"><small>VERIFICAÇÃO · {verification?.publicCode ?? "…"}</small><div className="progress-ring" style={{ background: `radial-gradient(circle at center, white 59%, transparent 61%), conic-gradient(var(--lime) ${verificationPercentage}%, #e2e7df 0)` }}>{verificationLoading ? "…" : verificationPercentage}<sup>%</sup></div><h2>{verification ? verificationStatusLabel[verification.status] : "Carregando perfil"}</h2><p>{verification?.decisionReason ?? (verification ? `${verification.acceptedDocumentCount} de ${verification.documentCount} itens conferidos pela operação.` : "Consultando o checklist de verificação.")}</p>{verification?.documents && <><div className="private-upload-note"><span>!</span><p><strong>Use apenas arquivos sintéticos.</strong>PDF, JPEG ou PNG de até 2 MB. Nenhum dado ou documento real deve entrar nesta demonstração.</p></div><ul className="profile-checklist document-checklist">{verification.documents.map((document) => <li key={document.id} className={document.status}><span>{document.status === "accepted" ? "✓" : "!"}</span><div><strong>{document.label}</strong><small>{document.fileName ? `${document.fileName} · ${document.fileVersionCount} versão(ões)` : verificationDocumentStatusLabel[document.status]}</small></div><div className="provider-document-actions">{document.fileId && <a href={`/api/v1/provider/verification?fileId=${encodeURIComponent(document.fileId)}`} download>Baixar</a>}<label className={uploadingDocumentId === document.id ? "busy" : ""}><input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" disabled={uploadingDocumentId !== null} onChange={(event) => { void uploadDocument(document.id, event.target.files?.[0]); event.currentTarget.value = ""; }} /><span>{uploadingDocumentId === document.id ? "Enviando…" : document.fileId ? "Nova versão" : "Enviar arquivo"}</span></label></div></li>)}</ul></>}</section>
@@ -1665,7 +1858,7 @@ function ProviderView({ notify }: { notify: (message: string) => void }) {
 }
 
 function Opportunity({ request, onSelect }: { request: PersistedRequest; onSelect: () => void }) {
-  return <article><span className="category-icon">{request.categoryIcon}</span><div><strong>{request.title}</strong><span>{request.neighborhood} · {request.city}{request.attachments.length ? ` · ${request.attachments.length} foto(s)` : ""}</span></div><div><small>{request.preferredWindow}</small><button onClick={onSelect}>{request.hasActorProposal ? "Atualizar proposta" : "Enviar proposta"}</button></div></article>;
+  return <article className="ranked-opportunity"><span className="category-icon">{request.categoryIcon}</span><div><div className="opportunity-title"><strong>{request.title}</strong><em>{request.matchScore}% match</em></div><span>{request.neighborhood} · {request.city}{request.attachments.length ? ` · ${request.attachments.length} foto(s)` : ""}</span><small className="match-reasons">{request.matchReasons.slice(0, 4).map((reason) => <i key={reason}>{reason}</i>)}</small></div><div><small>{request.preferredWindow}</small><button onClick={onSelect}>{request.hasActorProposal ? "Atualizar proposta" : "Enviar proposta"}</button></div></article>;
 }
 
 function ProposalDialog({ request, onClose, onSaved, notify }: { request: PersistedRequest; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
@@ -3318,6 +3511,55 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
   );
 }
 
+function MatchingOperationsPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationMatchingData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/matching", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationMatchingData & { error?: string; message?: string };
+        if (!response.ok || !payload.providers || !payload.metrics) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a elegibilidade profissional.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a elegibilidade profissional.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  return (
+    <section className="dashboard-section matching-operations">
+      <header><div><small>SAÚDE DO MATCHING</small><h2>Elegibilidade dos profissionais</h2><p>Acompanhe quem pode receber pedidos e qual regra precisa ser resolvida antes da próxima oportunidade.</p></div><button className="secondary-action" disabled={loading} onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar ↻</button></header>
+      <div className="matching-operation-metrics">
+        <article><strong>{loading ? "…" : data?.metrics.eligibleCount ?? 0}</strong><span>elegíveis agora</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.verificationBlockedCount ?? 0}</strong><span>aguardam verificação</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.coverageBlockedCount ?? 0}</strong><span>sem cobertura ativa</span></article>
+        <article><strong>{loading ? "…" : data?.metrics.capacityBlockedCount ?? 0}</strong><span>no limite de capacidade</span></article>
+      </div>
+      <div className="matching-provider-list">
+        {loading && <div className="data-state">Calculando regras de elegibilidade...</div>}
+        {!loading && data?.providers.map((provider) => (
+          <article key={provider.providerId} className={provider.eligible ? "eligible" : "blocked"}>
+            <div className="matching-provider-identity"><span>{provider.categoryIcon ?? "?"}</span><div><strong>{provider.providerName}</strong><small>{provider.providerCode} · {provider.categoryName ?? "Sem categoria"}</small></div></div>
+            <div className="matching-provider-capacity"><span><strong>{provider.activeProposalCount}/{provider.activeProposalLimit ?? "—"}</strong><small>propostas</small></span><span><strong>{provider.activeJobCount}/{provider.activeJobLimit ?? "—"}</strong><small>serviços</small></span><span><strong>{provider.activeRegionCount}</strong><small>regiões</small></span></div>
+            <span className={`status-pill ${provider.eligible ? "success" : "warning"}`}>{provider.eligible ? "Elegível" : `${provider.blockers.length} bloqueio(s)`}</span>
+            <div className="matching-provider-blockers">{provider.blockers.length > 0 ? provider.blockers.map((blocker) => <i key={blocker.code}>{blocker.label}</i>) : <i className="ready">{providerAvailabilityLabel[provider.availabilityStatus ?? "scheduled"]}{provider.acceptsUrgent ? " · aceita urgências" : ""}</i>}</div>
+          </article>
+        ))}
+      </div>
+      <footer><span>i</span><p><strong>Sem score oculto:</strong> o piloto usa apenas categoria declarada, região ativa, verificação humana, disponibilidade e limites definidos pelo próprio profissional.</p></footer>
+    </section>
+  );
+}
+
 function RegionManagementPanel({ notify }: { notify: (message: string) => void }) {
   const [data, setData] = useState<OperationRegionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -3843,6 +4085,10 @@ function OnboardingForm({
   const [serviceRadiusKm, setServiceRadiusKm] = useState(String(profile?.serviceRadiusKm ?? 25));
   const [bio, setBio] = useState(profile?.bio ?? "Profissional com experiência prática, atendimento transparente e foco em segurança.");
   const [availabilitySummary, setAvailabilitySummary] = useState(profile?.availabilitySummary ?? "Segunda a sábado, das 8h às 18h");
+  const [availabilityStatus, setAvailabilityStatus] = useState<ProviderAvailabilityStatus>(data.matchingProfile?.availabilityStatus ?? "scheduled");
+  const [acceptsUrgent, setAcceptsUrgent] = useState(data.matchingProfile?.acceptsUrgent ?? false);
+  const [activeProposalLimit, setActiveProposalLimit] = useState(String(data.matchingProfile?.activeProposalLimit ?? 6));
+  const [activeJobLimit, setActiveJobLimit] = useState(String(data.matchingProfile?.activeJobLimit ?? 3));
   const [acceptedDocumentIds, setAcceptedDocumentIds] = useState(() => new Set(data.documents.filter((document) => document.acceptedAt).map((document) => document.id)));
   const [marketingConsent, setMarketingConsent] = useState(data.consents.marketingCommunications);
   const [productResearchConsent, setProductResearchConsent] = useState(data.consents.productResearch);
@@ -3891,6 +4137,10 @@ function OnboardingForm({
                 serviceRadiusKm: Number(serviceRadiusKm),
                 bio: bio.trim(),
                 availabilitySummary: availabilitySummary.trim(),
+                availabilityStatus,
+                acceptsUrgent,
+                activeProposalLimit: Number(activeProposalLimit),
+                activeJobLimit: Number(activeJobLimit),
               }
             : { regionId, neighborhoodId }),
           acceptedDocumentIds: [...acceptedDocumentIds],
@@ -3918,6 +4168,7 @@ function OnboardingForm({
         <div className="onboarding-fields">
           {!isProvider && <><label className="field"><span>Região do piloto</span><select value={selectedRegion?.id ?? ""} onChange={(event) => changeRegion(event.target.value)} required>{data.regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Bairro de atendimento</span><select value={neighborhoodId} onChange={(event) => setNeighborhoodId(event.target.value)} required>{selectedRegion?.neighborhoods.map((neighborhood) => <option key={neighborhood.id} value={neighborhood.id}>{neighborhood.name}</option>)}</select></label></>}
           {isProvider && <div className="provider-region-selector onboarding-wide"><div><span>Regiões de atendimento</span><small>Selecione de 1 a 5 áreas ativas. Oportunidades fora delas ficam bloqueadas no banco.</small></div><div>{data.regions.map((region) => <label key={region.id} className={serviceRegionIds.has(region.id) ? "selected" : ""}><input type="checkbox" checked={serviceRegionIds.has(region.id)} onChange={() => toggleServiceRegion(region.id)} /><span><strong>{region.name} · {region.state}</strong><small>{region.neighborhoods.length} bairros ativos</small></span></label>)}</div></div>}
+          {isProvider && <div className="onboarding-matching-settings onboarding-wide"><header><div><span>Disponibilidade para oportunidades</span><small>Essa regra controla o matching e pode ser alterada depois no painel profissional.</small></div><label><input type="checkbox" checked={acceptsUrgent} onChange={(event) => setAcceptsUrgent(event.target.checked)} /><span>Aceito pedidos urgentes</span></label></header><div className="availability-choice">{([{ value: "available_now", label: "Disponível agora", detail: "Prioridade em urgências" }, { value: "scheduled", label: "Com agenda", detail: "Receber normalmente" }, { value: "paused", label: "Pausado", detail: "Não receber novos pedidos" }] as const).map((option) => <button key={option.value} type="button" className={availabilityStatus === option.value ? "selected" : ""} onClick={() => setAvailabilityStatus(option.value)}><strong>{option.label}</strong><small>{option.detail}</small></button>)}</div><div className="matching-limit-fields"><label className="field"><span>Máximo de propostas ativas</span><input type="number" min="1" max="20" value={activeProposalLimit} onChange={(event) => setActiveProposalLimit(event.target.value)} required /></label><label className="field"><span>Máximo de serviços simultâneos</span><input type="number" min="1" max="20" value={activeJobLimit} onChange={(event) => setActiveJobLimit(event.target.value)} required /></label></div></div>}
           {isProvider && <><label className="field"><span>Categoria principal</span><select value={serviceCategoryId} onChange={(event) => setServiceCategoryId(event.target.value)} required>{data.categories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.name}</option>)}</select></label><label className="field"><span>Anos de experiência</span><input type="number" min="0" max="60" value={yearsExperience} onChange={(event) => setYearsExperience(event.target.value)} required /></label><label className="field"><span>Raio de atendimento (km)</span><input type="number" min="1" max="200" value={serviceRadiusKm} onChange={(event) => setServiceRadiusKm(event.target.value)} required /></label><label className="field onboarding-wide"><span>Apresentação profissional</span><textarea minLength={20} maxLength={500} rows={3} value={bio} onChange={(event) => setBio(event.target.value)} required /><small>{bio.trim().length}/500</small></label><label className="field onboarding-wide"><span>Disponibilidade</span><input minLength={5} maxLength={200} value={availabilitySummary} onChange={(event) => setAvailabilitySummary(event.target.value)} required /></label></>}
         </div>
         <section className="onboarding-documents">
@@ -3929,7 +4180,7 @@ function OnboardingForm({
           <label><input type="checkbox" checked={marketingConsent} onChange={(event) => setMarketingConsent(event.target.checked)} /><span><strong>Novidades e campanhas</strong><small>Autorizar comunicações promocionais. Pode ser revogado depois.</small></span></label>
           <label><input type="checkbox" checked={productResearchConsent} onChange={(event) => setProductResearchConsent(event.target.checked)} /><span><strong>Pesquisa de produto</strong><small>Autorizar convites para entrevistas e testes da experiência.</small></span></label>
         </section>
-        <footer className="onboarding-form-footer"><div><strong>Aceites obrigatórios não incluem marketing.</strong><span>O hash do texto, a versão e o horário ficam preservados.</span></div><div>{onCancel && <button type="button" className="secondary-action" onClick={onCancel}>Cancelar</button>}<button className="primary-action" disabled={saving || !allDocumentsAccepted || (isProvider ? serviceRegionIds.size === 0 : !selectedRegion || !neighborhoodId)}>{saving ? "Salvando..." : profile ? "Salvar nova versão →" : "Concluir onboarding →"}</button></div></footer>
+        <footer className="onboarding-form-footer"><div><strong>Aceites obrigatórios não incluem marketing.</strong><span>O hash do texto, a versão e o horário ficam preservados.</span></div><div>{onCancel && <button type="button" className="secondary-action" onClick={onCancel}>Cancelar</button>}<button className="primary-action" disabled={saving || !allDocumentsAccepted || (isProvider ? serviceRegionIds.size === 0 || Number(activeProposalLimit) < 1 || Number(activeJobLimit) < 1 : !selectedRegion || !neighborhoodId)}>{saving ? "Salvando..." : profile ? "Salvar nova versão →" : "Concluir onboarding →"}</button></div></footer>
       </form>
     </section>
   );
@@ -4109,6 +4360,7 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
+        {isOperational && <MatchingOperationsPanel notify={notify} />}
         {isOperational && <RegionManagementPanel notify={notify} />}
         {isOperational && <CatalogManagementPanel notify={notify} />}
         {isOperational && <CampaignManagementPanel notify={notify} />}

@@ -118,6 +118,7 @@ export class OnboardingService {
 
       if (role === "provider") {
         await this.syncProviderRegions(client, actor, resolvedProfile.serviceRegionIds);
+        await this.syncProviderMatching(client, actor, resolvedProfile);
       }
 
       for (const document of documents) {
@@ -165,6 +166,10 @@ export class OnboardingService {
           serviceCategoryId: resolvedProfile.serviceCategoryId,
           yearsExperience: resolvedProfile.yearsExperience,
           serviceRadiusKm: resolvedProfile.serviceRadiusKm,
+          availabilityStatus: resolvedProfile.availabilityStatus,
+          acceptsUrgent: resolvedProfile.acceptsUrgent,
+          activeProposalLimit: resolvedProfile.activeProposalLimit,
+          activeJobLimit: resolvedProfile.activeJobLimit,
         }),
       ]);
       await client.query(
@@ -206,6 +211,10 @@ export class OnboardingService {
         serviceRadiusKm: null,
         bio: null,
         availabilitySummary: null,
+        availabilityStatus: null,
+        acceptsUrgent: null,
+        activeProposalLimit: null,
+        activeJobLimit: null,
       };
     }
     const bio = input.bio?.trim() ?? "";
@@ -217,6 +226,10 @@ export class OnboardingService {
       || serviceRegionIds.length > 5
       || input.yearsExperience === undefined
       || input.serviceRadiusKm === undefined
+      || input.availabilityStatus === undefined
+      || input.acceptsUrgent === undefined
+      || input.activeProposalLimit === undefined
+      || input.activeJobLimit === undefined
       || bio.length < 20
       || availabilitySummary.length < 5
     ) {
@@ -231,6 +244,10 @@ export class OnboardingService {
       serviceRadiusKm: input.serviceRadiusKm,
       bio,
       availabilitySummary,
+      availabilityStatus: input.availabilityStatus,
+      acceptsUrgent: input.acceptsUrgent,
+      activeProposalLimit: input.activeProposalLimit,
+      activeJobLimit: input.activeJobLimit,
     };
   }
 
@@ -327,6 +344,91 @@ export class OnboardingService {
         `, [randomUUID(), actor.id, regionId]);
       }
     }
+  }
+
+  private async syncProviderMatching(
+    client: PoolClient,
+    actor: Actor,
+    profile: Awaited<ReturnType<OnboardingService["resolveProfileLocation"]>>,
+  ) {
+    const currentResult = await client.query<{
+      primaryCategoryId: string;
+      availabilityStatus: "available_now" | "scheduled" | "paused";
+      acceptsUrgent: boolean;
+      activeProposalLimit: number;
+      activeJobLimit: number;
+      version: number;
+    }>(`
+      SELECT
+        primary_category_id AS "primaryCategoryId",
+        availability_status AS "availabilityStatus",
+        accepts_urgent AS "acceptsUrgent",
+        active_proposal_limit AS "activeProposalLimit",
+        active_job_limit AS "activeJobLimit",
+        version
+      FROM provider_matching_profiles
+      WHERE provider_id = $1
+      FOR UPDATE
+    `, [actor.id]);
+    const current = currentResult.rows[0];
+    const changed = !current
+      || current.primaryCategoryId !== profile.serviceCategoryId
+      || current.availabilityStatus !== profile.availabilityStatus
+      || current.acceptsUrgent !== profile.acceptsUrgent
+      || current.activeProposalLimit !== profile.activeProposalLimit
+      || current.activeJobLimit !== profile.activeJobLimit;
+    if (!changed) return;
+
+    const version = (current?.version ?? 0) + 1;
+    await client.query(`
+      INSERT INTO provider_matching_profiles (
+        provider_id,
+        primary_category_id,
+        availability_status,
+        accepts_urgent,
+        active_proposal_limit,
+        active_job_limit,
+        version
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (provider_id) DO UPDATE SET
+        primary_category_id = EXCLUDED.primary_category_id,
+        availability_status = EXCLUDED.availability_status,
+        accepts_urgent = EXCLUDED.accepts_urgent,
+        active_proposal_limit = EXCLUDED.active_proposal_limit,
+        active_job_limit = EXCLUDED.active_job_limit,
+        version = EXCLUDED.version,
+        updated_at = now()
+    `, [
+      actor.id,
+      profile.serviceCategoryId,
+      profile.availabilityStatus,
+      profile.acceptsUrgent,
+      profile.activeProposalLimit,
+      profile.activeJobLimit,
+      version,
+    ]);
+    const eventId = randomUUID();
+    await client.query(`
+      INSERT INTO provider_matching_events (
+        id, provider_id, actor_id, event_type, profile_version, snapshot
+      ) VALUES ($1, $2, $2, $3, $4, $5::jsonb)
+    `, [
+      eventId,
+      actor.id,
+      current ? "updated" : "configured",
+      version,
+      JSON.stringify({
+        primaryCategoryId: profile.serviceCategoryId,
+        availabilityStatus: profile.availabilityStatus,
+        acceptsUrgent: profile.acceptsUrgent,
+        activeProposalLimit: profile.activeProposalLimit,
+        activeJobLimit: profile.activeJobLimit,
+      }),
+    ]);
+    await client.query(
+      "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_matching.updated', 'provider_matching', $3, $4::jsonb)",
+      [actor.id, actor.role, actor.id, JSON.stringify({ version, eventId, source: "onboarding" })],
+    );
   }
 
   private async upsertConsent(
@@ -443,6 +545,24 @@ export class OnboardingService {
           ORDER BY sort_order, name
         `)
       : { rows: [] };
+    const matchingProfile = role === "provider"
+      ? await client.query<{
+          availabilityStatus: "available_now" | "scheduled" | "paused";
+          acceptsUrgent: boolean;
+          activeProposalLimit: number;
+          activeJobLimit: number;
+          version: number;
+        }>(`
+          SELECT
+            availability_status AS "availabilityStatus",
+            accepts_urgent AS "acceptsUrgent",
+            active_proposal_limit AS "activeProposalLimit",
+            active_job_limit AS "activeJobLimit",
+            version
+          FROM provider_matching_profiles
+          WHERE provider_id = $1
+        `, [actor.id])
+      : { rows: [] };
     const regions = await client.query<{
       id: string;
       code: string;
@@ -509,6 +629,7 @@ export class OnboardingService {
       },
       categories: categories.rows,
       regions: regions.rows,
+      matchingProfile: matchingProfile.rows[0] ?? null,
       history: history.rows,
     };
   }

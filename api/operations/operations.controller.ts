@@ -69,6 +69,14 @@ export class OperationsController {
     return this.operations.regions(actorFromHeaders(role, id));
   }
 
+  @Get("matching")
+  async matching(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.operations.matching(actorFromHeaders(role, id));
+  }
+
   @Post("regions/:regionId/actions")
   async manageRegion(
     @Headers("x-demo-role") role: string | undefined,

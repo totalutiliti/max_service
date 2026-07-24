@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Res, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
+import type { HeaderResponse } from "../storage/private-file-http.js";
 import { CampaignsService } from "./campaigns.service.js";
 import { ChangeCampaignStatusDto, CreateCampaignDto, ValidateCouponDto } from "./campaigns.dto.js";
 
@@ -36,18 +37,36 @@ export class CampaignsController {
   async create(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Body() input: CreateCampaignDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { campaign: await this.campaigns.create(actorFromHeaders(role, id), input) };
+    const result = await this.campaigns.create(
+      actorFromHeaders(role, id),
+      input,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { campaign: result.value };
   }
 
   @Post("operation/campaigns/:campaignId/actions")
   async changeStatus(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("campaignId") campaignId: string,
     @Body() input: ChangeCampaignStatusDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { campaign: await this.campaigns.changeStatus(actorFromHeaders(role, id), campaignId, input.action, input.note) };
+    const result = await this.campaigns.changeStatus(
+      actorFromHeaders(role, id),
+      campaignId,
+      input.action,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { campaign: result.value };
   }
 }

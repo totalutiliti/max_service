@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post, Query, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Query, Res, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
+import type { HeaderResponse } from "../storage/private-file-http.js";
 import {
   AddSupportCaseNoteDto,
   ChangePartnerReferralStatusDto,
@@ -43,14 +44,19 @@ export class OperationsController {
   async updateReadinessGate(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("gateKey") gateKey: string,
     @Body() input: UpdateOperationReadinessGateDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return this.operations.updateReadinessGate(
+    const result = await this.operations.updateReadinessGate(
       actorFromHeaders(role, id),
       gateKey,
       input,
+      idempotencyKey,
     );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return result.value;
   }
 
   @Get("reports")
@@ -66,14 +72,17 @@ export class OperationsController {
   async updateReportGoals(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Body() input: UpdateOperationReportGoalsDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return {
-      goals: await this.operations.updateReportGoals(
-        actorFromHeaders(role, id),
-        input,
-      ),
-    };
+    const result = await this.operations.updateReportGoals(
+      actorFromHeaders(role, id),
+      input,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { goals: result.value };
   }
 
   @Get("categories")
@@ -104,51 +113,60 @@ export class OperationsController {
   async manageRegion(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("regionId") regionId: string,
     @Body() input: ManageServiceRegionDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return {
-      region: await this.operations.manageRegion(
-        actorFromHeaders(role, id),
-        regionId,
-        input.action,
-        input.note,
-      ),
-    };
+    const result = await this.operations.manageRegion(
+      actorFromHeaders(role, id),
+      regionId,
+      input.action,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { region: result.value };
   }
 
   @Post("region-neighborhoods/:neighborhoodId/actions")
   async manageRegionNeighborhood(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("neighborhoodId") neighborhoodId: string,
     @Body() input: ManageServiceRegionDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return {
-      neighborhood: await this.operations.manageRegionNeighborhood(
-        actorFromHeaders(role, id),
-        neighborhoodId,
-        input.action,
-        input.note,
-      ),
-    };
+    const result = await this.operations.manageRegionNeighborhood(
+      actorFromHeaders(role, id),
+      neighborhoodId,
+      input.action,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { neighborhood: result.value };
   }
 
   @Post("categories/:categoryId/actions")
   async manageCategory(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("categoryId") categoryId: string,
     @Body() input: ManageServiceCategoryDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return {
-      category: await this.operations.manageCategory(
-        actorFromHeaders(role, id),
-        categoryId,
-        input.action,
-        input.note,
-      ),
-    };
+    const result = await this.operations.manageCategory(
+      actorFromHeaders(role, id),
+      categoryId,
+      input.action,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { category: result.value };
   }
 
   @Get("cases")
@@ -172,20 +190,39 @@ export class OperationsController {
   async changeStatus(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("caseId") caseId: string,
     @Body() input: ChangeSupportCaseStatusDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { case: await this.operations.changeStatus(actorFromHeaders(role, id), caseId, input.status, input.note) };
+    const result = await this.operations.changeStatus(
+      actorFromHeaders(role, id),
+      caseId,
+      input.status,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { case: result.value };
   }
 
   @Post("cases/:caseId/notes")
   async addNote(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("caseId") caseId: string,
     @Body() input: AddSupportCaseNoteDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { event: await this.operations.addNote(actorFromHeaders(role, id), caseId, input.note) };
+    const result = await this.operations.addNote(
+      actorFromHeaders(role, id),
+      caseId,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { event: result.value };
   }
 
   @Get("referrals")
@@ -209,16 +246,19 @@ export class OperationsController {
   async changeReferralStatus(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("referralId") referralId: string,
     @Body() input: ChangePartnerReferralStatusDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return {
-      referral: await this.operations.changeReferralStatus(
-        actorFromHeaders(role, id),
-        referralId,
-        input.status,
-        input.note,
-      ),
-    };
+    const result = await this.operations.changeReferralStatus(
+      actorFromHeaders(role, id),
+      referralId,
+      input.status,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { referral: result.value };
   }
 }

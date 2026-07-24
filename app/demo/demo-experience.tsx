@@ -4,6 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+function pendingIdempotencyKey(keys: Map<string, string>, fingerprint: string) {
+  const current = keys.get(fingerprint);
+  if (current) return current;
+  const key = crypto.randomUUID();
+  keys.set(fingerprint, key);
+  return key;
+}
+
 type Role = "cliente" | "prestador" | "parceiro" | "operacao";
 type Section = "inicio" | "atividade" | "mensagens" | "conta";
 type RequestStep = 1 | 2 | 3 | 4;
@@ -2344,6 +2352,7 @@ function OperationReportGoalsDialog({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pendingKeys = useRef(new Map<string, string>());
   useEffect(() => { closeRef.current?.focus(); }, []);
 
   const percent = (value: string) => Number(value.replace(",", "."));
@@ -2357,25 +2366,31 @@ function OperationReportGoalsDialog({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!valid) return;
+    const requestPayload = {
+      periodDays: goals.periodDays,
+      proposalCoverageTargetBps: Math.round(percent(proposalCoverage) * 100),
+      bookingConversionTargetBps: Math.round(percent(bookingConversion) * 100),
+      firstProposalTargetMinutes: integer(firstProposalMinutes),
+      overdueCaseLimit: integer(overdueCaseLimit),
+      unreconciledLimit: integer(unreconciledLimit),
+      note: note.trim(),
+    };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSaving(true);
     try {
       const response = await fetch("/api/v1/operation/reports", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          periodDays: goals.periodDays,
-          proposalCoverageTargetBps: Math.round(percent(proposalCoverage) * 100),
-          bookingConversionTargetBps: Math.round(percent(bookingConversion) * 100),
-          firstProposalTargetMinutes: integer(firstProposalMinutes),
-          overdueCaseLimit: integer(overdueCaseLimit),
-          unreconciledLimit: integer(unreconciledLimit),
-          note: note.trim(),
-        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { goals?: OperationReportData["goals"]; error?: string; message?: string };
       if (!response.ok || !payload.goals) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar as metas.");
       }
+      pendingKeys.current.delete(mutationFingerprint);
       notify(`Metas de ${payload.goals.periodDays} dias atualizadas na versão ${payload.goals.version}.`);
       onSaved();
       onClose();
@@ -2492,6 +2507,7 @@ function OperationReferralDialog({ referralId, onClose, onChanged, notify }: { r
   const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState("");
   const [reload, setReload] = useState(0);
+  const pendingKeys = useRef(new Map<string, string>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2512,15 +2528,21 @@ function OperationReferralDialog({ referralId, onClose, onChanged, notify }: { r
 
   const submit = async (status: "in_review" | "approved" | "rejected") => {
     if (note.trim().length < 10) return;
+    const requestPayload = { referralId, status, note: note.trim() };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSubmitting(true);
     try {
       const response = await fetch("/api/v1/operation/referrals", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ referralId, status, note: note.trim() }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { error?: string; message?: string };
       if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a indicação.");
+      pendingKeys.current.delete(mutationFingerprint);
       setNote("");
       setReload((value) => value + 1);
       onChanged();
@@ -2590,6 +2612,7 @@ function OperationVerificationDialog({ verificationId, onClose, onChanged, notif
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState("");
+  const pendingKeys = useRef(new Map<string, string>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2610,15 +2633,21 @@ function OperationVerificationDialog({ verificationId, onClose, onChanged, notif
 
   const submit = async (action: "status" | "document", status: "in_review" | "approved" | "changes_requested" | "accepted", documentId?: string) => {
     if (note.trim().length < 10) return;
+    const requestPayload = { verificationId, documentId, action, status, note: note.trim() };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSubmitting(true);
     try {
       const response = await fetch("/api/v1/operation/verifications", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ verificationId, documentId, action, status, note: note.trim() }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { verification?: ProviderVerification; error?: string; message?: string };
       if (!response.ok || !payload.verification) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a verificação.");
+      pendingKeys.current.delete(mutationFingerprint);
       setDetail(payload.verification);
       setNote("");
       onChanged();
@@ -2663,6 +2692,7 @@ function OperationCaseDialog({ caseId, onClose, onChanged, notify }: { caseId: s
   const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState("");
   const [reload, setReload] = useState(0);
+  const pendingKeys = useRef(new Map<string, string>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2683,15 +2713,21 @@ function OperationCaseDialog({ caseId, onClose, onChanged, notify }: { caseId: s
 
   const submit = async (action: "note" | "status", status?: "in_review" | "resolved") => {
     if (note.trim().length < 10) return;
+    const requestPayload = { caseId, action, status, note: note.trim() };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSubmitting(true);
     try {
       const response = await fetch("/api/v1/operation/cases", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ caseId, action, status, note: note.trim() }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { error?: string; message?: string };
       if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o chamado.");
+      pendingKeys.current.delete(mutationFingerprint);
       setNote("");
       setReload((value) => value + 1);
       onChanged();
@@ -4260,28 +4296,35 @@ function RegionActionDialog({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pendingKeys = useRef(new Map<string, string>());
   const subject = pending.neighborhood?.name ?? pending.region.name;
   const activating = pending.action === "activate";
   useEffect(() => { closeRef.current?.focus(); }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const requestPayload = {
+      target: pending.target,
+      id: pending.neighborhood?.id ?? pending.region.id,
+      action: pending.action,
+      note: note.trim(),
+    };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSaving(true);
     try {
       const response = await fetch("/api/v1/operation/regions", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          target: pending.target,
-          id: pending.neighborhood?.id ?? pending.region.id,
-          action: pending.action,
-          note: note.trim(),
-        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { region?: OperationRegion; neighborhood?: OperationRegionNeighborhood; error?: string; message?: string };
       if (!response.ok || (!payload.region && !payload.neighborhood)) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a cobertura.");
       }
+      pendingKeys.current.delete(mutationFingerprint);
       notify(`${subject}: cobertura ${activating ? "ativada" : "desativada"} e auditada.`);
       onSaved();
     } catch (error) {
@@ -4400,26 +4443,33 @@ function CatalogActionDialog({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pendingKeys = useRef(new Map<string, string>());
   const copy = catalogActionCopy[pending.action];
   useEffect(() => { closeRef.current?.focus(); }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const requestPayload = {
+      categoryId: pending.category.id,
+      action: pending.action,
+      note: note.trim(),
+    };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSaving(true);
     try {
       const response = await fetch("/api/v1/operation/categories", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          categoryId: pending.category.id,
-          action: pending.action,
-          note: note.trim(),
-        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { category?: OperationCatalogCategory; error?: string; message?: string };
       if (!response.ok || !payload.category) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a categoria.");
       }
+      pendingKeys.current.delete(mutationFingerprint);
       notify(`${pending.category.name}: catálogo atualizado e auditado.`);
       onSaved();
     } catch (error) {
@@ -4547,35 +4597,40 @@ function CampaignCreateDialog({ onClose, onSaved, notify }: { onClose: () => voi
   const [endsAt, setEndsAt] = useState(localDate(later));
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const pendingKeys = useRef(new Map<string, string>());
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
     try {
       const discountValue = discountType === "fixed" ? Math.round(Number(discount) * 100) : Math.round(Number(discount) * 100);
+      const campaign = {
+        name: name.trim(),
+        code: code.trim(),
+        description: description.trim(),
+        discountType,
+        discountValue,
+        maxDiscountCents: discountType === "percentage" ? Math.round(Number(maxDiscount) * 100) : undefined,
+        minAmountCents: Math.round(Number(minimum) * 100),
+        totalRedemptionLimit: Number(totalLimit),
+        perCustomerLimit: Number(customerLimit),
+        startsAt: new Date(startsAt).toISOString(),
+        endsAt: new Date(endsAt).toISOString(),
+        note: note.trim(),
+      };
+      const requestPayload = { action: "create", campaign };
+      const mutationFingerprint = JSON.stringify(requestPayload);
       const response = await fetch("/api/v1/operation/campaigns", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          campaign: {
-            name: name.trim(),
-            code: code.trim(),
-            description: description.trim(),
-            discountType,
-            discountValue,
-            maxDiscountCents: discountType === "percentage" ? Math.round(Number(maxDiscount) * 100) : undefined,
-            minAmountCents: Math.round(Number(minimum) * 100),
-            totalRedemptionLimit: Number(totalLimit),
-            perCustomerLimit: Number(customerLimit),
-            startsAt: new Date(startsAt).toISOString(),
-            endsAt: new Date(endsAt).toISOString(),
-            note: note.trim(),
-          },
-        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { campaign?: MarketingCampaign; error?: string; message?: string };
       if (!response.ok || !payload.campaign) throw new Error(payload.error ?? payload.message ?? "Não foi possível criar a campanha.");
+      pendingKeys.current.delete(mutationFingerprint);
       notify(`Campanha ${payload.campaign.code} criada e auditada.`);
       onSaved();
     } catch (error) {
@@ -4591,13 +4646,24 @@ function CampaignCreateDialog({ onClose, onSaved, notify }: { onClose: () => voi
 function CampaignStatusDialog({ pending, onClose, onSaved, notify }: { pending: { campaign: MarketingCampaign; action: CampaignAction }; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const pendingKeys = useRef(new Map<string, string>());
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const requestPayload = { campaignId: pending.campaign.id, action: pending.action, note: note.trim() };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSaving(true);
     try {
-      const response = await fetch("/api/v1/operation/campaigns", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ campaignId: pending.campaign.id, action: pending.action, note: note.trim() }) });
+      const response = await fetch("/api/v1/operation/campaigns", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
+      });
       const payload = await response.json() as { campaign?: MarketingCampaign; error?: string; message?: string };
       if (!response.ok || !payload.campaign) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a campanha.");
+      pendingKeys.current.delete(mutationFingerprint);
       notify(`${pending.campaign.code}: campanha ${pending.action === "pause" ? "pausada" : "ativada"} e auditada.`);
       onSaved();
     } catch (error) {
@@ -5123,6 +5189,7 @@ function OperationReadinessPanel({ notify }: { notify: (message: string) => void
   const [evidence, setEvidence] = useState("");
   const [note, setNote] = useState("");
   const [refresh, setRefresh] = useState(0);
+  const pendingKeys = useRef(new Map<string, string>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -5158,24 +5225,30 @@ function OperationReadinessPanel({ notify }: { notify: (message: string) => void
   const saveGate = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedGate) return;
+    const requestPayload = {
+      gateKey: selectedGate.gateKey,
+      status,
+      ownerLabel: ownerLabel.trim(),
+      evidence: evidence.trim(),
+      expectedVersion: selectedGate.version,
+      note: note.trim(),
+    };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSaving(true);
     try {
       const response = await fetch("/api/v1/operation/readiness", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          gateKey: selectedGate.gateKey,
-          status,
-          ownerLabel: ownerLabel.trim(),
-          evidence: evidence.trim(),
-          expectedVersion: selectedGate.version,
-          note: note.trim(),
-        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as OperationReadinessData & { error?: string; message?: string };
       if (!response.ok || !payload.policy) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o gate.");
       }
+      pendingKeys.current.delete(mutationFingerprint);
       setData(payload);
       closeEditor();
       notify(`Gate “${selectedGate.title}” atualizado com evidência versionada.`);

@@ -561,6 +561,44 @@ const cancellationResults = await concurrentJsonMutation(
 assert.equal(cancellationResults[0].cancellation.id, cancellationResults[1].cancellation.id);
 assert.equal(cancellationResults[0].case.id, cancellationResults[1].case.id);
 
+const operationCaseId = cancellationResults[0].case.id;
+const operationCaseNoteResults = await concurrentJsonMutation(
+  "/api/v1/operation/cases",
+  operationCookie,
+  {
+    caseId: operationCaseId,
+    action: "note",
+    note: "Nota operacional sintética registrada de forma idempotente.",
+  },
+);
+assert.equal(operationCaseNoteResults[0].event.id, operationCaseNoteResults[1].event.id);
+
+const operationCaseReviewResults = await concurrentJsonMutation(
+  "/api/v1/operation/cases",
+  operationCookie,
+  {
+    caseId: operationCaseId,
+    action: "status",
+    status: "in_review",
+    note: "Ocorrência sintética assumida pela operação para análise.",
+  },
+);
+assert.equal(operationCaseReviewResults[0].case.id, operationCaseReviewResults[1].case.id);
+assert.equal(operationCaseReviewResults[0].case.status, "in_review");
+
+const operationCaseResolutionResults = await concurrentJsonMutation(
+  "/api/v1/operation/cases",
+  operationCookie,
+  {
+    caseId: operationCaseId,
+    action: "status",
+    status: "resolved",
+    note: "Ocorrência sintética concluída após a validação operacional.",
+  },
+);
+assert.equal(operationCaseResolutionResults[0].case.id, operationCaseResolutionResults[1].case.id);
+assert.equal(operationCaseResolutionResults[0].case.status, "resolved");
+
 await completeSyntheticBookings(providerCookie, syntheticRequestTitle);
 
 const operationHealthResponse = await fetch(
@@ -581,7 +619,7 @@ assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
 assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
-assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 20, true);
+assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 23, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(
@@ -600,7 +638,7 @@ assert.equal(
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "idempotent_operation_commands", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

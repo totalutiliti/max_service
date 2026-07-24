@@ -53,7 +53,7 @@ O check **Transporte HTTPS** diferencia os headers defensivos já aplicados no c
 
 ## Evidência automatizada
 
-`npm run test:smoke` valida liveness, readiness, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em vinte ações de marketplace, comunicação, atendimento, agenda e ciclo do serviço. Testes unitários também comprovam normalização sem PII, cálculo da janela, expiração do limite, retenção limitada, JSON canônico e assinatura da chave idempotente. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
+`npm run test:smoke` valida liveness, readiness, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 23 ações de marketplace, comunicação, atendimento, agenda, ciclo do serviço e operação. Testes unitários também comprovam normalização sem PII, cálculo da janela, expiração do limite, retenção limitada, JSON canônico e assinatura da chave idempotente. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
 
 ## Próximos requisitos de produção
 

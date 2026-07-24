@@ -12,7 +12,12 @@ Reenvios por timeout, perda de conexão ou clique repetido não podem criar pedi
 - mensagens de texto do parceiro e da Operação em seus respectivos casos;
 - triagem e transições de estado do atendimento pela Operação;
 - atualização da jornada semanal e criação/liberação de bloqueios da agenda;
-- transições, avaliações e cancelamentos do booking.
+- transições, avaliações e cancelamentos do booking;
+- notas e transições das ocorrências internas;
+- triagem de indicações e verificação de profissionais, inclusive revisão documental;
+- ativação, desativação e ordenação de categorias, regiões e bairros;
+- criação e ativação/pausa de campanhas;
+- atualização versionada das metas e dos gates de prontidão.
 
 Uploads binários ainda não usam esse executor: neles, a confirmação precisa coordenar PostgreSQL e armazenamento de objetos sem deixar arquivo órfão ou resposta persistida antes do upload definitivo.
 
@@ -62,10 +67,10 @@ Uma rotina de expurgo/particionamento para registros expirados ainda deve ser de
 
 - testes unitários validam formato, JSON canônico, hash e vínculo da chave à assinatura interna;
 - teste integrado comprova RLS de leitura e conclusão;
-- smoke test dispara pares realmente concorrentes em vinte ações de marketplace, comunicação, atendimento, agenda e ciclo do serviço, confirma um único identificador e observa um replay em cada par;
+- smoke test dispara pares realmente concorrentes em 23 ações de marketplace, comunicação, atendimento, agenda, ciclo do serviço e operação, confirma um único identificador e observa um replay em cada par;
 - o mesmo smoke reutiliza a chave com conteúdo diferente e exige `409`;
 - o cockpit soma `idempotencyReplayCount` sem reter chave, corpo ou identidade.
 
 ## Próxima expansão
 
-Antes do piloto externo, a próxima expansão deve definir o protocolo idempotente dos uploads binários, incluindo compensação/expurgo de objetos, e cobrir os comandos operacionais restantes que ainda possam produzir efeitos repetidos.
+Antes do piloto externo, a próxima expansão deve definir o protocolo idempotente dos uploads binários, incluindo compensação/expurgo de objetos. Os comandos operacionais JSON atualmente expostos já usam o executor transacional.

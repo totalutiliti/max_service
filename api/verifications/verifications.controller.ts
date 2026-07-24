@@ -90,20 +90,41 @@ export class OperationVerificationsController {
   async changeStatus(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("verificationId") verificationId: string,
     @Body() input: ChangeVerificationStatusDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { verification: await this.verifications.changeStatus(actorFromHeaders(role, id), verificationId, input.status, input.note) };
+    const result = await this.verifications.changeStatus(
+      actorFromHeaders(role, id),
+      verificationId,
+      input.status,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { verification: result.value };
   }
 
   @Post(":verificationId/documents/:documentId/reviews")
   async reviewDocument(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("verificationId") verificationId: string,
     @Param("documentId") documentId: string,
     @Body() input: ReviewProviderDocumentDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { verification: await this.verifications.reviewDocument(actorFromHeaders(role, id), verificationId, documentId, input.status, input.note) };
+    const result = await this.verifications.reviewDocument(
+      actorFromHeaders(role, id),
+      verificationId,
+      documentId,
+      input.status,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { verification: result.value };
   }
 }

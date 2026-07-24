@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import { validateProviderDocumentFile } from "./document-file-validation.js";
 
@@ -36,6 +37,7 @@ const verificationSelect = `
 export class VerificationsService {
   constructor(
     private readonly database: DatabaseService,
+    private readonly idempotency: IdempotencyService,
     private readonly storage: PrivateObjectStorageService,
   ) {}
 
@@ -136,10 +138,22 @@ export class VerificationsService {
     return this.database.withActor(actor, (client) => this.detailWithClient(client, verificationId));
   }
 
-  async changeStatus(actor: Actor, verificationId: string, status: Exclude<VerificationStatus, "submitted">, note: string) {
+  async changeStatus(
+    actor: Actor,
+    verificationId: string,
+    status: Exclude<VerificationStatus, "submitted">,
+    note: string,
+    idempotencyKey: string | undefined,
+  ) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/verifications/${verificationId}/transitions`,
+        payload: { status, note: normalizedNote },
+      }, async () => {
       const current = await client.query<{ id: string; status: VerificationStatus }>(
         "SELECT id, status FROM provider_verifications WHERE id = $1 FOR UPDATE",
         [verificationId],
@@ -193,13 +207,27 @@ export class VerificationsService {
         [actor.id, actor.role, verificationId, JSON.stringify({ from: fromStatus, to: status, eventId })],
       );
       return this.detailWithClient(client, verificationId);
+      });
     });
   }
 
-  async reviewDocument(actor: Actor, verificationId: string, documentId: string, status: DocumentStatus, note: string) {
+  async reviewDocument(
+    actor: Actor,
+    verificationId: string,
+    documentId: string,
+    status: DocumentStatus,
+    note: string,
+    idempotencyKey: string | undefined,
+  ) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/verifications/${verificationId}/documents/${documentId}/reviews`,
+        payload: { status, note: normalizedNote },
+      }, async () => {
       const record = await client.query<{ id: string; verificationStatus: VerificationStatus; documentStatus: string; label: string }>(`
         SELECT
           document.id,
@@ -235,6 +263,7 @@ export class VerificationsService {
         [actor.id, actor.role, documentId, JSON.stringify({ verificationId, from: record.rows[0].documentStatus, to: status, eventId })],
       );
       return this.detailWithClient(client, verificationId);
+      });
     });
   }
 

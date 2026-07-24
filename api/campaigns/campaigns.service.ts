@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { isValidCouponCode, normalizeCouponCode } from "./campaign-rules.js";
 import type { CreateCampaignDto } from "./campaigns.dto.js";
 
@@ -32,7 +33,10 @@ interface CampaignOffer {
 
 @Injectable()
 export class CampaignsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   async validateCoupon(actor: Actor, rawCode: string) {
     if (actor.role !== "customer") throw new ForbiddenException("Somente clientes podem validar cupons.");
@@ -145,9 +149,11 @@ export class CampaignsService {
     });
   }
 
-  async create(actor: Actor, input: CreateCampaignDto) {
+  async create(actor: Actor, input: CreateCampaignDto, idempotencyKey: string | undefined) {
     this.ensureOperation(actor);
+    const name = input.name.trim();
     const code = this.normalizeCode(input.code);
+    const description = input.description.trim();
     const note = this.normalizeNote(input.note);
     const startsAt = new Date(input.startsAt);
     const endsAt = new Date(input.endsAt);
@@ -164,6 +170,25 @@ export class CampaignsService {
     }
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: "/api/v1/operation/campaigns",
+        payload: {
+          name,
+          code,
+          description,
+          discountType: input.discountType,
+          discountValue: input.discountValue,
+          maxDiscountCents: input.discountType === "percentage" ? input.maxDiscountCents : null,
+          minAmountCents: input.minAmountCents,
+          totalRedemptionLimit: input.totalRedemptionLimit,
+          perCustomerLimit: input.perCustomerLimit,
+          startsAt: startsAt.toISOString(),
+          endsAt: endsAt.toISOString(),
+          note,
+        },
+      }, async () => {
       const existing = await client.query("SELECT id FROM marketing_campaigns WHERE coupon_code = $1", [code]);
       if (existing.rows[0]) throw new ConflictException("Este código de cupom já está em uso.");
       const campaignId = randomUUID();
@@ -181,9 +206,9 @@ export class CampaignsService {
           ends_at AS "endsAt", status, created_at AS "createdAt", updated_at AS "updatedAt"
       `, [
         campaignId,
-        input.name.trim(),
+        name,
         code,
-        input.description.trim(),
+        description,
         input.discountType,
         input.discountValue,
         input.discountType === "percentage" ? input.maxDiscountCents : null,
@@ -205,13 +230,26 @@ export class CampaignsService {
         [actor.id, actor.role, campaignId, JSON.stringify({ couponCode: code, eventId })],
       );
       return campaign.rows[0];
+      });
     });
   }
 
-  async changeStatus(actor: Actor, campaignId: string, action: "activate" | "pause", rawNote: string) {
+  async changeStatus(
+    actor: Actor,
+    campaignId: string,
+    action: "activate" | "pause",
+    rawNote: string,
+    idempotencyKey: string | undefined,
+  ) {
     this.ensureOperation(actor);
     const note = this.normalizeNote(rawNote);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/campaigns/${campaignId}/actions`,
+        payload: { action, note },
+      }, async () => {
       const current = await client.query<{ id: string; code: string; status: "active" | "paused"; endsAt: Date }>(`
         SELECT id, coupon_code AS code, status, ends_at AS "endsAt"
         FROM marketing_campaigns
@@ -243,6 +281,7 @@ export class CampaignsService {
         [actor.id, actor.role, campaignId, JSON.stringify({ from: current.rows[0].status, to: nextStatus, couponCode: current.rows[0].code, eventId })],
       );
       return updated.rows[0];
+      });
     });
   }
 

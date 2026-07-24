@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import type { UpdateOperationReadinessGateDto, UpdateOperationReportGoalsDto } from "./operations.dto.js";
 import {
@@ -154,7 +155,10 @@ const auditEntityPrefix: Record<string, string> = {
 
 @Injectable()
 export class OperationsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   private ensureOperation(actor: Actor) {
     if (actor.role !== "operation") throw new ForbiddenException("Somente a operação pode tratar esta fila.");
@@ -178,6 +182,7 @@ export class OperationsService {
     actor: Actor,
     gateKey: string,
     input: UpdateOperationReadinessGateDto,
+    idempotencyKey: string | undefined,
   ) {
     this.ensureOperation(actor);
     const ownerLabel = input.ownerLabel.trim();
@@ -191,6 +196,18 @@ export class OperationsService {
     }
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/readiness/${gateKey}`,
+        payload: {
+          status: input.status,
+          ownerLabel,
+          evidence,
+          expectedVersion: input.expectedVersion,
+          note,
+        },
+      }, async () => {
       const current = await client.query<{
         gateKey: string;
         status: UpdateOperationReadinessGateDto["status"];
@@ -271,6 +288,7 @@ export class OperationsService {
         })],
       );
       return this.readinessWithinTransaction(client);
+      });
     });
   }
 
@@ -549,10 +567,17 @@ export class OperationsService {
     regionId: string,
     action: "activate" | "deactivate",
     note: string,
+    idempotencyKey: string | undefined,
   ) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/regions/${regionId}/actions`,
+        payload: { action, note: normalizedNote },
+      }, async () => {
       const current = await client.query<{
         id: string;
         name: string;
@@ -619,6 +644,7 @@ export class OperationsService {
         })],
       );
       return updated.rows[0];
+      });
     });
   }
 
@@ -627,10 +653,17 @@ export class OperationsService {
     neighborhoodId: string,
     action: "activate" | "deactivate",
     note: string,
+    idempotencyKey: string | undefined,
   ) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/region-neighborhoods/${neighborhoodId}/actions`,
+        payload: { action, note: normalizedNote },
+      }, async () => {
       const current = await client.query<{
         id: string;
         regionId: string;
@@ -701,6 +734,7 @@ export class OperationsService {
         })],
       );
       return updated.rows[0];
+      });
     });
   }
 
@@ -756,10 +790,17 @@ export class OperationsService {
     categoryId: string,
     action: "activate" | "deactivate" | "move_up" | "move_down",
     note: string,
+    idempotencyKey: string | undefined,
   ) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/categories/${categoryId}/actions`,
+        payload: { action, note: normalizedNote },
+      }, async () => {
       const catalog = await client.query<{
         id: string;
         slug: string;
@@ -849,6 +890,7 @@ export class OperationsService {
         WHERE id = $1
       `, [categoryId]);
       return updated.rows[0];
+      });
     });
   }
 
@@ -889,10 +931,22 @@ export class OperationsService {
     });
   }
 
-  async changeStatus(actor: Actor, caseId: string, status: "in_review" | "resolved", note: string) {
+  async changeStatus(
+    actor: Actor,
+    caseId: string,
+    status: "in_review" | "resolved",
+    note: string,
+    idempotencyKey: string | undefined,
+  ) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/cases/${caseId}/transitions`,
+        payload: { status, note: normalizedNote },
+      }, async () => {
       const current = await client.query<{ id: string; status: "open" | "in_review" | "resolved"; openedBy: string; publicCode: string }>(
         "SELECT id, status, opened_by AS \"openedBy\", public_code AS \"publicCode\" FROM support_cases WHERE id = $1 FOR UPDATE",
         [caseId],
@@ -937,13 +991,20 @@ export class OperationsService {
         entityId: caseId,
       });
       return updated.rows[0];
+      });
     });
   }
 
-  async addNote(actor: Actor, caseId: string, note: string) {
+  async addNote(actor: Actor, caseId: string, note: string, idempotencyKey: string | undefined) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/cases/${caseId}/notes`,
+        payload: { note: normalizedNote },
+      }, async () => {
       const current = await client.query<{ id: string; status: string }>(
         "SELECT id, status FROM support_cases WHERE id = $1 FOR UPDATE",
         [caseId],
@@ -963,6 +1024,7 @@ export class OperationsService {
         [actor.id, actor.role, caseId, JSON.stringify({ eventId })],
       );
       return event.rows[0];
+      });
     });
   }
 
@@ -1013,10 +1075,17 @@ export class OperationsService {
     referralId: string,
     status: "in_review" | "approved" | "rejected",
     note: string,
+    idempotencyKey: string | undefined,
   ) {
     this.ensureOperation(actor);
     const normalizedNote = this.normalizeNote(note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/referrals/${referralId}/transitions`,
+        payload: { status, note: normalizedNote },
+      }, async () => {
       const current = await client.query<{
         id: string;
         status: "invited" | "in_review" | "approved" | "active" | "rejected";
@@ -1081,6 +1150,7 @@ export class OperationsService {
         });
       }
       return updated.rows[0];
+      });
     });
   }
 
@@ -1530,10 +1600,28 @@ export class OperationsService {
     });
   }
 
-  async updateReportGoals(actor: Actor, input: UpdateOperationReportGoalsDto) {
+  async updateReportGoals(
+    actor: Actor,
+    input: UpdateOperationReportGoalsDto,
+    idempotencyKey: string | undefined,
+  ) {
     this.ensureOperation(actor);
     const note = this.normalizeNote(input.note);
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: "/api/v1/operation/reports/goals",
+        payload: {
+          periodDays: input.periodDays,
+          proposalCoverageTargetBps: input.proposalCoverageTargetBps,
+          bookingConversionTargetBps: input.bookingConversionTargetBps,
+          firstProposalTargetMinutes: input.firstProposalTargetMinutes,
+          overdueCaseLimit: input.overdueCaseLimit,
+          unreconciledLimit: input.unreconciledLimit,
+          note,
+        },
+      }, async () => {
       const currentResult = await client.query<{
         periodDays: 7 | 30 | 90;
         proposalCoverageTargetBps: number;
@@ -1651,6 +1739,7 @@ export class OperationsService {
         version: updated.version,
         updatedAt: updated.updatedAt,
       };
+      });
     });
   }
 

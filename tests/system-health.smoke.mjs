@@ -59,7 +59,11 @@ async function completeSyntheticBookings(cookie, requestTitle) {
     if (booking.status === "scheduled") {
       await json(await fetch(`${webBaseUrl}/api/v1/bookings`, {
         method: "POST",
-        headers: { cookie, "content-type": "application/json" },
+        headers: {
+          cookie,
+          "content-type": "application/json",
+          "idempotency-key": randomUUID(),
+        },
         body: JSON.stringify({
           role: "prestador",
           bookingId: booking.id,
@@ -70,7 +74,11 @@ async function completeSyntheticBookings(cookie, requestTitle) {
     }
     await json(await fetch(`${webBaseUrl}/api/v1/bookings`, {
       method: "POST",
-      headers: { cookie, "content-type": "application/json" },
+      headers: {
+        cookie,
+        "content-type": "application/json",
+        "idempotency-key": randomUUID(),
+      },
       body: JSON.stringify({
         role: "prestador",
         bookingId: booking.id,
@@ -79,6 +87,24 @@ async function completeSyntheticBookings(cookie, requestTitle) {
       }),
     }));
   }
+}
+
+function shiftedWeeklySchedule(weekly) {
+  const target = weekly.find((day) => day.active) ?? weekly[0];
+  assert.ok(target, "A agenda sintética precisa conter ao menos um dia.");
+  const [startHour, startMinute] = target.startTime.split(":").map(Number);
+  const [endHour, endMinute] = target.endTime.split(":").map(Number);
+  const start = startHour * 60 + startMinute;
+  const end = endHour * 60 + endMinute;
+  let nextStart = start;
+  let nextEnd = end;
+  if (end + 30 <= 23 * 60 + 30) nextEnd += 30;
+  else if (start >= 30) nextStart -= 30;
+  else nextEnd -= 30;
+  const clock = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  return weekly.map((day) => day.dayOfWeek === target.dayOfWeek
+    ? { ...day, startTime: clock(nextStart), endTime: clock(nextEnd) }
+    : day);
 }
 
 const livenessResponse = await fetch(`${apiBaseUrl}/health/live`);
@@ -205,6 +231,52 @@ assert.match(JSON.stringify(await requestKeyReuse.json()), /outro conteÃºdo|ou
 
 const providerCookie = await sessionCookie("prestador");
 await completeSyntheticBookings(providerCookie, syntheticRequestTitle);
+const originalSchedule = await json(await fetch(
+  `${webBaseUrl}/api/v1/provider/schedule`,
+  { headers: { cookie: providerCookie } },
+));
+const shiftedWeekly = shiftedWeeklySchedule(originalSchedule.weekly);
+const weeklyResults = await concurrentJsonMutation(
+  "/api/v1/provider/schedule",
+  providerCookie,
+  { action: "update_weekly", weekly: shiftedWeekly },
+);
+assert.equal(weeklyResults[0].settings.version, weeklyResults[1].settings.version);
+await json(await fetch(`${webBaseUrl}/api/v1/provider/schedule`, {
+  method: "POST",
+  headers: {
+    cookie: providerCookie,
+    "content-type": "application/json",
+    "idempotency-key": randomUUID(),
+  },
+  body: JSON.stringify({ action: "update_weekly", weekly: originalSchedule.weekly }),
+}));
+
+const syntheticBlockStart = new Date(Date.now() + 150 * 86_400_000);
+syntheticBlockStart.setUTCHours(15, 0, 0, 0);
+const syntheticBlockEnd = new Date(syntheticBlockStart.getTime() + 60 * 60_000);
+const blockResults = await concurrentJsonMutation(
+  "/api/v1/provider/schedule",
+  providerCookie,
+  {
+    action: "create_block",
+    startsAt: syntheticBlockStart.toISOString(),
+    endsAt: syntheticBlockEnd.toISOString(),
+    reason: "Bloqueio sintético idempotente.",
+  },
+);
+assert.equal(blockResults[0].block.id, blockResults[1].block.id);
+const blockCancellationResults = await concurrentJsonMutation(
+  "/api/v1/provider/schedule",
+  providerCookie,
+  {
+    action: "cancel_block",
+    blockId: blockResults[0].block.id,
+  },
+);
+assert.equal(blockCancellationResults[0].blockId, blockCancellationResults[1].blockId);
+assert.equal(blockCancellationResults[0].status, "cancelled");
+
 const proposalPayload = {
   requestId: requestResults[0].request.id,
   amountCents: 12_500,
@@ -397,6 +469,98 @@ const resolvedResults = await concurrentJsonMutation(
 assert.equal(resolvedResults[0].case.id, resolvedResults[1].case.id);
 assert.equal(resolvedResults[0].case.status, "resolved");
 
+const bookingId = acceptanceResults[0].booking.bookingId;
+const startedBookingResults = await concurrentJsonMutation(
+  "/api/v1/bookings",
+  providerCookie,
+  {
+    role: "prestador",
+    bookingId,
+    status: "in_progress",
+    note: "Início sintético idempotente do atendimento.",
+  },
+);
+assert.equal(startedBookingResults[0].booking.id, startedBookingResults[1].booking.id);
+assert.equal(startedBookingResults[0].booking.status, "in_progress");
+
+const completedBookingResults = await concurrentJsonMutation(
+  "/api/v1/bookings",
+  providerCookie,
+  {
+    role: "prestador",
+    bookingId,
+    status: "completed",
+    note: "Conclusão sintética idempotente do atendimento.",
+  },
+);
+assert.equal(completedBookingResults[0].booking.id, completedBookingResults[1].booking.id);
+assert.equal(completedBookingResults[0].booking.status, "completed");
+
+const bookingReviewResults = await concurrentJsonMutation(
+  "/api/v1/bookings",
+  customerCookie,
+  {
+    role: "cliente",
+    bookingId,
+    rating: 5,
+    comment: "Avaliação sintética idempotente do atendimento concluído.",
+  },
+);
+assert.equal(bookingReviewResults[0].review.id, bookingReviewResults[1].review.id);
+
+const cancellationRequestResults = await concurrentJsonMutation(
+  "/api/v1/service-requests",
+  customerCookie,
+  {
+    ...requestPayload,
+    title: "Pedido sintético para cancelamento idempotente",
+    description: "Pedido sintético criado para provar um único chamado em cancelamentos concorrentes.",
+  },
+);
+assert.equal(cancellationRequestResults[0].request.id, cancellationRequestResults[1].request.id);
+
+const cancellationProposalResults = await concurrentJsonMutation(
+  "/api/v1/provider/proposals",
+  providerCookie,
+  {
+    requestId: cancellationRequestResults[0].request.id,
+    amountCents: 13_500,
+    estimatedMinutes: 60,
+    message: "Proposta sintética para validar o cancelamento concorrente.",
+  },
+);
+assert.equal(cancellationProposalResults[0].proposal.id, cancellationProposalResults[1].proposal.id);
+const cancellationSlots = await json(await fetch(
+  `${webBaseUrl}/api/v1/customer/proposal-slots?proposalId=${encodeURIComponent(cancellationProposalResults[0].proposal.id)}`,
+  { headers: { cookie: customerCookie } },
+));
+assert.ok(cancellationSlots.slots[0]?.startsAt, "O cancelamento sintético precisa de um horário disponível.");
+
+const cancellationAcceptanceResults = await concurrentJsonMutation(
+  "/api/v1/customer/proposals",
+  customerCookie,
+  {
+    proposalId: cancellationProposalResults[0].proposal.id,
+    scheduledFor: cancellationSlots.slots[0].startsAt,
+  },
+);
+assert.equal(
+  cancellationAcceptanceResults[0].booking.bookingId,
+  cancellationAcceptanceResults[1].booking.bookingId,
+);
+const cancellationResults = await concurrentJsonMutation(
+  "/api/v1/bookings",
+  customerCookie,
+  {
+    role: "cliente",
+    bookingId: cancellationAcceptanceResults[0].booking.bookingId,
+    reasonCode: "schedule_change",
+    details: "Cancelamento sintético idempotente solicitado pelo cliente.",
+  },
+);
+assert.equal(cancellationResults[0].cancellation.id, cancellationResults[1].cancellation.id);
+assert.equal(cancellationResults[0].case.id, cancellationResults[1].case.id);
+
 await completeSyntheticBookings(providerCookie, syntheticRequestTitle);
 
 const operationHealthResponse = await fetch(
@@ -417,7 +581,7 @@ assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
 assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
-assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 10, true);
+assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 20, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(
@@ -436,7 +600,7 @@ assert.equal(
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

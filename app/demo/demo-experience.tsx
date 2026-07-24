@@ -2765,6 +2765,15 @@ function ProviderSchedulePanel({ notify }: { notify: (message: string) => void }
   const [blockReason, setBlockReason] = useState("Compromisso pessoal");
   const [refresh, setRefresh] = useState(0);
   const [loadedAt, setLoadedAt] = useState(0);
+  const pendingScheduleKeys = useRef(new Map<string, string>());
+
+  const scheduleIdempotencyKeyFor = (fingerprint: string) => {
+    const current = pendingScheduleKeys.current.get(fingerprint);
+    if (current) return current;
+    const key = crypto.randomUUID();
+    pendingScheduleKeys.current.set(fingerprint, key);
+    return key;
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2794,17 +2803,23 @@ function ProviderSchedulePanel({ notify }: { notify: (message: string) => void }
   };
 
   const saveWeekly = async () => {
+    const requestPayload = { action: "update_weekly" as const, weekly };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setSaving(true);
     try {
       const response = await fetch("/api/v1/provider/schedule", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "update_weekly", weekly }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": scheduleIdempotencyKeyFor(mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as ProviderScheduleData & { error?: string; message?: string };
       if (!response.ok || !payload.settings) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível salvar a jornada semanal.");
       }
+      pendingScheduleKeys.current.delete(mutationFingerprint);
       setData(payload);
       setWeekly(payload.weekly);
       notify(`Agenda semanal atualizada na versão ${payload.settings.version}.`);
@@ -2818,22 +2833,28 @@ function ProviderSchedulePanel({ notify }: { notify: (message: string) => void }
   const createBlock = async (event: React.FormEvent) => {
     event.preventDefault();
     if (blockReason.trim().length < 5 || !blockStart || !blockEnd) return;
+    const requestPayload = {
+      action: "create_block" as const,
+      startsAt: brazilScheduleIso(blockStart),
+      endsAt: brazilScheduleIso(blockEnd),
+      reason: blockReason.trim(),
+    };
+    const mutationFingerprint = JSON.stringify(requestPayload);
     setBlocking(true);
     try {
       const response = await fetch("/api/v1/provider/schedule", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "create_block",
-          startsAt: brazilScheduleIso(blockStart),
-          endsAt: brazilScheduleIso(blockEnd),
-          reason: blockReason.trim(),
-        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": scheduleIdempotencyKeyFor(mutationFingerprint),
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { block?: { id: string }; error?: string; message?: string };
       if (!response.ok || !payload.block) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível bloquear o período.");
       }
+      pendingScheduleKeys.current.delete(mutationFingerprint);
       notify("Período bloqueado. Novos clientes não verão esse horário.");
       setRefresh((value) => value + 1);
     } catch (error) {
@@ -2844,17 +2865,22 @@ function ProviderSchedulePanel({ notify }: { notify: (message: string) => void }
   };
 
   const cancelBlock = async (blockId: string) => {
+    const mutationFingerprint = `cancel_block:${blockId}`;
     setCancellingBlockId(blockId);
     try {
       const response = await fetch("/api/v1/provider/schedule", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": scheduleIdempotencyKeyFor(mutationFingerprint),
+        },
         body: JSON.stringify({ action: "cancel_block", blockId }),
       });
       const payload = await response.json() as { status?: string; error?: string; message?: string };
       if (!response.ok || payload.status !== "cancelled") {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível liberar o período.");
       }
+      pendingScheduleKeys.current.delete(mutationFingerprint);
       notify("Período liberado novamente para agendamentos.");
       setRefresh((value) => value + 1);
     } catch (error) {
@@ -3067,6 +3093,15 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
   const [cancelReason, setCancelReason] = useState<CancellationReason>("schedule_change");
   const [cancelDetails, setCancelDetails] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pendingBookingKeys = useRef(new Map<string, string>());
+
+  const bookingIdempotencyKeyFor = (fingerprint: string) => {
+    const current = pendingBookingKeys.current.get(fingerprint);
+    if (current) return current;
+    const key = crypto.randomUUID();
+    pendingBookingKeys.current.set(fingerprint, key);
+    return key;
+  };
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/v1/bookings?role=${role}&bookingId=${encodeURIComponent(bookingId)}`, { cache: "no-store" });
@@ -3086,15 +3121,20 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
   }, [onClose]);
 
   const transition = async (status: "in_progress" | "completed") => {
+    const mutationFingerprint = `transition:${bookingId}:${status}`;
     setUpdating(true);
     try {
       const response = await fetch("/api/v1/bookings", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": bookingIdempotencyKeyFor(mutationFingerprint),
+        },
         body: JSON.stringify({ role, bookingId, status }),
       });
       const payload = await response.json() as { booking?: PersistedBooking | string; error?: string; message?: string };
       if (!response.ok || typeof payload.booking !== "object") throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o serviço.");
+      pendingBookingKeys.current.delete(mutationFingerprint);
       setBooking(await load());
       onChanged();
       notify(status === "in_progress" ? "Serviço iniciado. O cliente já pode acompanhar a atualização." : "Serviço marcado como concluído e registrado no histórico.");
@@ -3108,15 +3148,21 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
   const submitReview = async (event: React.FormEvent) => {
     event.preventDefault();
     if (comment.trim().length < 10) return;
+    const normalizedComment = comment.trim();
+    const mutationFingerprint = `review:${bookingId}:${rating}:${normalizedComment}`;
     setReviewing(true);
     try {
       const response = await fetch("/api/v1/bookings", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ role, bookingId, rating, comment: comment.trim() }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": bookingIdempotencyKeyFor(mutationFingerprint),
+        },
+        body: JSON.stringify({ role, bookingId, rating, comment: normalizedComment }),
       });
       const payload = await response.json() as { review?: ServiceReview | string; error?: string; message?: string };
       if (!response.ok || typeof payload.review !== "object") throw new Error(payload.error ?? payload.message ?? "Não foi possível registrar a avaliação.");
+      pendingBookingKeys.current.delete(mutationFingerprint);
       setBooking(await load());
       setComment("");
       onChanged();
@@ -3131,15 +3177,21 @@ function BookingDetailDialog({ role, bookingId, onClose, onChanged, notify }: { 
   const submitCancellation = async (event: React.FormEvent) => {
     event.preventDefault();
     if (cancelDetails.trim().length < 10) return;
+    const normalizedDetails = cancelDetails.trim();
+    const mutationFingerprint = `cancel:${bookingId}:${cancelReason}:${normalizedDetails}`;
     setCancelling(true);
     try {
       const response = await fetch("/api/v1/bookings", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ role, bookingId, reasonCode: cancelReason, details: cancelDetails.trim() }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": bookingIdempotencyKeyFor(mutationFingerprint),
+        },
+        body: JSON.stringify({ role, bookingId, reasonCode: cancelReason, details: normalizedDetails }),
       });
       const payload = await response.json() as { case?: { publicCode: string }; error?: string; message?: string };
       if (!response.ok || !payload.case) throw new Error(payload.error ?? payload.message ?? "Não foi possível registrar o cancelamento.");
+      pendingBookingKeys.current.delete(mutationFingerprint);
       setBooking(await load());
       setShowCancellation(false);
       setCancelDetails("");

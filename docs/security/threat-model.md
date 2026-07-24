@@ -25,7 +25,7 @@ Browser/PWA, BFF, API, PostgreSQL, Redis/worker, object storage, PSP, e-mail/SMS
 | entrega contra preferência do titular | assuntos versionados, janela silenciosa com fuso validado, filtro no enqueue e nova verificação no claim, reconciliação de pendências e auditoria sem endpoint |
 | upload malicioso | bucket privado, nome do servidor, allowlist MIME/extensão, tamanho, quarentena e antivírus |
 | fraude de proposta/booking | máquina de estados, optimistic locking e auditoria |
-| pedido, proposta ou aceite duplicado | chave vinculada ao ator e à assinatura interna, hash canônico, constraint única e resposta gravada na mesma transação do efeito |
+| mutação duplicada de marketplace, comunicação, suporte ou agenda | chave vinculada ao ator e à assinatura interna, hash canônico, constraint única e resposta gravada na mesma transação do efeito |
 | enumeração ou abuso de cupom | resposta controlada, janela e limites no servidor, lock transacional, reserva por cliente e auditoria |
 | webhook falso/repetido | HMAC/assinatura, timestamp, nonce/idempotency key e replay window |
 | cobrança/comissão duplicada | constraints únicas, ledger append-only e reconciliação |

@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Res, UnauthorizedException } from "@nestjs/common";
 import { parseDemoActor } from "../auth/demo-actor.js";
+import type { HeaderResponse } from "../storage/private-file-http.js";
 import {
   CancelBookingDto,
   CreateProviderScheduleBlockDto,
@@ -33,27 +34,51 @@ export class BookingsController {
   async updateProviderWeeklySchedule(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Body() input: UpdateProviderWeeklyScheduleDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return this.bookings.updateWeeklySchedule(actorFromHeaders(role, id), input);
+    const result = await this.bookings.updateWeeklySchedule(
+      actorFromHeaders(role, id),
+      input,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return result.value;
   }
 
   @Post("provider/schedule/blocks")
   async createProviderScheduleBlock(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Body() input: CreateProviderScheduleBlockDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return this.bookings.createScheduleBlock(actorFromHeaders(role, id), input);
+    const result = await this.bookings.createScheduleBlock(
+      actorFromHeaders(role, id),
+      input,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return result.value;
   }
 
   @Post("provider/schedule/blocks/:blockId/cancel")
   async cancelProviderScheduleBlock(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("blockId") blockId: string,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return this.bookings.cancelScheduleBlock(actorFromHeaders(role, id), blockId);
+    const result = await this.bookings.cancelScheduleBlock(
+      actorFromHeaders(role, id),
+      blockId,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return result.value;
   }
 
   @Get("bookings")
@@ -77,29 +102,59 @@ export class BookingsController {
   async transition(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("bookingId") bookingId: string,
     @Body() input: TransitionBookingDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { booking: await this.bookings.transition(actorFromHeaders(role, id), bookingId, input.status, input.note) };
+    const result = await this.bookings.transition(
+      actorFromHeaders(role, id),
+      bookingId,
+      input.status,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { booking: result.value };
   }
 
   @Post("bookings/:bookingId/reviews")
   async review(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("bookingId") bookingId: string,
     @Body() input: ReviewBookingDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { review: await this.bookings.review(actorFromHeaders(role, id), bookingId, input.rating, input.comment) };
+    const result = await this.bookings.review(
+      actorFromHeaders(role, id),
+      bookingId,
+      input.rating,
+      input.comment,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { review: result.value };
   }
 
   @Post("bookings/:bookingId/cancellations")
   async cancel(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("bookingId") bookingId: string,
     @Body() input: CancelBookingDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return this.bookings.cancel(actorFromHeaders(role, id), bookingId, input.reasonCode, input.details);
+    const result = await this.bookings.cancel(
+      actorFromHeaders(role, id),
+      bookingId,
+      input.reasonCode,
+      input.details,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return result.value;
   }
 }

@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import type { CreateProviderScheduleBlockDto, UpdateProviderWeeklyScheduleDto } from "./bookings.dto.js";
 
@@ -66,7 +67,10 @@ const bookingSelect = `
 
 @Injectable()
 export class BookingsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   async list(actor: Actor) {
     return this.database.withActor(actor, async (client) => {
@@ -90,7 +94,11 @@ export class BookingsService {
     );
   }
 
-  async updateWeeklySchedule(actor: Actor, input: UpdateProviderWeeklyScheduleDto) {
+  async updateWeeklySchedule(
+    actor: Actor,
+    input: UpdateProviderWeeklyScheduleDto,
+    idempotencyKey: string | undefined,
+  ) {
     if (actor.role !== "provider") {
       throw new ForbiddenException("Somente profissionais podem alterar a própria agenda.");
     }
@@ -108,8 +116,15 @@ export class BookingsService {
         throw new BadRequestException("Dias ativos ou pausados devem usar intervalos de 30 minutos e ao menos uma hora.");
       }
     }
+    const normalized = [...input.weekly].sort((left, right) => left.dayOfWeek - right.dayOfWeek);
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: "/api/v1/provider/schedule/weekly",
+        payload: { weekly: normalized },
+      }, async () => {
       const settings = await client.query<{ version: number }>(`
         SELECT version
         FROM provider_schedule_settings
@@ -132,7 +147,6 @@ export class BookingsService {
         WHERE provider_id = $1
         ORDER BY day_of_week
       `, [actor.id]);
-      const normalized = [...input.weekly].sort((left, right) => left.dayOfWeek - right.dayOfWeek);
       const changed = JSON.stringify(current.rows) !== JSON.stringify(normalized);
       if (!changed) return this.providerScheduleWithinTransaction(client, actor.id);
 
@@ -164,10 +178,15 @@ export class BookingsService {
         [actor.id, actor.role, actor.id, JSON.stringify({ version, eventId, openDayCount: normalized.filter((day) => day.active).length })],
       );
       return this.providerScheduleWithinTransaction(client, actor.id);
+      });
     });
   }
 
-  async createScheduleBlock(actor: Actor, input: CreateProviderScheduleBlockDto) {
+  async createScheduleBlock(
+    actor: Actor,
+    input: CreateProviderScheduleBlockDto,
+    idempotencyKey: string | undefined,
+  ) {
     if (actor.role !== "provider") {
       throw new ForbiddenException("Somente profissionais podem bloquear a própria agenda.");
     }
@@ -186,6 +205,16 @@ export class BookingsService {
 
     try {
       return await this.database.withActor(actor, async (client) => {
+        return this.idempotency.execute(client, actor, {
+          key: idempotencyKey,
+          method: "POST",
+          route: "/api/v1/provider/schedule/blocks",
+          payload: {
+            startsAt: startsAt.toISOString(),
+            endsAt: endsAt.toISOString(),
+            reason,
+          },
+        }, async () => {
         const settings = await client.query<{ version: number }>(`
           SELECT version
           FROM provider_schedule_settings
@@ -222,17 +251,28 @@ export class BookingsService {
           [actor.id, actor.role, blockId, JSON.stringify({ version, eventId, startsAt, endsAt })],
         );
         return { block: block.rows[0], version };
+        });
       });
     } catch (error) {
       throwScheduleConflict(error);
     }
   }
 
-  async cancelScheduleBlock(actor: Actor, blockId: string) {
+  async cancelScheduleBlock(
+    actor: Actor,
+    blockId: string,
+    idempotencyKey: string | undefined,
+  ) {
     if (actor.role !== "provider") {
       throw new ForbiddenException("Somente profissionais podem liberar a própria agenda.");
     }
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/provider/schedule/blocks/${blockId}/cancel`,
+        payload: {},
+      }, async () => {
       const settings = await client.query<{ version: number }>(`
         SELECT version
         FROM provider_schedule_settings
@@ -269,6 +309,7 @@ export class BookingsService {
         [actor.id, actor.role, blockId, JSON.stringify({ version, eventId })],
       );
       return { blockId, status: "cancelled", version };
+      });
     });
   }
 
@@ -419,11 +460,24 @@ export class BookingsService {
     });
   }
 
-  async transition(actor: Actor, bookingId: string, status: "in_progress" | "completed", note?: string) {
+  async transition(
+    actor: Actor,
+    bookingId: string,
+    status: "in_progress" | "completed",
+    note: string | undefined,
+    idempotencyKey: string | undefined,
+  ) {
     if (actor.role !== "provider") throw new ForbiddenException("Somente o profissional responsável pode atualizar o serviço.");
     const rule = transitionRules[status];
+    const historyNote = note?.trim() || rule.note;
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/bookings/${bookingId}/transitions`,
+        payload: { status, note: historyNote },
+      }, async () => {
       const current = await client.query<{ id: string; requestId: string; status: BookingStatus; customerId: string; requestCode: string }>(`
         SELECT b.id, b.request_id AS "requestId", b.status, b.customer_id AS "customerId", r.public_code AS "requestCode"
         FROM bookings b
@@ -451,7 +505,6 @@ export class BookingsService {
         "UPDATE service_requests SET status = $2, updated_at = now() WHERE id = $1",
         [current.rows[0].requestId, status],
       );
-      const historyNote = note?.trim() || rule.note;
       await client.query(
         "INSERT INTO booking_status_history (booking_id, status, actor_id, note) VALUES ($1, $2, $3, $4)",
         [bookingId, status, actor.id, historyNote],
@@ -475,10 +528,17 @@ export class BookingsService {
       });
 
       return updated.rows[0];
+      });
     });
   }
 
-  async review(actor: Actor, bookingId: string, rating: number, comment: string) {
+  async review(
+    actor: Actor,
+    bookingId: string,
+    rating: number,
+    comment: string,
+    idempotencyKey: string | undefined,
+  ) {
     if (actor.role !== "customer" && actor.role !== "provider") {
       throw new ForbiddenException("Este perfil não pode avaliar o serviço.");
     }
@@ -486,6 +546,12 @@ export class BookingsService {
     if (normalizedComment.length < 10) throw new BadRequestException("O comentário deve ter pelo menos 10 caracteres.");
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/bookings/${bookingId}/reviews`,
+        payload: { rating, comment: normalizedComment },
+      }, async () => {
       const booking = await client.query<{ id: string; status: BookingStatus; customerId: string; providerId: string; requestCode: string }>(`
         SELECT b.id, b.status, b.customer_id AS "customerId", b.provider_id AS "providerId", r.public_code AS "requestCode"
         FROM bookings b
@@ -523,6 +589,7 @@ export class BookingsService {
         entityId: reviewId,
       });
       return result.rows[0];
+      });
     });
   }
 
@@ -531,6 +598,7 @@ export class BookingsService {
     bookingId: string,
     reasonCode: "schedule_change" | "no_longer_needed" | "participant_unavailable" | "safety_concern" | "other",
     details: string,
+    idempotencyKey: string | undefined,
   ) {
     if (actor.role !== "customer" && actor.role !== "provider") {
       throw new ForbiddenException("Este perfil não pode cancelar o serviço.");
@@ -539,6 +607,12 @@ export class BookingsService {
     if (normalizedDetails.length < 10) throw new BadRequestException("Descreva o motivo com pelo menos 10 caracteres.");
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/bookings/${bookingId}/cancellations`,
+        payload: { reasonCode, details: normalizedDetails },
+      }, async () => {
       const current = await client.query<{ id: string; requestId: string; requestCode: string; status: BookingStatus; customerId: string; providerId: string }>(`
         SELECT b.id, b.request_id AS "requestId", r.public_code AS "requestCode", b.status,
           b.customer_id AS "customerId", b.provider_id AS "providerId"
@@ -611,6 +685,7 @@ export class BookingsService {
       });
 
       return { cancellation: cancellation.rows[0], case: supportCase.rows[0] };
+      });
     });
   }
 }

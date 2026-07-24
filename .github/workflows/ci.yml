@@ -40,7 +40,7 @@ jobs:
         run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 git /repo --no-banner --redact --exit-code=1
 
   postgres:
-    name: PostgreSQL, RLS e concorrência
+    name: PostgreSQL, RLS e recuperação
     needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -64,6 +64,12 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@127.0.0.1:54329/max_service
         run: npm run test:integration
+
+      - name: Ensaiar backup e restauração
+        env:
+          RESTORE_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@127.0.0.1:54329/max_service
+          RESTORE_RUNTIME_DATABASE_URL: postgresql://max_service_app:max_service_runtime_local@127.0.0.1:54329/max_service
+        run: npm run test:restore
 
       - name: Registrar diagnóstico em caso de falha
         if: failure()

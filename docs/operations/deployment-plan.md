@@ -13,7 +13,7 @@ Nenhum deploy está autorizado nesta etapa.
 
 Lint → typecheck → unitários → integração PostgreSQL → RLS/IDOR → E2E/a11y → build → gitleaks → dependências → imagem/Trivy → migration dry-run → aprovação → deploy → smoke test → observabilidade.
 
-O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os quatro serviços em Docker limpo, aplica todas as migrations e executa testes reais de RLS e concorrência no PostgreSQL. E2E/a11y em navegador, Trivy, dry-run em staging, deploy, smoke test e observabilidade continuam pendentes.
+O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os quatro serviços em Docker limpo, aplica todas as migrations, executa testes reais de RLS e concorrência e restaura um backup lógico em banco isolado. O restore compara migrations, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. E2E/a11y em navegador, Trivy, dry-run em staging, deploy, smoke test e observabilidade continuam pendentes.
 
 ## Infraestrutura
 
@@ -24,7 +24,7 @@ Frontend e API independentes, PostgreSQL gerenciado com backup/PITR, Redis geren
 - o cockpit operacional registra responsável, evidência, versão e histórico dos oito gates; nenhuma atualização isolada altera `productionAuthorized: false`;
 - contrato do PSP e fluxo fiscal aprovados;
 - termos, privacidade, retenção e suporte aprovados;
-- backup e restauração ensaiados;
+- backup e restauração lógica ensaiados no Docker e no CI; serviço gerenciado, PITR, RPO/RTO e restore do object storage ainda exigem homologação;
 - RLS, autorização e sessão testados;
 - resposta a incidentes e contatos de plantão definidos;
 - categorias e região do piloto formalizadas;

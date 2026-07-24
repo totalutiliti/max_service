@@ -54,6 +54,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Pedidos agendados bloqueiam novas propostas e aceite duplicado; cada mudança relevante gera histórico e auditoria.
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
 - O CI reproduz lint, builds, testes funcionais, auditoria de dependências, scanner de segredos e uma instalação Docker limpa para testar migrations, RLS e conflitos de agenda no PostgreSQL.
+- O mesmo pipeline gera um backup lógico, restaura em banco isolado, compara dados e proteções, prova o RLS com a role de runtime e remove todos os artefatos temporários.
 - Nenhum pagamento real, carteira, crédito, biometria ou consulta de antecedentes está ativo; o processador financeiro é exclusivamente sandbox.
 - O nome **Max Service** e a regra comercial **12% + 2% + 2%** são hipóteses pendentes de aprovação.
 
@@ -73,9 +74,10 @@ npm run lint
 npm run build
 npm test
 npm run test:integration
+npm run test:restore
 ```
 
-`test:integration` exige o PostgreSQL local do Docker ativo em `127.0.0.1:54329`.
+`test:integration` e `test:restore` exigem o PostgreSQL local do Docker ativo em `127.0.0.1:54329`. O ensaio de restauração nunca usa o banco original como destino.
 
 ## Rodar com Docker
 
@@ -108,6 +110,7 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - [Arquitetura](docs/architecture/architecture-overview.md)
 - [Segurança](docs/security/threat-model.md)
 - [Autenticação e sessões](docs/security/authentication.md)
+- [Ensaio de backup e restauração](docs/operations/backup-restore.md)
 - [Design system](docs/ux/design-system.md)
 
 ## Limites desta etapa

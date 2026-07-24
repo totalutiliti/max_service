@@ -38,6 +38,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A Fase 6 possui um cockpit persistente com oito gates de prontidão, responsável, evidência, versão e eventos append-only; o sistema mantém a autorização de produção explicitamente falsa até aprovações externas.
 - O CI executa lint, builds, testes funcionais, auditoria de dependências e scanner de segredos; em ambiente Docker limpo, também aplica todas as migrations e prova RLS e proteção contra conflitos de agenda.
+- O pipeline também ensaia backup e restauração em banco temporário, comparando migrations, dados críticos, grants, policies, RLS e constraints; backup gerenciado, PITR, RPO e RTO continuam como gate de infraestrutura.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.
 - Cliente e profissional já possuem onboarding transacional com perfil específico, documentos `pilot-0.1` versionados, aceite ligado ao SHA-256 do conteúdo, consentimentos opcionais revogáveis e histórico append-only.
 - Sorocaba e seus bairros piloto já possuem catálogo regional persistente; a Operação controla ativações com justificativa, e RLS limita oportunidades à cobertura ativa do profissional.

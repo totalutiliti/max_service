@@ -11,7 +11,7 @@
 - moderação, documentos privados e administração;
 - PSP sandbox, regra 12/2/2 configurável e ledger;
 - ampliar a suíte de RLS, autorização, idempotência e E2E; migrations, isolamento da agenda por papel e conflitos de reserva/bloqueio já são testados automaticamente contra PostgreSQL real no CI;
-- concluir os oito gates persistentes de prontidão: identidade, marca/domínio, modelo jurídico/fiscal, PSP, privacidade/retenção, backup/restauração, autorização e escopo formal do piloto.
+- concluir os oito gates persistentes de prontidão: identidade, marca/domínio, modelo jurídico/fiscal, PSP, privacidade/retenção, autorização e escopo formal do piloto; backup/restore lógico já é ensaiado automaticamente, mas infraestrutura gerenciada, PITR, RPO/RTO e object storage ainda estão pendentes.
 
 ## P1 - operar o piloto
 

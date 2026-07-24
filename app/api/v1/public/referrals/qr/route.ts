@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { apiUrl, signedInternalHeaders } from "../../../_session";
+import { apiResponseHeaders } from "../../../_response";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,10 @@ export async function GET(request: Request) {
       cache: "no-store",
     });
     if (!verification.ok) {
-      return Response.json({ error: "Convite de parceiro indisponível." }, { status: verification.status });
+      return Response.json(
+        { error: "Convite de parceiro indisponível." },
+        { status: verification.status, headers: apiResponseHeaders(verification) },
+      );
     }
 
     const destination = new URL("/convite", request.url);
@@ -31,12 +35,12 @@ export async function GET(request: Request) {
       color: { dark: "#101511", light: "#ffffff" },
     });
     return new Response(image, {
-      headers: {
+      headers: apiResponseHeaders(verification, {
         "content-type": "image/png",
         "cache-control": "private, max-age=300",
         "content-length": String(image.byteLength),
         "x-content-type-options": "nosniff",
-      },
+      }),
     });
   } catch {
     return Response.json({ error: "QR Code temporariamente indisponível." }, { status: 503 });

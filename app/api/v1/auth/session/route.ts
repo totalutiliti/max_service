@@ -8,6 +8,7 @@ import {
   sessionToken,
   signedInternalHeaders,
 } from "../../_session";
+import { apiResponseHeaders } from "../../_response";
 
 export const dynamic = "force-dynamic";
 
@@ -49,12 +50,21 @@ export async function POST(request: Request) {
     });
     const result = await response.json() as { token?: string; session?: { expiresAt: string }; error?: string };
     if (!response.ok || !result.token || !result.session) {
-      return Response.json({ error: result.error ?? "Não foi possível iniciar a sessão." }, { status: response.status });
+      return Response.json(
+        { error: result.error ?? "Não foi possível iniciar a sessão." },
+        { status: response.status, headers: apiResponseHeaders(response) },
+      );
     }
     const maxAge = Math.max(0, Math.floor((new Date(result.session.expiresAt).getTime() - Date.now()) / 1000));
     return Response.json(
       { session: result.session },
-      { status: 201, headers: sessionResponseHeaders(sessionCookie(result.token, maxAge)) },
+      {
+        status: 201,
+        headers: apiResponseHeaders(
+          response,
+          sessionResponseHeaders(sessionCookie(result.token, maxAge)),
+        ),
+      },
     );
   } catch {
     return Response.json({ error: "O serviço de sessão está temporariamente indisponível." }, { status: 503 });

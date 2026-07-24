@@ -9,6 +9,7 @@ import {
   type SystemHealthCheck,
 } from "./system-health.js";
 import { RequestTelemetryService } from "./request-telemetry.service.js";
+import { RateLimitService } from "../security/rate-limit.service.js";
 
 interface DependencyHealthReport {
   policyVersion: string;
@@ -27,6 +28,7 @@ export class SystemHealthService {
     private readonly database: DatabaseService,
     private readonly storage: PrivateObjectStorageService,
     private readonly telemetry: RequestTelemetryService,
+    private readonly rateLimits: RateLimitService,
   ) {}
 
   liveness() {
@@ -43,6 +45,7 @@ export class SystemHealthService {
     return {
       ...report,
       telemetry: this.telemetry.snapshot(),
+      abuseProtection: this.rateLimits.snapshot(),
     };
   }
 

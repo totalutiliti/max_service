@@ -10,7 +10,7 @@
 - parceiro, atribuição, painel, captura pública por link/QR e triagem operacional;
 - moderação, documentos privados e administração;
 - PSP sandbox, regra 12/2/2 configurável e ledger;
-- ampliar a suíte de RLS, autorização, idempotência e E2E; migrations, isolamento da agenda por papel e conflitos de reserva/bloqueio já são testados automaticamente contra PostgreSQL real no CI;
+- ampliar a suíte de RLS, autorização, idempotência e E2E; migrations, isolamento da agenda por papel, conflitos de reserva/bloqueio e o contrato local de rate limit já são testados automaticamente no CI;
 - ampliar observabilidade para exportação de métricas, traces, alertas e SLOs gerenciados; liveness, readiness, cockpit operacional, IDs de correlação, logs JSON sem PII, métricas locais limitadas e smoke tests de autorização já estão materializados;
 - concluir os oito gates persistentes de prontidão: identidade, marca/domínio, modelo jurídico/fiscal, PSP, privacidade/retenção, autorização e escopo formal do piloto; backup/restore lógico já é ensaiado automaticamente, mas infraestrutura gerenciada, PITR, RPO/RTO e object storage ainda estão pendentes.
 

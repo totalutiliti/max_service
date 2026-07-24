@@ -115,6 +115,7 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - [Arquitetura](docs/architecture/architecture-overview.md)
 - [Segurança](docs/security/threat-model.md)
 - [Autenticação e sessões](docs/security/authentication.md)
+- [Proteção contra abuso](docs/security/abuse-protection.md)
 - [Ensaio de backup e restauração](docs/operations/backup-restore.md)
 - [Saúde e observabilidade](docs/operations/observability.md)
 - [Design system](docs/ux/design-system.md)

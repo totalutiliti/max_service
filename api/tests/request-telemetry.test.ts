@@ -44,7 +44,7 @@ test("agrega tráfego da janela e separa probes sem reter atores ou payloads", (
   const summary = summarizeRequestTelemetry([
     sample("/health/live", 200, 2),
     sample("/api/v1/bookings/:id", 200, 100),
-    sample("/api/v1/bookings/:id", 404, 200),
+    sample("/api/v1/bookings/:id", 429, 200),
     sample("/api/v1/reports", 503, 1_200),
     sample("/api/v1/old", 200, 20, now - 6 * 60_000),
   ], now);
@@ -52,6 +52,7 @@ test("agrega tráfego da janela e separa probes sem reter atores ou payloads", (
   assert.equal(summary.requestCount, 3);
   assert.equal(summary.probeCount, 1);
   assert.equal(summary.rejected4xxCount, 1);
+  assert.equal(summary.rateLimitedCount, 1);
   assert.equal(summary.error5xxCount, 1);
   assert.equal(summary.slowCount, 1);
   assert.equal(summary.averageLatencyMs, 500);

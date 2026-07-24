@@ -1,4 +1,5 @@
 import { apiUrl, crossOriginMutation, signedInternalHeaders } from "../../_session";
+import { apiResponseHeaders } from "../../_response";
 
 export const dynamic = "force-dynamic";
 
@@ -61,10 +62,10 @@ async function forwardPublicReferral(request: Request, code: string, body?: unkn
     });
     return new Response(await response.text(), {
       status: response.status,
-      headers: {
+      headers: apiResponseHeaders(response, {
         "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8",
         "cache-control": "no-store",
-      },
+      }),
     });
   } catch {
     return Response.json(

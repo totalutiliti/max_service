@@ -506,6 +506,7 @@ interface OperationSystemHealthData {
     requestCount: number;
     probeCount: number;
     rejected4xxCount: number;
+    rateLimitedCount: number;
     error5xxCount: number;
     slowCount: number;
     averageLatencyMs: number;
@@ -516,6 +517,25 @@ interface OperationSystemHealthData {
       requestCount: number;
       averageLatencyMs: number;
       errorCount: number;
+    }>;
+    note: string;
+  };
+  abuseProtection: {
+    policyVersion: string;
+    mode: "single-replica-memory";
+    windowMinutes: number;
+    activeBucketCount: number;
+    blockedCount: number;
+    blockedByPolicy: Array<{
+      policyId: string;
+      label: string;
+      count: number;
+    }>;
+    policies: Array<{
+      policyId: string;
+      label: string;
+      limit: number;
+      windowSeconds: number;
     }>;
     note: string;
   };
@@ -4891,7 +4911,7 @@ function OperationSystemHealthPanel({ notify }: { notify: (message: string) => v
         <div className="system-telemetry-metrics">
           <article><small>REQUISIÇÕES</small><strong>{data.telemetry.requestCount}</strong><span>probes separados: {data.telemetry.probeCount}</span></article>
           <article><small>LATÊNCIA MÉDIA</small><strong>{data.telemetry.averageLatencyMs} ms</strong><span>p95: {data.telemetry.p95LatencyMs} ms</span></article>
-          <article><small>REJEIÇÕES 4XX</small><strong>{data.telemetry.rejected4xxCount}</strong><span>acesso ou entrada recusada</span></article>
+          <article><small>REJEIÇÕES 4XX</small><strong>{data.telemetry.rejected4xxCount}</strong><span>rate limit: {data.telemetry.rateLimitedCount}</span></article>
           <article><small>ERROS 5XX</small><strong>{data.telemetry.error5xxCount}</strong><span>lentas ≥ 1 s: {data.telemetry.slowCount}</span></article>
         </div>
         <div className="system-telemetry-routes">
@@ -4910,6 +4930,30 @@ function OperationSystemHealthPanel({ notify }: { notify: (message: string) => v
             </article>
           ))}
         </div>
+        <section className="system-abuse-protection">
+          <header>
+            <div>
+              <small>PROTEÇÃO CONTRA ABUSO · {data.abuseProtection.policyVersion}</small>
+              <strong>{data.abuseProtection.blockedCount} bloqueio(s) nos últimos {data.abuseProtection.windowMinutes} min</strong>
+            </div>
+            <span>{data.abuseProtection.activeBucketCount} contador(es) ativo(s)</span>
+          </header>
+          <div>
+            {data.abuseProtection.policies.map((policy) => {
+              const blocked = data.abuseProtection.blockedByPolicy.find(
+                (item) => item.policyId === policy.policyId,
+              )?.count ?? 0;
+              return (
+                <article key={policy.policyId} className={blocked > 0 ? "blocked" : ""}>
+                  <span>{policy.label}</span>
+                  <strong>{policy.limit} / {policy.windowSeconds >= 60 ? `${policy.windowSeconds / 60} min` : `${policy.windowSeconds} s`}</strong>
+                  <small>{blocked > 0 ? `${blocked} bloqueio(s)` : "sem bloqueios"}</small>
+                </article>
+              );
+            })}
+          </div>
+          <footer>{data.abuseProtection.note} Produção exige armazenamento distribuído e limites homologados.</footer>
+        </section>
         <footer>{data.telemetry.note} Nenhuma query string, payload ou identidade individual é coletada.</footer>
       </section>
       <div className="system-health-checks">

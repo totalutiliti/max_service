@@ -58,6 +58,33 @@ const unsigned = await fetch(`${apiBaseUrl}/api/v1/operation/system-health`, {
 });
 assert.equal(unsigned.status, 401);
 
+const syntheticReferralCode = `PC-${Date.now().toString(36).toUpperCase()}`;
+const captureStatuses = [];
+let limitedCapture;
+for (let attempt = 0; attempt < 6; attempt += 1) {
+  const response = await fetch(`${webBaseUrl}/api/v1/public/referrals`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      code: syntheticReferralCode,
+      professionalName: "Profissional Sintético",
+      email: "synthetic-rate-limit@example.test",
+      categorySlug: "eletricista",
+      source: "link",
+      consent: true,
+      website: "",
+    }),
+  });
+  captureStatuses.push(response.status);
+  if (attempt === 5) limitedCapture = response;
+}
+assert.deepEqual(captureStatuses.slice(0, 5).every((status) => status !== 429), true);
+assert.equal(limitedCapture?.status, 429);
+assert.equal(limitedCapture?.headers.get("ratelimit-limit"), "5");
+assert.equal(limitedCapture?.headers.get("ratelimit-remaining"), "0");
+assert.match(limitedCapture?.headers.get("retry-after") ?? "", /^\d+$/);
+assert.equal((await limitedCapture?.json()).code, "RATE_LIMITED");
+
 const operationCookie = await sessionCookie("operacao");
 const operationHealthResponse = await fetch(
   `${webBaseUrl}/api/v1/operation/system-health`,
@@ -75,6 +102,7 @@ assert.equal(operationHealth.checks.some((check) => check.id === "payments"), tr
 assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01");
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
+assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(
@@ -82,10 +110,18 @@ assert.equal(
   ),
   true,
 );
+assert.equal(operationHealth.abuseProtection.policyVersion, "ABUSE-PROTECTION-2026-01");
+assert.equal(operationHealth.abuseProtection.blockedCount >= 1, true);
+assert.equal(
+  operationHealth.abuseProtection.blockedByPolicy.some(
+    (policy) => policy.policyId === "public-referral-capture-code",
+  ),
+  true,
+);
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "traffic_metrics"],
+  probes: ["liveness", "readiness", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

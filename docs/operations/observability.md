@@ -42,13 +42,15 @@ Query strings são descartadas, UUIDs viram `:id`, códigos públicos viram `:co
 
 ## Métricas locais
 
-O mesmo middleware mantém no máximo mil amostras em memória. O cockpit mostra uma janela móvel de cinco minutos com requisições de aplicação, probes separados, rejeições `4xx`, erros `5xx`, chamadas acima de um segundo, latência média, p95 e até cinco famílias de rota mais acessadas.
+O mesmo middleware mantém no máximo mil amostras em memória. O cockpit mostra uma janela móvel de cinco minutos com requisições de aplicação, probes separados, rejeições `4xx`, bloqueios `429`, erros `5xx`, chamadas acima de um segundo, latência média, p95 e até cinco famílias de rota mais acessadas.
 
 Essas métricas são deliberadamente locais à réplica e zeram quando o processo reinicia. Elas comprovam o contrato e dão diagnóstico ao piloto, mas não oferecem retenção, consulta histórica, agregação entre réplicas, alertas ou SLO. O bloco aparece somente no endpoint autenticado da Operação; liveness e readiness públicos não expõem tráfego.
 
+O mesmo cockpit apresenta exclusivamente agregados da proteção contra abuso: políticas ativas, buckets locais e bloqueios por política nos últimos cinco minutos. Chaves, códigos, atores e endereços não fazem parte da resposta.
+
 ## Evidência automatizada
 
-`npm run test:smoke` valida liveness, readiness, `x-request-id`, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, bloqueio do cliente e rejeição do canal interno não assinado. Testes unitários também comprovam normalização sem PII, cálculo da janela e limite de retenção. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
+`npm run test:smoke` valida liveness, readiness, `x-request-id`, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente e rejeição do canal interno não assinado. Testes unitários também comprovam normalização sem PII, cálculo da janela, expiração do limite e retenção limitada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
 
 ## Próximos requisitos de produção
 

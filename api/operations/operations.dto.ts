@@ -27,6 +27,16 @@ export class ChangePartnerReferralStatusDto {
   note!: string;
 }
 
+export class ReviewPartnerReferralRiskDto {
+  @IsIn(["cleared", "confirmed"])
+  outcome!: "cleared" | "confirmed";
+
+  @IsString()
+  @MinLength(20)
+  @MaxLength(1000)
+  note!: string;
+}
+
 export class ManageServiceCategoryDto {
   @IsIn(["activate", "deactivate", "move_up", "move_down"])
   action!: "activate" | "deactivate" | "move_up" | "move_down";

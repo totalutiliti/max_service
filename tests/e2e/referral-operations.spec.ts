@@ -6,8 +6,9 @@ test("leva uma indicação do parceiro até a aprovação operacional", async ({
 
   const sequence = Date.now();
   const professionalName = `Profissional E2E ${sequence}`;
-  const professionalEmail = `profissional.${sequence}@example.com`;
+  const professionalEmail = `joao+e2e.${sequence}@demo.maxservice`;
   const analysisNote = `Origem e dados sintéticos de ${professionalName} conferidos pela Operação.`;
+  const riskNote = `A variação de e-mail foi conferida e liberada manualmente para o cenário E2E ${sequence}.`;
   const approvalNote = `${professionalName} aprovado para iniciar o onboarding demonstrativo.`;
 
   await enterDemo(page, "parceiro");
@@ -24,6 +25,7 @@ test("leva uma indicação do parceiro até a aprovação operacional", async ({
   await page.getByPlaceholder("Código, profissional, e-mail ou categoria").fill(professionalEmail);
   const partnerRecord = page.getByTestId("partner-referral-record").filter({ hasText: professionalEmail });
   await expect(partnerRecord).toContainText("Convidado");
+  await expect(partnerRecord).toContainText("verificação adicional");
 
   await switchProfile(page, "operacao");
   const operationRecord = page.getByTestId("operation-referral-record").filter({ hasText: professionalName });
@@ -33,10 +35,17 @@ test("leva uma indicação do parceiro até a aprovação operacional", async ({
   const referralDialog = page.getByTestId("operation-referral-dialog");
   await expect(referralDialog).toContainText(professionalEmail);
   await expect(referralDialog.locator(".operation-case-header .status-pill")).toHaveText("Convidado");
+  await expect(referralDialog.getByTestId("referral-risk-panel")).toContainText("Risco alto");
+  await expect(referralDialog.getByTestId("referral-risk-panel")).toContainText("Possível autorreferência");
   await referralDialog.getByLabel("Nota da análise").fill(analysisNote);
   await referralDialog.getByRole("button", { name: "Iniciar análise" }).click();
   await expect(referralDialog.locator(".operation-case-header .status-pill")).toHaveText("Em análise");
   await expect(referralDialog.locator(".operation-timeline")).toContainText(analysisNote);
+
+  await expect(referralDialog.getByRole("button", { name: "Aprovar para onboarding" })).toBeDisabled();
+  await referralDialog.getByLabel("Conclusão da verificação adicional").fill(riskNote);
+  await referralDialog.getByRole("button", { name: "Liberar triagem" }).click();
+  await expect(referralDialog.getByTestId("referral-risk-panel")).toContainText("Sinais esclarecidos");
 
   await referralDialog.getByLabel("Nota da análise").fill(approvalNote);
   await referralDialog.getByRole("button", { name: "Aprovar para onboarding" }).click();

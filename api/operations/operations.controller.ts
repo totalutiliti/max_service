@@ -7,6 +7,7 @@ import {
   ChangeSupportCaseStatusDto,
   ManageServiceCategoryDto,
   ManageServiceRegionDto,
+  ReviewPartnerReferralRiskDto,
   UpdateOperationReadinessGateDto,
   UpdateOperationReportGoalsDto,
 } from "./operations.dto.js";
@@ -240,6 +241,26 @@ export class OperationsController {
     @Param("referralId") referralId: string,
   ) {
     return { referral: await this.operations.referralDetail(actorFromHeaders(role, id), referralId) };
+  }
+
+  @Post("referrals/:referralId/risk-review")
+  async reviewReferralRisk(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Param("referralId") referralId: string,
+    @Body() input: ReviewPartnerReferralRiskDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const result = await this.operations.reviewReferralRisk(
+      actorFromHeaders(role, id),
+      referralId,
+      input.outcome,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { riskReview: result.value };
   }
 
   @Post("referrals/:referralId/transitions")

@@ -50,6 +50,7 @@ const referralSelect = `
     referral.email,
     referral.status,
     referral.source,
+    referral.additional_verification_required AS "additionalVerificationRequired",
     referral.consent_at AS "consentAt",
     referral.privacy_notice_version AS "privacyNoticeVersion",
     referral.created_at AS "createdAt",
@@ -62,6 +63,15 @@ const referralSelect = `
     reviewer.display_name AS "reviewedByName",
     latest_event.note AS "latestReviewNote",
     latest_event.created_at AS "latestReviewAt",
+    risk_assessment.id AS "riskAssessmentId",
+    risk_assessment.policy_version AS "riskPolicyVersion",
+    risk_assessment.risk_level AS "riskLevel",
+    risk_assessment.signals AS "riskSignals",
+    risk_assessment.evaluated_at AS "riskEvaluatedAt",
+    risk_review.outcome AS "riskReviewOutcome",
+    risk_review.note AS "riskReviewNote",
+    risk_review.created_at AS "riskReviewedAt",
+    risk_reviewer.display_name AS "riskReviewedByName",
     (SELECT count(*)::int FROM partner_referral_events event WHERE event.referral_id = referral.id) AS "eventCount"
   FROM partner_referrals referral
   JOIN users partner ON partner.id = referral.partner_id
@@ -75,6 +85,9 @@ const referralSelect = `
     LIMIT 1
   ) latest_event ON true
   LEFT JOIN users reviewer ON reviewer.id = latest_event.actor_id
+  LEFT JOIN partner_referral_risk_assessments risk_assessment ON risk_assessment.referral_id = referral.id
+  LEFT JOIN partner_referral_risk_reviews risk_review ON risk_review.assessment_id = risk_assessment.id
+  LEFT JOIN users risk_reviewer ON risk_reviewer.id = risk_review.actor_id
 `;
 
 const auditActivityCopy: Record<string, { category: string; title: string; detail: string }> = {
@@ -92,6 +105,7 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "support_case.status_changed": { category: "operation", title: "Ocorrência atualizada", detail: "Mudança de estado justificada pela Operação." },
   "support_case.note_added": { category: "operation", title: "Nota interna adicionada", detail: "Registro append-only incluído na ocorrência." },
   "partner_referral.invited": { category: "growth", title: "Indicação registrada", detail: "Profissional vinculado à rede de um parceiro." },
+  "partner_referral.risk_reviewed": { category: "growth", title: "Sinal preventivo revisado", detail: "Operação registrou a conclusão humana da verificação adicional." },
   "partner_referral.status_changed": { category: "growth", title: "Indicação revisada", detail: "Triagem operacional da indicação atualizada." },
   "provider_verification.status_changed": { category: "operation", title: "Verificação atualizada", detail: "Estado da análise documental alterado." },
   "provider_verification.document_reviewed": { category: "operation", title: "Documento revisado", detail: "Item do checklist conferido pela Operação." },
@@ -1036,6 +1050,12 @@ export class OperationsService {
     return this.database.withActor(actor, async (client) => {
       const result = await client.query(`${referralSelect}
         ORDER BY
+          CASE WHEN referral.status IN ('invited', 'in_review') THEN 0 ELSE 1 END,
+          CASE risk_assessment.risk_level
+            WHEN 'high' THEN 0
+            WHEN 'attention' THEN 1
+            ELSE 2
+          END,
           CASE referral.status
             WHEN 'invited' THEN 0
             WHEN 'in_review' THEN 1
@@ -1073,6 +1093,78 @@ export class OperationsService {
     });
   }
 
+  async reviewReferralRisk(
+    actor: Actor,
+    referralId: string,
+    outcome: "cleared" | "confirmed",
+    note: string,
+    idempotencyKey: string | undefined,
+  ) {
+    this.ensureOperation(actor);
+    const normalizedNote = this.normalizeNote(note);
+    if (normalizedNote.length < 20) {
+      throw new BadRequestException("Registre a análise preventiva com pelo menos 20 caracteres.");
+    }
+    return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/referrals/${referralId}/risk-review`,
+        payload: { outcome, note: normalizedNote },
+      }, async () => {
+        const current = await client.query<{
+          assessmentId: string;
+          riskLevel: "low" | "attention" | "high";
+          referralStatus: "invited" | "in_review" | "approved" | "active" | "rejected";
+          existingReviewId: string | null;
+        }>(`
+          SELECT
+            assessment.id AS "assessmentId",
+            assessment.risk_level AS "riskLevel",
+            referral.status AS "referralStatus",
+            review.id AS "existingReviewId"
+          FROM partner_referrals referral
+          JOIN partner_referral_risk_assessments assessment ON assessment.referral_id = referral.id
+          LEFT JOIN partner_referral_risk_reviews review ON review.assessment_id = assessment.id
+          WHERE referral.id = $1
+          FOR UPDATE OF referral
+        `, [referralId]);
+        if (!current.rows[0]) throw new NotFoundException("Avaliação preventiva da indicação não encontrada.");
+        if (current.rows[0].riskLevel === "low") {
+          throw new ConflictException("Esta indicação não exige verificação adicional.");
+        }
+        if (["approved", "active", "rejected"].includes(current.rows[0].referralStatus)) {
+          throw new ConflictException("A indicação já possui uma decisão final.");
+        }
+        if (current.rows[0].existingReviewId) {
+          throw new ConflictException("A verificação adicional já foi concluída.");
+        }
+
+        const reviewId = randomUUID();
+        const review = await client.query(`
+          INSERT INTO partner_referral_risk_reviews (
+            id,
+            assessment_id,
+            actor_id,
+            outcome,
+            note
+          )
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING id, outcome, note, created_at AS "createdAt"
+        `, [reviewId, current.rows[0].assessmentId, actor.id, outcome, normalizedNote]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_referral.risk_reviewed', 'partner_referral', $3, $4::jsonb)",
+          [actor.id, actor.role, referralId, JSON.stringify({
+            reviewId,
+            riskLevel: current.rows[0].riskLevel,
+            outcome,
+          })],
+        );
+        return review.rows[0];
+      });
+    });
+  }
+
   async changeReferralStatus(
     actor: Actor,
     referralId: string,
@@ -1095,16 +1187,22 @@ export class OperationsService {
         partnerId: string;
         publicCode: string;
         professionalName: string;
+        riskLevel: "low" | "attention" | "high";
+        riskReviewOutcome: "cleared" | "confirmed" | null;
       }>(`
         SELECT
-          id,
-          status,
-          partner_id AS "partnerId",
-          public_code AS "publicCode",
-          professional_name AS "professionalName"
-        FROM partner_referrals
-        WHERE id = $1
-        FOR UPDATE
+          referral.id,
+          referral.status,
+          referral.partner_id AS "partnerId",
+          referral.public_code AS "publicCode",
+          referral.professional_name AS "professionalName",
+          assessment.risk_level AS "riskLevel",
+          risk_review.outcome AS "riskReviewOutcome"
+        FROM partner_referrals referral
+        JOIN partner_referral_risk_assessments assessment ON assessment.referral_id = referral.id
+        LEFT JOIN partner_referral_risk_reviews risk_review ON risk_review.assessment_id = assessment.id
+        WHERE referral.id = $1
+        FOR UPDATE OF referral
       `, [referralId]);
       if (!current.rows[0]) throw new NotFoundException("Indicação não encontrada.");
 
@@ -1119,6 +1217,12 @@ export class OperationsService {
       }
       if ((status === "approved" || status === "rejected") && referral.status !== "in_review") {
         throw new ConflictException("Inicie a análise antes de registrar a decisão.");
+      }
+      if ((status === "approved" || status === "rejected") && referral.riskLevel !== "low" && !referral.riskReviewOutcome) {
+        throw new ConflictException("Conclua a verificação adicional antes da decisão final.");
+      }
+      if (status === "approved" && referral.riskReviewOutcome === "confirmed") {
+        throw new ConflictException("Uma inconsistência confirmada não pode ser aprovada para onboarding.");
       }
 
       const eventType = status === "in_review" ? "review_started" : status;

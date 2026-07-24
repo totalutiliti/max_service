@@ -21,6 +21,7 @@ import {
   validateNotificationPreferences,
 } from "../notifications/notification-preferences.js";
 import { maximumProviderDocumentBytes, validateProviderDocumentFile } from "../verifications/document-file-validation.js";
+import { evaluateReferralRisk, referralRiskPolicyVersion } from "../partners/referral-risk.js";
 
 test("aceita somente a identidade correspondente ao perfil demonstrativo", () => {
   assert.deepEqual(parseDemoActor("customer", demoActorIds.customer, true), {
@@ -250,4 +251,43 @@ test("vincula a Idempotency-Key à assinatura do canal interno", () => {
     ),
     false,
   );
+});
+
+test("classifica sinais preventivos de indicação sem decisão automática", () => {
+  const ordinary = evaluateReferralRisk({
+    selfReferral: false,
+    duplicatePartnerCount: 0,
+    recentReferralCount: 2,
+  });
+  assert.equal(ordinary.policyVersion, referralRiskPolicyVersion);
+  assert.equal(ordinary.riskLevel, "low");
+  assert.equal(ordinary.additionalVerificationRequired, false);
+  assert.deepEqual(ordinary.signals, []);
+
+  const duplicate = evaluateReferralRisk({
+    selfReferral: false,
+    duplicatePartnerCount: 1,
+    recentReferralCount: 3,
+  });
+  assert.equal(duplicate.riskLevel, "attention");
+  assert.equal(duplicate.additionalVerificationRequired, true);
+  assert.deepEqual(duplicate.signals.map((signal) => signal.code), [
+    "cross_network_duplicate",
+    "partner_velocity",
+  ]);
+
+  const selfReferral = evaluateReferralRisk({
+    selfReferral: true,
+    duplicatePartnerCount: 0,
+    recentReferralCount: 0,
+  });
+  assert.equal(selfReferral.riskLevel, "high");
+  assert.equal(selfReferral.signals[0]?.code, "self_referral");
+
+  const elevatedVelocity = evaluateReferralRisk({
+    selfReferral: false,
+    duplicatePartnerCount: 0,
+    recentReferralCount: 7,
+  });
+  assert.equal(elevatedVelocity.riskLevel, "high");
 });

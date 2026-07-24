@@ -14,7 +14,7 @@ Reenvios por timeout, perda de conexão ou clique repetido não podem criar pedi
 - atualização da jornada semanal e criação/liberação de bloqueios da agenda;
 - transições, avaliações e cancelamentos do booking;
 - notas e transições das ocorrências internas;
-- triagem de indicações e verificação de profissionais, inclusive revisão documental;
+- triagem de indicações, revisão dos sinais preventivos e verificação de profissionais, inclusive revisão documental;
 - ativação, desativação e ordenação de categorias, regiões e bairros;
 - criação e ativação/pausa de campanhas;
 - atualização versionada das metas e dos gates de prontidão;
@@ -77,7 +77,7 @@ Uma rotina de expurgo/particionamento para registros expirados ainda deve ser de
 
 - testes unitários validam formato, JSON canônico, hash e vínculo da chave à assinatura interna;
 - teste integrado comprova RLS de leitura e conclusão;
-- smoke test dispara pares realmente concorrentes em 30 ações de marketplace, comunicação, atendimento, disputa formal, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados, confirma um único identificador e observa um replay em cada par;
+- smoke test dispara pares realmente concorrentes em 33 ações de marketplace, comunicação, atendimento, disputa formal, análise preventiva de indicações, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados, confirma um único identificador e observa um replay em cada par;
 - o mesmo smoke reutiliza chaves JSON e binárias com conteúdo diferente e exige `409`;
 - o cockpit soma `idempotencyReplayCount` sem reter chave, corpo ou identidade.
 

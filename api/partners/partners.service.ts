@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes, randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import type { CapturePublicReferralDto, InviteReferralDto } from "./partners.dto.js";
+import { evaluateReferralRisk } from "./referral-risk.js";
 
 @Injectable()
 export class PartnersService {
@@ -30,6 +32,7 @@ export class PartnersService {
           referral.email,
           referral.status,
           referral.source,
+          referral.additional_verification_required AS "additionalVerificationRequired",
           referral.created_at AS "createdAt",
           referral.activated_at AS "activatedAt",
           category.name AS "categoryName",
@@ -91,11 +94,17 @@ export class PartnersService {
         RETURNING id, public_code AS "publicCode", professional_name AS "professionalName", email, status, source, created_at AS "createdAt"
       `, [id, publicCode, context.rows[0].linkId, actor.id, context.rows[0].categoryId, professionalName, email]);
       if (!result.rows[0]) throw new ConflictException("Este profissional já está na sua rede de indicações.");
+      const assessment = await this.recordRiskAssessment(client, id);
       await client.query(
         "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_referral.invited', 'partner_referral', $3, $4::jsonb)",
-        [actor.id, actor.role, id, JSON.stringify({ publicCode, categorySlug: input.categorySlug })],
+        [actor.id, actor.role, id, JSON.stringify({
+          publicCode,
+          categorySlug: input.categorySlug,
+          riskPolicyVersion: assessment.policyVersion,
+          additionalVerificationRequired: assessment.additionalVerificationRequired,
+        })],
       );
-      return result.rows[0];
+      return { ...result.rows[0], additionalVerificationRequired: assessment.additionalVerificationRequired };
     });
   }
 
@@ -163,6 +172,7 @@ export class PartnersService {
       `, [input.categorySlug]);
       if (!category.rows[0]) throw new NotFoundException("Categoria de serviço indisponível.");
 
+      const referralId = randomUUID();
       const result = await client.query(`
         INSERT INTO partner_referrals (
           id, public_code, referral_link_id, partner_id, service_category_id,
@@ -171,7 +181,7 @@ export class PartnersService {
         ON CONFLICT (partner_id, lower(email)) DO NOTHING
         RETURNING id
       `, [
-        randomUUID(),
+        referralId,
         `RF-${randomBytes(4).toString("hex").toUpperCase()}`,
         link.rows[0].id,
         link.rows[0].partnerId,
@@ -180,8 +190,49 @@ export class PartnersService {
         email,
         input.source,
       ]);
+      if (result.rows[0]) await this.recordRiskAssessment(client, referralId);
       return { recorded: Boolean(result.rows[0]) };
     });
+  }
+
+  private async recordRiskAssessment(client: PoolClient, referralId: string) {
+    const context = await client.query<{
+      selfReferral: boolean;
+      duplicatePartnerCount: number;
+      recentReferralCount: number;
+    }>(`
+      SELECT
+        self_referral AS "selfReferral",
+        duplicate_partner_count AS "duplicatePartnerCount",
+        recent_referral_count AS "recentReferralCount"
+      FROM partner_referral_risk_context($1)
+    `, [referralId]);
+    if (!context.rows[0]) throw new ConflictException("Não foi possível avaliar preventivamente a indicação.");
+
+    const assessment = evaluateReferralRisk(context.rows[0]);
+    await client.query(`
+      INSERT INTO partner_referral_risk_assessments (
+        id,
+        referral_id,
+        policy_version,
+        risk_level,
+        signals
+      )
+      VALUES ($1, $2, $3, $4, $5::jsonb)
+    `, [
+      randomUUID(),
+      referralId,
+      assessment.policyVersion,
+      assessment.riskLevel,
+      JSON.stringify(assessment.signals),
+    ]);
+    if (assessment.additionalVerificationRequired) {
+      await client.query(
+        "UPDATE partner_referrals SET additional_verification_required = true WHERE id = $1",
+        [referralId],
+      );
+    }
+    return assessment;
   }
 }
 

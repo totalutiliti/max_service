@@ -449,6 +449,16 @@ assert.equal(
 );
 
 const partnerCookie = await sessionCookie("parceiro");
+const riskReferral = await json(await fetch(`${webBaseUrl}/api/v1/partner/dashboard`, {
+  method: "POST",
+  headers: { cookie: partnerCookie, "content-type": "application/json" },
+  body: JSON.stringify({
+    professionalName: "Autorreferência Sintética",
+    email: `joao+smoke.${Date.now()}@demo.maxservice`,
+    categorySlug: "eletricista",
+  }),
+}));
+assert.equal(riskReferral.referral.additionalVerificationRequired, true);
 const supportCreateResults = await concurrentJsonMutation(
   "/api/v1/partner/support",
   partnerCookie,
@@ -533,6 +543,78 @@ assert.match(limitedCapture?.headers.get("retry-after") ?? "", /^\d+$/);
 assert.equal((await limitedCapture?.json()).code, "RATE_LIMITED");
 
 const operationCookie = await sessionCookie("operacao");
+const riskDetail = await json(await fetch(
+  `${webBaseUrl}/api/v1/operation/referrals?referralId=${encodeURIComponent(riskReferral.referral.id)}`,
+  { headers: { cookie: operationCookie } },
+));
+assert.equal(riskDetail.referral.riskLevel, "high");
+assert.equal(riskDetail.referral.riskReviewOutcome, null);
+assert.equal(
+  riskDetail.referral.riskSignals.some((signal) => signal.code === "self_referral"),
+  true,
+);
+const riskTriageResults = await concurrentJsonMutation(
+  "/api/v1/operation/referrals",
+  operationCookie,
+  {
+    referralId: riskReferral.referral.id,
+    status: "in_review",
+    note: "Indicação sintética assumida para validar a decisão preventiva.",
+  },
+);
+assert.equal(riskTriageResults[0].referral.status, "in_review");
+const pendingRiskApproval = await fetch(`${webBaseUrl}/api/v1/operation/referrals`, {
+  method: "POST",
+  headers: {
+    cookie: operationCookie,
+    "content-type": "application/json",
+    "idempotency-key": randomUUID(),
+  },
+  body: JSON.stringify({
+    referralId: riskReferral.referral.id,
+    status: "approved",
+    note: "Tentativa sintética de aprovação antes da verificação adicional.",
+  }),
+});
+assert.equal(pendingRiskApproval.status, 409);
+assert.match(JSON.stringify(await pendingRiskApproval.json()), /verificação adicional/i);
+const riskReviewResults = await concurrentJsonMutation(
+  "/api/v1/operation/referrals",
+  operationCookie,
+  {
+    referralId: riskReferral.referral.id,
+    action: "risk_review",
+    outcome: "confirmed",
+    note: "Autorreferência sintética conferida e confirmada pela Operação no smoke test.",
+  },
+);
+assert.equal(riskReviewResults[0].riskReview.id, riskReviewResults[1].riskReview.id);
+assert.equal(riskReviewResults[0].riskReview.outcome, "confirmed");
+const confirmedRiskApproval = await fetch(`${webBaseUrl}/api/v1/operation/referrals`, {
+  method: "POST",
+  headers: {
+    cookie: operationCookie,
+    "content-type": "application/json",
+    "idempotency-key": randomUUID(),
+  },
+  body: JSON.stringify({
+    referralId: riskReferral.referral.id,
+    status: "approved",
+    note: "Tentativa sintética de aprovar uma inconsistência confirmada.",
+  }),
+});
+assert.equal(confirmedRiskApproval.status, 409);
+assert.match(JSON.stringify(await confirmedRiskApproval.json()), /não pode ser aprovada/i);
+const riskRejectionResults = await concurrentJsonMutation(
+  "/api/v1/operation/referrals",
+  operationCookie,
+  {
+    referralId: riskReferral.referral.id,
+    status: "rejected",
+    note: "Indicação sintética não aprovada após confirmação humana da inconsistência.",
+  },
+);
+assert.equal(riskRejectionResults[0].referral.status, "rejected");
 const operationMessageResults = await concurrentJsonMutation(
   "/api/v1/operation/support",
   operationCookie,
@@ -773,7 +855,7 @@ assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
 assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
-assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 30, true);
+assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 33, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(

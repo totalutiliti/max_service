@@ -46,7 +46,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0045_runtime_migration_visibility.sql',
         '0046_idempotent_marketplace_mutations.sql',
         '0047_private_storage_reconciliation.sql',
-        '0048_partner_support_disputes.sql'
+        '0048_partner_support_disputes.sql',
+        '0049_partner_referral_risk_assessments.sql'
       )
       ORDER BY name
     `);
@@ -58,6 +59,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0046_idempotent_marketplace_mutations.sql",
       "0047_private_storage_reconciliation.sql",
       "0048_partner_support_disputes.sql",
+      "0049_partner_referral_risk_assessments.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name
@@ -152,6 +154,124 @@ test("RLS isola registros idempotentes e permite concluir somente a operação d
         RETURNING id
       `, [recordId]);
       assert.equal(immutableReplay.rowCount, 0);
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("RLS mantém sinais preventivos restritos e reserva a revisão à Operação", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    await withRollback(pool, async (client) => {
+      const referralId = randomUUID();
+      const assessmentId = randomUUID();
+
+      await setActor(client, "partner", actors.partner);
+      await client.query(`
+        INSERT INTO partner_referrals (
+          id,
+          public_code,
+          referral_link_id,
+          partner_id,
+          service_category_id,
+          professional_name,
+          email,
+          status,
+          source
+        )
+        VALUES (
+          $1,
+          $2,
+          '70000000-0000-4000-8000-000000000001',
+          $3,
+          '10000000-0000-4000-8000-000000000001',
+          'Autorreferência Sintética',
+          'joao+rls@demo.maxservice',
+          'invited',
+          'manual'
+        )
+      `, [referralId, `RF-${referralId.slice(0, 8).toUpperCase()}`, actors.partner]);
+
+      const context = await client.query(`
+        SELECT
+          self_referral AS "selfReferral",
+          duplicate_partner_count AS "duplicatePartnerCount",
+          recent_referral_count AS "recentReferralCount"
+        FROM partner_referral_risk_context($1)
+      `, [referralId]);
+      assert.equal(context.rows[0].selfReferral, true);
+      assert.equal(context.rows[0].duplicatePartnerCount, 0);
+
+      const signals = [{
+        code: "self_referral",
+        severity: "high",
+        title: "Possível autorreferência",
+        detail: "Sinal sintético do teste integrado.",
+      }];
+      await client.query(`
+        INSERT INTO partner_referral_risk_assessments (
+          id,
+          referral_id,
+          policy_version,
+          risk_level,
+          signals
+        )
+        VALUES ($1, $2, 'REFERRAL-RISK-2026-01', 'high', $3::jsonb)
+      `, [assessmentId, referralId, JSON.stringify(signals)]);
+      await client.query(
+        "UPDATE partner_referrals SET additional_verification_required = true WHERE id = $1",
+        [referralId],
+      );
+
+      const partnerAssessment = await client.query(
+        "SELECT count(*)::int AS count FROM partner_referral_risk_assessments WHERE referral_id = $1",
+        [referralId],
+      );
+      assert.equal(partnerAssessment.rows[0].count, 0);
+      const partnerSummary = await client.query(
+        "SELECT additional_verification_required AS required FROM partner_referrals WHERE id = $1",
+        [referralId],
+      );
+      assert.equal(partnerSummary.rows[0].required, true);
+
+      await client.query("SAVEPOINT partner_risk_review");
+      try {
+        await client.query(`
+          INSERT INTO partner_referral_risk_reviews (
+            id,
+            assessment_id,
+            actor_id,
+            outcome,
+            note
+          )
+          VALUES ($1, $2, $3, 'cleared', 'Tentativa indevida de revisão pelo parceiro.')
+        `, [randomUUID(), assessmentId, actors.partner]);
+        assert.fail("parceiro não deveria revisar o próprio sinal preventivo");
+      } catch (error) {
+        assert.equal(error.code, "42501");
+      }
+      await client.query("ROLLBACK TO SAVEPOINT partner_risk_review");
+
+      await setActor(client, "operation", actors.operation);
+      const operationAssessment = await client.query(
+        "SELECT risk_level AS level, signals FROM partner_referral_risk_assessments WHERE referral_id = $1",
+        [referralId],
+      );
+      assert.equal(operationAssessment.rows[0].level, "high");
+      assert.equal(operationAssessment.rows[0].signals[0].code, "self_referral");
+      const review = await client.query(`
+        INSERT INTO partner_referral_risk_reviews (
+          id,
+          assessment_id,
+          actor_id,
+          outcome,
+          note
+        )
+        VALUES ($1, $2, $3, 'cleared', 'Sinal sintético conferido e liberado pela Operação.')
+        RETURNING outcome
+      `, [randomUUID(), assessmentId, actors.operation]);
+      assert.equal(review.rows[0].outcome, "cleared");
     });
   } finally {
     await pool.end();

@@ -75,6 +75,9 @@ services:
 
   storage-maintenance:
     image: max-service-api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     container_name: max-service-storage-maintenance
     restart: unless-stopped
     command:

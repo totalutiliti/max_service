@@ -665,7 +665,7 @@ img { max-width: 100%; }
 .chat-messages { padding: 2rem clamp(1rem, 5vw, 4rem); background: linear-gradient(rgba(246,248,244,.92), rgba(246,248,244,.92)), radial-gradient(#cbd3c8 1px, transparent 1px); background-size: auto, 20px 20px; overflow-y: auto; }
 .chat-date { width: fit-content; margin: 0 auto 1.5rem; padding: .35rem .6rem; border-radius: 999px; background: #e3e8e0; color: var(--muted); font-size: .55rem; font-weight: 800; }
 .message { width: fit-content; max-width: 72%; padding: .8rem .9rem .45rem; border-radius: 14px; display: grid; gap: .3rem; font-size: .78rem; line-height: 1.45; box-shadow: 0 5px 15px rgba(25,40,25,.05); }
-.message small { justify-self: end; color: #7e8980; font-size: .54rem; }
+.message small { justify-self: end; color: #566158; font-size: .54rem; }
 .message.received { background: var(--white); border: 1px solid #e3e8e1; border-bottom-left-radius: 4px; }
 .message.sent { margin-left: auto; background: #dcffc0; border-bottom-right-radius: 4px; }
 .message-attachment { min-width: 210px; display: grid; gap: 0; border: 1px solid rgba(38,58,34,.16); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,.64); color: #315d12; text-decoration: none; }

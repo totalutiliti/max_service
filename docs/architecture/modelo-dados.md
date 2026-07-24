@@ -33,7 +33,7 @@
 
 ### Operação
 
-`notifications`, `notification_preferences`, `notification_preference_events`, `push_subscriptions`, `notification_push_deliveries`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `partner_support_attachments`, `audit_events`, `outbox_events` e `feature_flags`.
+`notifications`, `notification_preferences`, `notification_preference_events`, `push_subscriptions`, `notification_push_deliveries`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `partner_support_attachments`, `operation_readiness_gates`, `operation_readiness_gate_events`, `audit_events`, `outbox_events` e `feature_flags`.
 
 ## Invariantes
 
@@ -69,6 +69,8 @@
 - a Operação pode atribuir o atendimento apenas a um usuário operacional e elevar a prioridade de normal para alta, nunca reduzi-la durante o caso; cada mudança exige justificativa, evento append-only e auditoria;
 - a política `SUPPORT-SLA-2026-01` define primeira resposta/resolução em 4 h/48 h no fluxo normal e 1 h/8 h na prioridade alta; os prazos ficam persistidos e o primeiro prazo é preservado depois da resposta;
 - cada mensagem de atendimento aceita no máximo um anexo append-only PDF/JPEG/PNG sintético de 2 MB; evento, caso e autor são vinculados por chave estrangeira composta;
+- cada gate de prontidão possui chave estável, responsável, evidência e versão monotônica; somente a Operação altera o registro com a versão esperada, gerando evento append-only e auditoria no mesmo commit;
+- `evidence_ready` exige evidência descritiva, mas não representa aprovação nem altera automaticamente a autorização global de produção;
 - o anexo de atendimento é visível somente ao parceiro titular e à Operação; o object storage guarda os bytes e `partner_support_attachments` preserva chave aleatória, nome normalizado, tipo, tamanho, hash e autoria;
 - a ordem das categorias é positiva e única; somente a operação altera `active` ou `sort_order`, sempre com justificativa, `service_category_events` append-only e auditoria;
 - o catálogo mantém ao menos uma categoria ativa; uma categoria inativa é rejeitada em novos pedidos e indicações, mas continua visível nos relacionamentos históricos;

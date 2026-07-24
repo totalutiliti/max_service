@@ -6,6 +6,7 @@ import {
   ChangeSupportCaseStatusDto,
   ManageServiceCategoryDto,
   ManageServiceRegionDto,
+  UpdateOperationReadinessGateDto,
   UpdateOperationReportGoalsDto,
 } from "./operations.dto.js";
 import { OperationsService } from "./operations.service.js";
@@ -28,6 +29,28 @@ export class OperationsController {
     @Headers("x-demo-actor-id") id: string | undefined,
   ) {
     return this.operations.activity(actorFromHeaders(role, id));
+  }
+
+  @Get("readiness")
+  async readiness(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.operations.readiness(actorFromHeaders(role, id));
+  }
+
+  @Post("readiness/:gateKey")
+  async updateReadinessGate(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Param("gateKey") gateKey: string,
+    @Body() input: UpdateOperationReadinessGateDto,
+  ) {
+    return this.operations.updateReadinessGate(
+      actorFromHeaders(role, id),
+      gateKey,
+      input,
+    );
   }
 
   @Get("reports")

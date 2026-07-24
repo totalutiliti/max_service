@@ -10,7 +10,8 @@
 - parceiro, atribuição, painel, captura pública por link/QR e triagem operacional;
 - moderação, documentos privados e administração;
 - PSP sandbox, regra 12/2/2 configurável e ledger;
-- testes de RLS, autorização, idempotência e E2E.
+- ampliar a suíte de RLS, autorização, idempotência e E2E; migrations, isolamento da agenda por papel e conflitos de reserva/bloqueio já são testados automaticamente contra PostgreSQL real no CI;
+- concluir os oito gates persistentes de prontidão: identidade, marca/domínio, modelo jurídico/fiscal, PSP, privacidade/retenção, backup/restauração, autorização e escopo formal do piloto.
 
 ## P1 - operar o piloto
 

@@ -81,3 +81,26 @@ export class UpdateOperationReportGoalsDto {
   @MaxLength(1000)
   note!: string;
 }
+
+export class UpdateOperationReadinessGateDto {
+  @IsIn(["blocked", "in_progress", "evidence_ready"])
+  status!: "blocked" | "in_progress" | "evidence_ready";
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  ownerLabel!: string;
+
+  @IsString()
+  @MaxLength(1000)
+  evidence!: string;
+
+  @IsInt()
+  @Min(1)
+  expectedVersion!: number;
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(1000)
+  note!: string;
+}

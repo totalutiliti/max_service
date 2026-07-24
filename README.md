@@ -28,6 +28,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - A Visão geral da Operação consolida relatórios de 7, 30 ou 90 dias com funil, ritmo de aquisição, desempenho por categoria, campanhas, suporte e reconciliação; a exportação CSV contém somente agregados sem PII.
 - Cada período possui metas versionadas de cobertura, conversão, primeira proposta, SLA e reconciliação; o cockpit compara a janela anterior e abre alertas automáticos, enquanto alterações exigem justificativa auditável.
 - A área **Configurações** da Operação controla a ordem e a disponibilidade das categorias; cada mudança exige justificativa, preserva o histórico e gera evento append-only e auditoria.
+- A área **Conta** da Operação mantém oito gates persistentes de prontidão, com responsável, evidência, versão, histórico append-only e conflito otimista; evidência pronta não autoriza produção.
 - A Operação cria, agenda, pausa e acompanha campanhas promocionais com validade, limite total e por cliente; o cliente valida e reserva o cupom no pedido.
 - O cupom é recalculado no aceite da proposta, e o financeiro sandbox preserva valor original, desconto, valor final e campanha em um snapshot conciliável.
 - Cliente, parceiro e página pública consomem o mesmo catálogo persistente; categorias desativadas deixam de aceitar novos pedidos e indicações sem ocultar vínculos anteriores.
@@ -52,6 +53,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Cliente, profissional, parceiro e operação possuem extratos separados por RLS; os valores são previsões ou lançamentos demonstrativos, nunca saldo bancário ou dinheiro movimentado.
 - Pedidos agendados bloqueiam novas propostas e aceite duplicado; cada mudança relevante gera histórico e auditoria.
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
+- O CI reproduz lint, builds, testes funcionais, auditoria de dependências, scanner de segredos e uma instalação Docker limpa para testar migrations, RLS e conflitos de agenda no PostgreSQL.
 - Nenhum pagamento real, carteira, crédito, biometria ou consulta de antecedentes está ativo; o processador financeiro é exclusivamente sandbox.
 - O nome **Max Service** e a regra comercial **12% + 2% + 2%** são hipóteses pendentes de aprovação.
 
@@ -70,7 +72,10 @@ Para validar uma entrega:
 npm run lint
 npm run build
 npm test
+npm run test:integration
 ```
+
+`test:integration` exige o PostgreSQL local do Docker ativo em `127.0.0.1:54329`.
 
 ## Rodar com Docker
 

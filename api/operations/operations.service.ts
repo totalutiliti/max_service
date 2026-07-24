@@ -1,9 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
-import type { UpdateOperationReportGoalsDto } from "./operations.dto.js";
+import type { UpdateOperationReadinessGateDto, UpdateOperationReportGoalsDto } from "./operations.dto.js";
 import {
   normalizeReportDays,
   percentage,
@@ -118,6 +119,7 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "notification.preferences_updated": { category: "operation", title: "Preferências de avisos atualizadas", detail: "Assuntos e janela silenciosa do destinatário foram versionados." },
   "notification.push_subscribed": { category: "operation", title: "Aparelho habilitado para avisos", detail: "Nova assinatura Web Push registrada sem expor o endpoint." },
   "notification.push_unsubscribed": { category: "operation", title: "Aparelho removido dos avisos", detail: "Assinatura Web Push revogada pelo próprio destinatário." },
+  "operation_readiness.updated": { category: "operation", title: "Gate de prontidão atualizado", detail: "Evidência e estado do gate de produção foram versionados." },
 };
 
 const auditEntityPrefix: Record<string, string> = {
@@ -147,6 +149,7 @@ const auditEntityPrefix: Record<string, string> = {
   onboarding_profile: "ON",
   notification_preferences: "NP",
   push_subscription: "PS",
+  operation_readiness_gate: "GT",
 };
 
 @Injectable()
@@ -161,6 +164,206 @@ export class OperationsService {
     const normalized = note.trim();
     if (normalized.length < 10) throw new BadRequestException("Registre uma justificativa com pelo menos 10 caracteres.");
     return normalized;
+  }
+
+  async readiness(actor: Actor) {
+    this.ensureOperation(actor);
+    return this.database.withActor(
+      actor,
+      (client) => this.readinessWithinTransaction(client),
+    );
+  }
+
+  async updateReadinessGate(
+    actor: Actor,
+    gateKey: string,
+    input: UpdateOperationReadinessGateDto,
+  ) {
+    this.ensureOperation(actor);
+    const ownerLabel = input.ownerLabel.trim();
+    const evidence = input.evidence.trim();
+    const note = this.normalizeNote(input.note);
+    if (ownerLabel.length < 3) {
+      throw new BadRequestException("Informe o responsável pelo gate.");
+    }
+    if (input.status === "evidence_ready" && evidence.length < 20) {
+      throw new BadRequestException("Evidência pronta exige uma descrição com pelo menos 20 caracteres.");
+    }
+
+    return this.database.withActor(actor, async (client) => {
+      const current = await client.query<{
+        gateKey: string;
+        status: UpdateOperationReadinessGateDto["status"];
+        ownerLabel: string;
+        evidence: string;
+        version: number;
+      }>(`
+        SELECT
+          gate_key AS "gateKey",
+          status,
+          owner_label AS "ownerLabel",
+          evidence,
+          version
+        FROM operation_readiness_gates
+        WHERE gate_key = $1
+        FOR UPDATE
+      `, [gateKey]);
+      const gate = current.rows[0];
+      if (!gate) throw new NotFoundException("Gate de prontidão não encontrado.");
+      if (gate.version !== input.expectedVersion) {
+        throw new ConflictException("Este gate foi atualizado por outra pessoa. Recarregue antes de salvar.");
+      }
+      if (
+        gate.status === input.status
+        && gate.ownerLabel === ownerLabel
+        && gate.evidence === evidence
+      ) {
+        throw new BadRequestException("Altere o estado, o responsável ou a evidência antes de salvar.");
+      }
+
+      const version = gate.version + 1;
+      const eventId = randomUUID();
+      await client.query(`
+        UPDATE operation_readiness_gates
+        SET
+          status = $2,
+          owner_label = $3,
+          evidence = $4,
+          version = $5,
+          updated_by = $6,
+          reviewed_at = now(),
+          updated_at = now()
+        WHERE gate_key = $1
+      `, [gateKey, input.status, ownerLabel, evidence, version, actor.id]);
+      await client.query(`
+        INSERT INTO operation_readiness_gate_events (
+          id,
+          gate_key,
+          actor_id,
+          from_status,
+          to_status,
+          gate_version,
+          note,
+          snapshot
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+      `, [
+        eventId,
+        gateKey,
+        actor.id,
+        gate.status,
+        input.status,
+        version,
+        note,
+        JSON.stringify({
+          ownerLabel,
+          evidence,
+          previousOwnerLabel: gate.ownerLabel,
+          previousEvidence: gate.evidence,
+        }),
+      ]);
+      await client.query(
+        "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'operation_readiness.updated', 'operation_readiness_gate', $3, $4::jsonb)",
+        [actor.id, actor.role, eventId, JSON.stringify({
+          gateKey,
+          fromStatus: gate.status,
+          toStatus: input.status,
+          version,
+        })],
+      );
+      return this.readinessWithinTransaction(client);
+    });
+  }
+
+  private async readinessWithinTransaction(client: PoolClient) {
+    const gates = await client.query<{
+      gateKey: string;
+      area: "business" | "legal" | "security" | "technology" | "finance" | "operation";
+      title: string;
+      description: string;
+      ownerLabel: string;
+      status: "blocked" | "in_progress" | "evidence_ready";
+      externalApprovalRequired: boolean;
+      evidence: string;
+      version: number;
+      reviewedAt: Date | null;
+      updatedAt: Date;
+      updatedByName: string | null;
+    }>(`
+      SELECT
+        gate.gate_key AS "gateKey",
+        gate.area,
+        gate.title,
+        gate.description,
+        gate.owner_label AS "ownerLabel",
+        gate.status,
+        gate.external_approval_required AS "externalApprovalRequired",
+        gate.evidence,
+        gate.version,
+        gate.reviewed_at AS "reviewedAt",
+        gate.updated_at AS "updatedAt",
+        updater.display_name AS "updatedByName"
+      FROM operation_readiness_gates gate
+      LEFT JOIN users updater ON updater.id = gate.updated_by
+      ORDER BY
+        CASE gate.status
+          WHEN 'blocked' THEN 0
+          WHEN 'in_progress' THEN 1
+          ELSE 2
+        END,
+        gate.external_approval_required DESC,
+        gate.area,
+        gate.gate_key
+    `);
+    const history = await client.query<{
+      id: string;
+      gateKey: string;
+      gateTitle: string;
+      fromStatus: "blocked" | "in_progress" | "evidence_ready";
+      toStatus: "blocked" | "in_progress" | "evidence_ready";
+      gateVersion: number;
+      note: string;
+      createdAt: Date;
+      actorName: string;
+    }>(`
+      SELECT
+        event.id,
+        event.gate_key AS "gateKey",
+        gate.title AS "gateTitle",
+        event.from_status AS "fromStatus",
+        event.to_status AS "toStatus",
+        event.gate_version AS "gateVersion",
+        event.note,
+        event.created_at AS "createdAt",
+        actor.display_name AS "actorName"
+      FROM operation_readiness_gate_events event
+      JOIN operation_readiness_gates gate ON gate.gate_key = event.gate_key
+      JOIN users actor ON actor.id = event.actor_id
+      ORDER BY event.created_at DESC, event.id DESC
+      LIMIT 20
+    `);
+    const blockedCount = gates.rows.filter((gate) => gate.status === "blocked").length;
+    const inProgressCount = gates.rows.filter((gate) => gate.status === "in_progress").length;
+    const evidenceReadyCount = gates.rows.filter((gate) => gate.status === "evidence_ready").length;
+    const externalApprovalCount = gates.rows.filter((gate) => gate.externalApprovalRequired).length;
+    return {
+      policy: {
+        version: "PRODUCTION-GATE-2026-01",
+        productionAuthorized: false,
+        rule: "Evidência pronta não autoriza produção; a decisão final exige aprovação técnica, jurídica, financeira e operacional.",
+      },
+      metrics: {
+        totalCount: gates.rows.length,
+        blockedCount,
+        inProgressCount,
+        evidenceReadyCount,
+        externalApprovalCount,
+        evidenceCoverageBps: gates.rows.length === 0
+          ? 0
+          : Math.round((evidenceReadyCount / gates.rows.length) * 10_000),
+      },
+      gates: gates.rows,
+      history: history.rows,
+    };
   }
 
   async matching(actor: Actor) {

@@ -1,0 +1,74 @@
+name: Qualidade
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Build e testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Validar código
+        run: npm run lint
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Auditar dependências de produção
+        run: npm audit --omit=dev
+
+      - name: Procurar segredos versionados
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 git --source=/repo --no-banner --redact --exit-code=1
+
+  postgres:
+    name: PostgreSQL, RLS e concorrência
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Subir ambiente isolado
+        run: docker compose up -d --build --wait
+
+      - name: Testar migrations, RLS e conflitos
+        env:
+          TEST_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@127.0.0.1:54329/max_service
+        run: npm run test:integration
+
+      - name: Registrar diagnóstico em caso de falha
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Encerrar ambiente
+        if: always()
+        run: docker compose down --volumes

@@ -472,6 +472,49 @@ interface OperationActivityData {
   events: OperationActivityEvent[];
 }
 
+type OperationReadinessStatus = "blocked" | "in_progress" | "evidence_ready";
+
+interface OperationReadinessData {
+  policy: {
+    version: string;
+    productionAuthorized: false;
+    rule: string;
+  };
+  metrics: {
+    totalCount: number;
+    blockedCount: number;
+    inProgressCount: number;
+    evidenceReadyCount: number;
+    externalApprovalCount: number;
+    evidenceCoverageBps: number;
+  };
+  gates: Array<{
+    gateKey: string;
+    area: "business" | "legal" | "security" | "technology" | "finance" | "operation";
+    title: string;
+    description: string;
+    ownerLabel: string;
+    status: OperationReadinessStatus;
+    externalApprovalRequired: boolean;
+    evidence: string;
+    version: number;
+    reviewedAt: string | null;
+    updatedAt: string;
+    updatedByName: string | null;
+  }>;
+  history: Array<{
+    id: string;
+    gateKey: string;
+    gateTitle: string;
+    fromStatus: OperationReadinessStatus;
+    toStatus: OperationReadinessStatus;
+    gateVersion: number;
+    note: string;
+    createdAt: string;
+    actorName: string;
+  }>;
+}
+
 type ReportPeriodDays = 7 | 30 | 90;
 
 interface OperationReportData {
@@ -4706,6 +4749,167 @@ function NotificationPreferencesPanel({ role, notify }: { role: Role; notify: (m
   );
 }
 
+const readinessStatusLabel: Record<OperationReadinessStatus, string> = {
+  blocked: "Bloqueado",
+  in_progress: "Em validação",
+  evidence_ready: "Evidência pronta",
+};
+
+const readinessAreaLabel: Record<OperationReadinessData["gates"][number]["area"], string> = {
+  business: "Negócio",
+  legal: "Jurídico",
+  security: "Segurança",
+  technology: "Tecnologia",
+  finance: "Financeiro",
+  operation: "Operação",
+};
+
+function OperationReadinessPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationReadinessData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [selectedGateKey, setSelectedGateKey] = useState("");
+  const [status, setStatus] = useState<OperationReadinessStatus>("blocked");
+  const [ownerLabel, setOwnerLabel] = useState("");
+  const [evidence, setEvidence] = useState("");
+  const [note, setNote] = useState("");
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/readiness", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationReadinessData & { error?: string; message?: string };
+        if (!response.ok || !payload.policy) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar os gates de prontidão.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar os gates de prontidão.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const selectedGate = data?.gates.find((gate) => gate.gateKey === selectedGateKey) ?? null;
+  const selectGate = (gate: OperationReadinessData["gates"][number]) => {
+    setSelectedGateKey(gate.gateKey);
+    setStatus(gate.status);
+    setOwnerLabel(gate.ownerLabel);
+    setEvidence(gate.evidence);
+    setNote("");
+  };
+  const closeEditor = () => {
+    setSelectedGateKey("");
+    setNote("");
+  };
+  const saveGate = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedGate) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/readiness", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          gateKey: selectedGate.gateKey,
+          status,
+          ownerLabel: ownerLabel.trim(),
+          evidence: evidence.trim(),
+          expectedVersion: selectedGate.version,
+          note: note.trim(),
+        }),
+      });
+      const payload = await response.json() as OperationReadinessData & { error?: string; message?: string };
+      if (!response.ok || !payload.policy) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o gate.");
+      }
+      setData(payload);
+      closeEditor();
+      notify(`Gate “${selectedGate.title}” atualizado com evidência versionada.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar o gate.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !data) {
+    return <section className="dashboard-section readiness-panel"><div className="data-state">Consolidando os gates de produção...</div></section>;
+  }
+  if (!data) {
+    return <section className="dashboard-section readiness-panel"><div className="data-state"><strong>Prontidão indisponível.</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Tentar novamente</button></div></section>;
+  }
+  const coverage = data.metrics.evidenceCoverageBps / 100;
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+
+  return (
+    <section className="dashboard-section readiness-panel">
+      <header>
+        <div>
+          <small>PRONTIDÃO DO PILOTO · {data.policy.version}</small>
+          <h2>Produção só avança com evidência.</h2>
+          <p>Acompanhe os bloqueios técnicos e de governança sem transformar progresso interno em aprovação automática.</p>
+        </div>
+        <div className="readiness-score" style={{ "--readiness-progress": `${coverage * 3.6}deg` } as React.CSSProperties}>
+          <strong>{coverage.toFixed(0)}%</strong>
+          <span>evidências prontas</span>
+        </div>
+      </header>
+      <div className="readiness-metrics">
+        <article><small>BLOQUEADOS</small><strong>{data.metrics.blockedCount}</strong><span>Impedem avanço</span></article>
+        <article><small>EM VALIDAÇÃO</small><strong>{data.metrics.inProgressCount}</strong><span>Trabalho em curso</span></article>
+        <article><small>EVIDÊNCIA PRONTA</small><strong>{data.metrics.evidenceReadyCount}</strong><span>Revisão concluída</span></article>
+        <article><small>APROVAÇÃO EXTERNA</small><strong>{data.metrics.externalApprovalCount}</strong><span>Jurídico ou negócio</span></article>
+      </div>
+      <div className="readiness-policy">
+        <span>!</span>
+        <p><strong>Produção não autorizada.</strong> {data.policy.rule}</p>
+      </div>
+      <div className="readiness-gates">
+        {data.gates.map((gate) => (
+          <article key={gate.gateKey} className={`readiness-gate ${gate.status}`}>
+            <header>
+              <div><small>{readinessAreaLabel[gate.area]} · V{gate.version}</small><strong>{gate.title}</strong></div>
+              <span className={`readiness-status ${gate.status}`}>{readinessStatusLabel[gate.status]}</span>
+            </header>
+            <p>{gate.description}</p>
+            <div className="readiness-gate-owner"><span>RESPONSÁVEL</span><strong>{gate.ownerLabel}</strong></div>
+            {gate.evidence && <blockquote>{gate.evidence}</blockquote>}
+            <footer>
+              <span>{gate.externalApprovalRequired ? "◆ Aprovação externa" : "● Validação interna"}</span>
+              <button onClick={() => selectGate(gate)}>Revisar gate →</button>
+            </footer>
+          </article>
+        ))}
+      </div>
+      {selectedGate && (
+        <form className="readiness-editor" onSubmit={saveGate}>
+          <header><div><small>REVISÃO CONTROLADA · V{selectedGate.version + 1}</small><h3>{selectedGate.title}</h3></div><button type="button" onClick={closeEditor} aria-label="Fechar editor">×</button></header>
+          <div className="readiness-editor-grid">
+            <label className="field"><span>Estado da evidência</span><select value={status} onChange={(event) => setStatus(event.target.value as OperationReadinessStatus)}><option value="blocked">Bloqueado</option><option value="in_progress">Em validação</option><option value="evidence_ready">Evidência pronta</option></select></label>
+            <label className="field"><span>Responsável</span><input minLength={3} maxLength={120} value={ownerLabel} onChange={(event) => setOwnerLabel(event.target.value)} required /></label>
+            <label className="field readiness-editor-wide"><span>Evidência disponível</span><textarea maxLength={1000} value={evidence} onChange={(event) => setEvidence(event.target.value)} placeholder="Documento, teste ou decisão que sustenta o estado atual." required={status === "evidence_ready"} /><small>{evidence.trim().length}/1000</small></label>
+            <label className="field readiness-editor-wide"><span>Justificativa desta versão</span><textarea minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explique o que mudou e por quê." required /><small>{note.trim().length}/1000</small></label>
+          </div>
+          <footer><p>Nenhuma alteração autoriza deploy automaticamente.</p><div><button type="button" className="secondary-action" onClick={closeEditor}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10 || ownerLabel.trim().length < 3 || (status === "evidence_ready" && evidence.trim().length < 20)}>{saving ? "Salvando..." : "Salvar nova versão →"}</button></div></footer>
+        </form>
+      )}
+      <div className="readiness-history">
+        <header><small>HISTÓRICO RECENTE</small><span>{data.history.length} revisão(ões)</span></header>
+        {data.history.length === 0 && <p>Nenhum gate revisado nesta base.</p>}
+        {data.history.slice(0, 6).map((event) => <article key={event.id}><span>V{event.gateVersion}</span><div><strong>{event.gateTitle}</strong><small>{readinessStatusLabel[event.fromStatus]} → {readinessStatusLabel[event.toStatus]} · {event.actorName}</small><p>{event.note}</p></div><time>{formatted(event.createdAt)}</time></article>)}
+      </div>
+    </section>
+  );
+}
+
 function AccountView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   const user = roleDetails[role];
   const isOperational = role === "operacao";
@@ -4728,6 +4932,7 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
+        {isOperational && <OperationReadinessPanel notify={notify} />}
         {isOperational && <MatchingOperationsPanel notify={notify} />}
         {isOperational && <RegionManagementPanel notify={notify} />}
         {isOperational && <CatalogManagementPanel notify={notify} />}

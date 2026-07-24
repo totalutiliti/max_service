@@ -14,6 +14,7 @@
     "api:test": "tsx --test api/tests/demo-actor.test.ts",
     "build": "vinext build",
     "start": "vinext start",
+    "test:integration": "node --test tests/postgres-schedule.integration.test.mjs",
     "test": "npm run build && npm run api:build && npm run api:test && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"

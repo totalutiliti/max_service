@@ -27,7 +27,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 
 ## Progresso implementado
 
-- Fases 1 e 3 possuem jornadas persistentes demonstráveis no Docker local; o navegador executa automaticamente no CI tanto a jornada cliente–profissional da criação do pedido à avaliação quanto o cancelamento com tratamento e resolução pela Operação.
+- Fases 1, 3 e 4 possuem jornadas persistentes demonstráveis no Docker local; o navegador executa automaticamente no CI a jornada cliente–profissional da criação do pedido à avaliação, o cancelamento com tratamento e resolução pela Operação e a indicação de profissional pelo Parceiro até a aprovação para onboarding.
 - A Fase 4 já inclui rede do parceiro, captura pública por link/QR com consentimento, triagem operacional de indicações, central compartilhada de atendimento parceiro–Operação, fila interna de ocorrências, moderação manual de profissionais, atividade auditável pesquisável e gestão versionada do catálogo para a Operação.
 - A central da rede separa comunicação externa de notas internas, vincula opcionalmente cada caso a uma indicação do próprio parceiro, bloqueia mensagens após a resolução e restringe transições justificadas à Operação.
 - A triagem da central distribui casos entre múltiplos operadores, permite elevar a prioridade e acompanha SLA versionado de primeira resposta e resolução, com atrasos preservados e visíveis para parceiro e Operação.

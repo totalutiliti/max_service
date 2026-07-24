@@ -28,6 +28,13 @@ As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace
   - atribuição e mudança para análise;
   - resolução auditável;
   - acompanhamento do estado final pelo cliente.
+- jornada de aquisição Parceiro–Operação integralmente pela interface:
+  - registro de indicação vinculada ao parceiro;
+  - acompanhamento inicial como convidado;
+  - entrada na fila de aquisição;
+  - início da análise com justificativa;
+  - aprovação para onboarding;
+  - atualização do status na rede do parceiro.
 
 A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. Os cenários transacionais geram títulos exclusivos a cada execução e não dependem de registros preexistentes.
 
@@ -50,6 +57,12 @@ Para executar somente a jornada operacional de cancelamento:
 
 ```bash
 npm run test:e2e -- tests/e2e/cancellation-operations.spec.ts
+```
+
+Para executar somente a jornada de aquisição por indicação:
+
+```bash
+npm run test:e2e -- tests/e2e/referral-operations.spec.ts
 ```
 
 ## Diagnóstico e limite

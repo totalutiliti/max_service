@@ -4,6 +4,7 @@ import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { CampaignsService } from "../campaigns/campaigns.service.js";
 import { DatabaseService } from "../database/database.service.js";
+import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import type { CreateProposalDto, CreateServiceRequestDto, UpdateProviderMatchingDto } from "./marketplace.dto.js";
@@ -65,6 +66,7 @@ export class MarketplaceService {
     private readonly database: DatabaseService,
     private readonly storage: PrivateObjectStorageService,
     private readonly campaigns: CampaignsService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   async categories() {
@@ -308,10 +310,16 @@ export class MarketplaceService {
     });
   }
 
-  async createRequest(actor: Actor, input: CreateServiceRequestDto) {
+  async createRequest(actor: Actor, input: CreateServiceRequestDto, idempotencyKey: string | undefined) {
     if (actor.role !== "customer") throw new ForbiddenException("Somente clientes podem criar solicitações.");
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: "/api/v1/service-requests",
+        payload: input,
+      }, async () => {
       const category = await client.query<{ id: string }>(
         "SELECT id FROM service_categories WHERE slug = $1 AND active = true",
         [input.categorySlug],
@@ -387,6 +395,7 @@ export class MarketplaceService {
       );
 
       return { ...created.rows[0], campaign };
+      });
     });
   }
 
@@ -509,9 +518,15 @@ export class MarketplaceService {
     });
   }
 
-  async createProposal(actor: Actor, requestId: string, input: CreateProposalDto) {
+  async createProposal(actor: Actor, requestId: string, input: CreateProposalDto, idempotencyKey: string | undefined) {
     if (actor.role !== "provider") throw new ForbiddenException("Somente profissionais podem enviar propostas.");
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/service-requests/${requestId}/proposals`,
+        payload: input,
+      }, async () => {
       const matching = await this.loadProviderMatching(client, actor.id);
       if (!matching) throw new ConflictException("Configure o perfil de oportunidades antes de enviar propostas.");
       const existingProposal = await client.query<{ id: string }>(
@@ -562,6 +577,7 @@ export class MarketplaceService {
         entityId: result.rows[0].id,
       });
       return result.rows[0];
+      });
     });
   }
 
@@ -661,7 +677,12 @@ export class MarketplaceService {
     };
   }
 
-  async acceptProposal(actor: Actor, proposalId: string, scheduledForInput: string) {
+  async acceptProposal(
+    actor: Actor,
+    proposalId: string,
+    scheduledForInput: string,
+    idempotencyKey: string | undefined,
+  ) {
     if (actor.role !== "customer") throw new ForbiddenException("Somente o cliente pode aceitar uma proposta.");
     const scheduledFor = new Date(scheduledForInput);
     if (
@@ -675,6 +696,12 @@ export class MarketplaceService {
 
     try {
       return await this.database.withActor(actor, async (client) => {
+        return this.idempotency.execute(client, actor, {
+          key: idempotencyKey,
+          method: "POST",
+          route: `/api/v1/proposals/${proposalId}/accept`,
+          payload: { scheduledFor: scheduledForInput },
+        }, async () => {
         const availableSlot = await client.query<{ startsAt: Date; endsAt: Date }>(`
           SELECT
             starts_at AS "startsAt",
@@ -780,6 +807,7 @@ export class MarketplaceService {
           scheduledUntil: booking.rows[0].scheduledUntil,
           status: "booked",
         };
+        });
       });
     } catch (error) {
       if (

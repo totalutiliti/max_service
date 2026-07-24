@@ -507,6 +507,7 @@ interface OperationSystemHealthData {
     probeCount: number;
     rejected4xxCount: number;
     rateLimitedCount: number;
+    idempotencyReplayCount: number;
     error5xxCount: number;
     slowCount: number;
     averageLatencyMs: number;
@@ -1702,6 +1703,7 @@ function RequestDialog({
   const [couponChecking, setCouponChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const requestIdempotencyKey = useRef(crypto.randomUUID());
   const selectedCategory = categories.find((category) => category.slug === categorySlug) ?? categories[0];
   const selectedRegion = regions.find((region) => region.id === regionId) ?? regions[0];
   const selectedNeighborhood = selectedRegion?.neighborhoods.find((neighborhood) => neighborhood.id === neighborhoodId)
@@ -1763,7 +1765,10 @@ function RequestDialog({
     try {
       const response = await fetch("/api/v1/service-requests", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": requestIdempotencyKey.current,
+        },
         body: JSON.stringify({
           categorySlug,
           title: description.trim().slice(0, 100),
@@ -2034,6 +2039,7 @@ function ProposalDialog({ request, onClose, onSaved, notify }: { request: Persis
   const [message, setMessage] = useState("Posso realizar o serviço no período solicitado e levo as ferramentas necessárias.");
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const proposalIdempotencyKey = useRef(crypto.randomUUID());
 
   useEffect(() => { closeRef.current?.focus(); }, []);
   useEffect(() => {
@@ -2048,7 +2054,10 @@ function ProposalDialog({ request, onClose, onSaved, notify }: { request: Persis
     try {
       const response = await fetch("/api/v1/provider/proposals", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": proposalIdempotencyKey.current,
+        },
         body: JSON.stringify({
           requestId: request.id,
           amountCents: Math.round(Number(amount) * 100),
@@ -3184,6 +3193,7 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+  const acceptanceIdempotencyKeys = useRef(new Map<string, string>());
 
   const fetchProposals = useCallback(async () => {
     const response = await fetch(`/api/v1/customer/proposals?requestId=${encodeURIComponent(request.id)}`, { cache: "no-store" });
@@ -3233,9 +3243,15 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
   const accept = async (proposal: PersistedProposal, scheduledFor: string) => {
     setAccepting(proposal.id);
     try {
+      const actionKey = `${proposal.id}:${scheduledFor}`;
+      const idempotencyKey = acceptanceIdempotencyKeys.current.get(actionKey) ?? crypto.randomUUID();
+      acceptanceIdempotencyKeys.current.set(actionKey, idempotencyKey);
       const response = await fetch("/api/v1/customer/proposals", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
         body: JSON.stringify({ proposalId: proposal.id, scheduledFor }),
       });
       const payload = await response.json() as { error?: string; message?: string };
@@ -4909,7 +4925,7 @@ function OperationSystemHealthPanel({ notify }: { notify: (message: string) => v
           <span>{data.telemetry.policyVersion}</span>
         </header>
         <div className="system-telemetry-metrics">
-          <article><small>REQUISIÇÕES</small><strong>{data.telemetry.requestCount}</strong><span>probes separados: {data.telemetry.probeCount}</span></article>
+          <article><small>REQUISIÇÕES</small><strong>{data.telemetry.requestCount}</strong><span>replays: {data.telemetry.idempotencyReplayCount} · probes: {data.telemetry.probeCount}</span></article>
           <article><small>LATÊNCIA MÉDIA</small><strong>{data.telemetry.averageLatencyMs} ms</strong><span>p95: {data.telemetry.p95LatencyMs} ms</span></article>
           <article><small>REJEIÇÕES 4XX</small><strong>{data.telemetry.rejected4xxCount}</strong><span>rate limit: {data.telemetry.rateLimitedCount}</span></article>
           <article><small>ERROS 5XX</small><strong>{data.telemetry.error5xxCount}</strong><span>lentas ≥ 1 s: {data.telemetry.slowCount}</span></article>

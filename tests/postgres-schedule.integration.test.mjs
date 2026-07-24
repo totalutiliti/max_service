@@ -42,7 +42,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0042_provider_schedule.sql',
         '0043_booking_participant_visibility.sql',
         '0044_operation_readiness_gates.sql',
-        '0045_runtime_migration_visibility.sql'
+        '0045_runtime_migration_visibility.sql',
+        '0046_idempotent_marketplace_mutations.sql'
       )
       ORDER BY name
     `);
@@ -51,6 +52,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0043_booking_participant_visibility.sql",
       "0044_operation_readiness_gates.sql",
       "0045_runtime_migration_visibility.sql",
+      "0046_idempotent_marketplace_mutations.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name
@@ -90,6 +92,61 @@ test("RLS isola agenda e gates de prontidão por papel", async () => {
       await setActor(client, "operation", actors.operation);
       const operationGates = await client.query("SELECT count(*)::int AS count FROM operation_readiness_gates");
       assert.equal(operationGates.rows[0].count, 8);
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("RLS isola registros idempotentes e permite concluir somente a operação do ator", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    await withRollback(pool, async (client) => {
+      const recordId = randomUUID();
+      const idempotencyKey = randomUUID();
+      await setActor(client, "customer", actors.customer);
+      await client.query(`
+        INSERT INTO api_idempotency_records (
+          id,
+          actor_id,
+          actor_role,
+          method,
+          route,
+          idempotency_key,
+          request_hash,
+          status,
+          expires_at
+        )
+        VALUES ($1, $2, 'customer', 'POST', '/api/v1/service-requests', $3, $4, 'processing', now() + interval '24 hours')
+      `, [recordId, actors.customer, idempotencyKey, "a".repeat(64)]);
+
+      await setActor(client, "provider", actors.provider);
+      const providerView = await client.query(
+        "SELECT count(*)::int AS count FROM api_idempotency_records WHERE id = $1",
+        [recordId],
+      );
+      assert.equal(providerView.rows[0].count, 0);
+
+      await setActor(client, "customer", actors.customer);
+      const completed = await client.query(`
+        UPDATE api_idempotency_records
+        SET
+          status = 'completed',
+          response_status = 201,
+          response_body = '{"request":{"id":"synthetic"}}'::jsonb,
+          completed_at = now()
+        WHERE id = $1
+        RETURNING id
+      `, [recordId]);
+      assert.equal(completed.rowCount, 1);
+
+      const immutableReplay = await client.query(`
+        UPDATE api_idempotency_records
+        SET response_body = '{"request":{"id":"altered"}}'::jsonb
+        WHERE id = $1
+        RETURNING id
+      `, [recordId]);
+      assert.equal(immutableReplay.rowCount, 0);
     });
   } finally {
     await pool.end();

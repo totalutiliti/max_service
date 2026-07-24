@@ -14,6 +14,7 @@ interface TelemetryRequest {
 
 interface TelemetryResponse {
   statusCode: number;
+  getHeader(name: string): string | number | string[] | undefined;
   setHeader(name: string, value: string): void;
   once(event: "finish", listener: () => void): void;
 }
@@ -48,6 +49,7 @@ export class RequestTelemetryMiddleware implements NestMiddleware {
         statusCode: response.statusCode,
         durationMs,
         actorRole,
+        idempotencyReplayed: response.getHeader("idempotency-replayed") === "true",
       };
       this.telemetry.record(sample);
       process.stdout.write(`${JSON.stringify({
@@ -59,6 +61,7 @@ export class RequestTelemetryMiddleware implements NestMiddleware {
         statusCode: sample.statusCode,
         durationMs: sample.durationMs,
         actorRole: sample.actorRole,
+        idempotencyReplayed: sample.idempotencyReplayed,
       })}\n`);
     });
 

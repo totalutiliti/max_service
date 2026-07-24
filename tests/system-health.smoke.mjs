@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 
 const apiBaseUrl = process.env.SMOKE_API_URL ?? "http://127.0.0.1:3001";
 const webBaseUrl = process.env.SMOKE_WEB_URL ?? "http://127.0.0.1:4174";
@@ -88,6 +89,130 @@ assert.equal(oversized.headers.get("x-content-type-options"), "nosniff");
 assert.match(oversized.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/i);
 
 const customerCookie = await sessionCookie("cliente");
+const [categories, regions] = await Promise.all([
+  json(await fetch(`${webBaseUrl}/api/v1/categories`, { headers: { cookie: customerCookie } })),
+  json(await fetch(`${webBaseUrl}/api/v1/regions`, { headers: { cookie: customerCookie } })),
+]);
+const category = categories.categories.find((item) => item.slug === "eletricista")
+  ?? categories.categories[0];
+const region = regions.regions[0];
+const neighborhood = region?.neighborhoods[0];
+assert.ok(category && region && neighborhood, "Catálogo e cobertura precisam estar semeados.");
+
+const requestPayload = {
+  categorySlug: category.slug,
+  title: "Pedido sintético para prova idempotente",
+  description: "Pedido sintético criado pelo smoke test para validar reenvios concorrentes.",
+  regionId: region.id,
+  neighborhoodId: neighborhood.id,
+  preferredWindow: "O quanto antes",
+};
+const missingIdempotencyKey = await fetch(`${webBaseUrl}/api/v1/service-requests`, {
+  method: "POST",
+  headers: {
+    cookie: customerCookie,
+    "content-type": "application/json",
+  },
+  body: JSON.stringify(requestPayload),
+});
+assert.equal(missingIdempotencyKey.status, 400);
+assert.match(JSON.stringify(await missingIdempotencyKey.json()), /Idempotency-Key/);
+
+const requestIdempotencyKey = randomUUID();
+const createRequest = () => fetch(`${webBaseUrl}/api/v1/service-requests`, {
+  method: "POST",
+  headers: {
+    cookie: customerCookie,
+    "content-type": "application/json",
+    "idempotency-key": requestIdempotencyKey,
+  },
+  body: JSON.stringify(requestPayload),
+});
+const requestResponses = await Promise.all([createRequest(), createRequest()]);
+const requestResults = await Promise.all(requestResponses.map((response) => json(response)));
+assert.equal(requestResults[0].request.id, requestResults[1].request.id);
+assert.deepEqual(
+  requestResponses.map((response) => response.headers.get("idempotency-replayed")).sort(),
+  ["false", "true"],
+);
+const requestKeyReuse = await fetch(`${webBaseUrl}/api/v1/service-requests`, {
+  method: "POST",
+  headers: {
+    cookie: customerCookie,
+    "content-type": "application/json",
+    "idempotency-key": requestIdempotencyKey,
+  },
+  body: JSON.stringify({ ...requestPayload, title: "Conteúdo diferente com a mesma chave" }),
+});
+assert.equal(requestKeyReuse.status, 409);
+assert.match(JSON.stringify(await requestKeyReuse.json()), /outro conteÃºdo|outro conteúdo/i);
+
+const providerCookie = await sessionCookie("prestador");
+const proposalPayload = {
+  requestId: requestResults[0].request.id,
+  amountCents: 12_500,
+  estimatedMinutes: 90,
+  message: "Proposta sintética para validar a idempotência concorrente do fluxo.",
+};
+const proposalIdempotencyKey = randomUUID();
+const createProposal = () => fetch(`${webBaseUrl}/api/v1/provider/proposals`, {
+  method: "POST",
+  headers: {
+    cookie: providerCookie,
+    "content-type": "application/json",
+    "idempotency-key": proposalIdempotencyKey,
+  },
+  body: JSON.stringify(proposalPayload),
+});
+const proposalResponses = await Promise.all([createProposal(), createProposal()]);
+const proposalResults = await Promise.all(proposalResponses.map((response) => json(response)));
+assert.equal(proposalResults[0].proposal.id, proposalResults[1].proposal.id);
+assert.deepEqual(
+  proposalResponses.map((response) => response.headers.get("idempotency-replayed")).sort(),
+  ["false", "true"],
+);
+
+const slots = await json(await fetch(
+  `${webBaseUrl}/api/v1/customer/proposal-slots?proposalId=${encodeURIComponent(proposalResults[0].proposal.id)}`,
+  { headers: { cookie: customerCookie } },
+));
+assert.ok(slots.slots[0]?.startsAt, "A agenda semeada precisa oferecer ao menos um horário.");
+const acceptancePayload = {
+  proposalId: proposalResults[0].proposal.id,
+  scheduledFor: slots.slots[0].startsAt,
+};
+const acceptanceIdempotencyKey = randomUUID();
+const acceptProposal = () => fetch(`${webBaseUrl}/api/v1/customer/proposals`, {
+  method: "POST",
+  headers: {
+    cookie: customerCookie,
+    "content-type": "application/json",
+    "idempotency-key": acceptanceIdempotencyKey,
+  },
+  body: JSON.stringify(acceptancePayload),
+});
+const acceptanceResponses = await Promise.all([acceptProposal(), acceptProposal()]);
+const acceptanceResults = await Promise.all(acceptanceResponses.map((response) => json(response)));
+assert.equal(acceptanceResults[0].booking.bookingId, acceptanceResults[1].booking.bookingId);
+assert.deepEqual(
+  acceptanceResponses.map((response) => response.headers.get("idempotency-replayed")).sort(),
+  ["false", "true"],
+);
+const acceptanceKeyReuse = await fetch(`${webBaseUrl}/api/v1/customer/proposals`, {
+  method: "POST",
+  headers: {
+    cookie: customerCookie,
+    "content-type": "application/json",
+    "idempotency-key": acceptanceIdempotencyKey,
+  },
+  body: JSON.stringify({
+    ...acceptancePayload,
+    scheduledFor: new Date(Date.parse(acceptancePayload.scheduledFor) + 30 * 60_000).toISOString(),
+  }),
+});
+assert.equal(acceptanceKeyReuse.status, 409);
+assert.match(JSON.stringify(await acceptanceKeyReuse.json()), /outro conteÃºdo|outro conteúdo/i);
+
 const forbidden = await fetch(`${webBaseUrl}/api/v1/operation/system-health`, {
   headers: { cookie: customerCookie },
 });
@@ -147,6 +272,7 @@ assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
 assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
+assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 3, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(
@@ -165,7 +291,7 @@ assert.equal(
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

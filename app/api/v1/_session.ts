@@ -41,11 +41,12 @@ export async function signedInternalHeaders(
   path: string,
   role: InternalRole | "" = "",
   actorId = "",
+  idempotencyKey = "",
 ) {
   const secret = process.env.BFF_INTERNAL_SECRET;
   if (!secret) throw new Error("Canal interno não configurado.");
   const timestamp = String(Math.floor(Date.now() / 1000));
-  const canonical = `${timestamp}.${method.toUpperCase()}.${path}.${role}.${actorId}`;
+  const canonical = `${timestamp}.${method.toUpperCase()}.${path}.${role}.${actorId}${idempotencyKey ? `.${idempotencyKey}` : ""}`;
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -59,6 +60,7 @@ export async function signedInternalHeaders(
     "x-bff-timestamp": timestamp,
     "x-bff-signature": signature,
     ...(role ? { "x-demo-role": role, "x-demo-actor-id": actorId } : {}),
+    ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
   });
 }
 

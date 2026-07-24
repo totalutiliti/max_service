@@ -32,6 +32,7 @@ export const apiCorsAllowedHeaders = [
   "accept",
   "authorization",
   "content-type",
+  "idempotency-key",
   "x-after-message-id",
   "x-bff-signature",
   "x-bff-timestamp",
@@ -46,6 +47,7 @@ export const apiCorsAllowedHeaders = [
 export const apiCorsExposedHeaders = [
   "content-disposition",
   "content-length",
+  "idempotency-replayed",
   "ratelimit-limit",
   "ratelimit-policy",
   "ratelimit-remaining",

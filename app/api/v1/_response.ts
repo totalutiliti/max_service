@@ -5,6 +5,7 @@ const forwardedApiHeaders = [
   "ratelimit-remaining",
   "ratelimit-reset",
   "retry-after",
+  "idempotency-replayed",
 ] as const;
 
 export function apiResponseHeaders(response: Response, initial: HeadersInit = {}) {

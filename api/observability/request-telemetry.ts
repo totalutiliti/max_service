@@ -12,6 +12,7 @@ export interface RequestTelemetrySample {
   statusCode: number;
   durationMs: number;
   actorRole: TelemetryActorRole;
+  idempotencyReplayed: boolean;
 }
 
 export interface RequestTelemetryRouteSummary {
@@ -153,6 +154,7 @@ export function summarizeRequestTelemetry(
       (sample) => sample.statusCode >= 400 && sample.statusCode < 500,
     ).length,
     rateLimitedCount: requests.filter((sample) => sample.statusCode === 429).length,
+    idempotencyReplayCount: requests.filter((sample) => sample.idempotencyReplayed).length,
     error5xxCount: requests.filter((sample) => sample.statusCode >= 500).length,
     slowCount: requests.filter((sample) => sample.durationMs >= 1_000).length,
     averageLatencyMs: average(durations),

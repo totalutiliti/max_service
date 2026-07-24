@@ -57,9 +57,13 @@ export class MarketplaceController {
   async createRequest(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Body() input: CreateServiceRequestDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { request: await this.marketplace.createRequest(actorFromHeaders(role, id), input) };
+    const result = await this.marketplace.createRequest(actorFromHeaders(role, id), input, idempotencyKey);
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { request: result.value };
   }
 
   @Post("service-requests/:requestId/attachments")
@@ -117,19 +121,32 @@ export class MarketplaceController {
   async createProposal(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("requestId") requestId: string,
     @Body() input: CreateProposalDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { proposal: await this.marketplace.createProposal(actorFromHeaders(role, id), requestId, input) };
+    const result = await this.marketplace.createProposal(actorFromHeaders(role, id), requestId, input, idempotencyKey);
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { proposal: result.value };
   }
 
   @Post("proposals/:proposalId/accept")
   async acceptProposal(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("proposalId") proposalId: string,
     @Body() input: AcceptProposalDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { booking: await this.marketplace.acceptProposal(actorFromHeaders(role, id), proposalId, input.scheduledFor) };
+    const result = await this.marketplace.acceptProposal(
+      actorFromHeaders(role, id),
+      proposalId,
+      input.scheduledFor,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { booking: result.value };
   }
 }

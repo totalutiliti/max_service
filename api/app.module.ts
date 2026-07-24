@@ -9,6 +9,7 @@ import { CampaignsService } from "./campaigns/campaigns.service.js";
 import { DatabaseService } from "./database/database.service.js";
 import { FinanceController } from "./finance/finance.controller.js";
 import { FinanceService } from "./finance/finance.service.js";
+import { IdempotencyService } from "./idempotency/idempotency.service.js";
 import { MarketplaceController } from "./marketplace/marketplace.controller.js";
 import { MarketplaceService } from "./marketplace/marketplace.service.js";
 import { MessagingController } from "./messaging/messaging.controller.js";
@@ -37,7 +38,7 @@ import { VerificationsService } from "./verifications/verifications.service.js";
 
 @Module({
   controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService, IdempotencyService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

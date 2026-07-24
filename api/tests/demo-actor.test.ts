@@ -210,3 +210,44 @@ test("limita períodos e percentuais dos relatórios operacionais", () => {
   assert.equal(relativeChange(125, 100), 25);
   assert.equal(relativeChange(0, 0), null);
 });
+
+test("vincula a Idempotency-Key à assinatura do canal interno", () => {
+  const timestamp = "1784746800";
+  const path = "/api/v1/service-requests";
+  const key = "550e8400-e29b-41d4-a716-446655440000";
+  const signature = computeInternalSignature(
+    "segredo-bff-de-teste",
+    timestamp,
+    "POST",
+    path,
+    "customer",
+    demoActorIds.customer,
+    key,
+  );
+  assert.equal(
+    verifyInternalSignature(
+      "segredo-bff-de-teste",
+      timestamp,
+      "POST",
+      path,
+      "customer",
+      demoActorIds.customer,
+      signature,
+      key,
+    ),
+    true,
+  );
+  assert.equal(
+    verifyInternalSignature(
+      "segredo-bff-de-teste",
+      timestamp,
+      "POST",
+      path,
+      "customer",
+      demoActorIds.customer,
+      signature,
+      "550e8400-e29b-41d4-a716-446655440001",
+    ),
+    false,
+  );
+});

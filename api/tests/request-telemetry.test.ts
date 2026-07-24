@@ -40,6 +40,7 @@ test("agrega tráfego da janela e separa probes sem reter atores ou payloads", (
     statusCode,
     durationMs,
     actorRole: "operation",
+    idempotencyReplayed: route === "/api/v1/bookings/:id" && statusCode === 200,
   });
   const summary = summarizeRequestTelemetry([
     sample("/health/live", 200, 2),
@@ -53,6 +54,7 @@ test("agrega tráfego da janela e separa probes sem reter atores ou payloads", (
   assert.equal(summary.probeCount, 1);
   assert.equal(summary.rejected4xxCount, 1);
   assert.equal(summary.rateLimitedCount, 1);
+  assert.equal(summary.idempotencyReplayCount, 1);
   assert.equal(summary.error5xxCount, 1);
   assert.equal(summary.slowCount, 1);
   assert.equal(summary.averageLatencyMs, 500);
@@ -76,6 +78,7 @@ test("limita a retenção local a mil amostras", () => {
       statusCode: 200,
       durationMs: 1,
       actorRole: "anonymous",
+      idempotencyReplayed: false,
     });
   }
   assert.equal(service.snapshot(1_010).retainedSamples, 1_000);

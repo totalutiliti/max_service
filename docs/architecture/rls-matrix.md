@@ -7,6 +7,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | Recurso | Cliente | Prestador | Parceiro | Operação | Admin |
 |---|---|---|---|---|---|
 | sessão demonstrativa | somente token próprio | somente token próprio | somente token próprio | somente token próprio | nenhum acesso direto |
+| registros de idempotência | somente os próprios | somente os próprios | somente os próprios | somente os próprios | retenção e manutenção auditadas |
 | perfil do cliente | próprio | somente participante de booking próprio, campos mínimos | nenhum | caso autorizado | auditado |
 | perfil do prestador | dados públicos; privado só quando necessário ao booking | próprio | afiliados, campos mínimos | moderação | auditado |
 | solicitação | própria | oportunidade elegível sem PII excessiva | nenhum | caso autorizado | auditado |
@@ -105,5 +106,6 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - sem hash de token, sessões retornam zero linhas; usuário/papel incompatível é rejeitado no insert;
 - sessão revogada ou expirada retorna `401`; troca de perfil invalida o token anterior;
 - BFF rejeita parâmetro de papel diferente da sessão e API rejeita cabeçalho de ator sem assinatura interna válida;
+- ator concorrente enxerga somente a própria chave idempotente; mesmo conteúdo recebe a resposta já confirmada e conteúdo divergente com a mesma chave recebe `409`;
 - query direta pela role de runtime continua sujeita a RLS;
 - cada migration preserva policies e grants.

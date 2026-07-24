@@ -97,6 +97,13 @@ export async function proxyDemoDownloadRequest(path: string, request: Request, r
 }
 
 async function authorize(path: string, request: Request, role: AllowedDemoRole): Promise<Headers | Response> {
+  const idempotencyKey = request.headers.get("idempotency-key") ?? "";
+  if (idempotencyKey && !/^[A-Za-z0-9_-]{16,80}$/.test(idempotencyKey)) {
+    return Response.json(
+      { error: "Idempotency-Key deve conter de 16 a 80 caracteres alfanuméricos, hífen ou sublinhado." },
+      { status: 400 },
+    );
+  }
   if (crossOriginMutation(request)) return Response.json({ error: "Origem da requisição inválida." }, { status: 403 });
   const session = await resolveDemoSession(request);
   if (!session) return Response.json({ error: "Sessão ausente, expirada ou revogada." }, { status: 401 });
@@ -105,7 +112,7 @@ async function authorize(path: string, request: Request, role: AllowedDemoRole):
     return Response.json({ error: "O perfil da sessão não tem acesso a este recurso." }, { status: 403 });
   }
   try {
-    return await signedInternalHeaders(request.method, path, session.role, session.actorId);
+    return await signedInternalHeaders(request.method, path, session.role, session.actorId, idempotencyKey);
   } catch {
     return Response.json({ error: "Canal interno da Max Service não configurado." }, { status: 503 });
   }

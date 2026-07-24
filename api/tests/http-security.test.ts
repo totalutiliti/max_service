@@ -27,7 +27,9 @@ test("HSTS só é emitido depois da homologação explícita do transporte", () 
 test("CORS usa listas fechadas e expõe apenas cabeçalhos operacionais", () => {
   assert.equal(apiCorsAllowedHeaders.includes("x-demo-role"), true);
   assert.equal(apiCorsAllowedHeaders.includes("x-file-name"), true);
+  assert.equal(apiCorsAllowedHeaders.includes("idempotency-key"), true);
   assert.equal(apiCorsExposedHeaders.includes("x-request-id"), true);
+  assert.equal(apiCorsExposedHeaders.includes("idempotency-replayed"), true);
   assert.equal(apiCorsExposedHeaders.includes("ratelimit-remaining"), true);
   assert.equal(apiCorsAllowedHeaders.includes("*" as never), false);
   assert.equal(apiCorsExposedHeaders.includes("*" as never), false);

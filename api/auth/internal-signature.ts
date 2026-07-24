@@ -6,8 +6,9 @@ export function internalRequestCanonical(
   path: string,
   role = "",
   actorId = "",
+  idempotencyKey = "",
 ) {
-  return `${timestamp}.${method.toUpperCase()}.${path}.${role}.${actorId}`;
+  return `${timestamp}.${method.toUpperCase()}.${path}.${role}.${actorId}${idempotencyKey ? `.${idempotencyKey}` : ""}`;
 }
 
 export function computeInternalSignature(
@@ -17,9 +18,10 @@ export function computeInternalSignature(
   path: string,
   role = "",
   actorId = "",
+  idempotencyKey = "",
 ) {
   return `sha256=${createHmac("sha256", secret)
-    .update(internalRequestCanonical(timestamp, method, path, role, actorId))
+    .update(internalRequestCanonical(timestamp, method, path, role, actorId, idempotencyKey))
     .digest("hex")}`;
 }
 
@@ -31,8 +33,9 @@ export function verifyInternalSignature(
   role: string,
   actorId: string,
   received: string,
+  idempotencyKey = "",
 ) {
-  const expected = Buffer.from(computeInternalSignature(secret, timestamp, method, path, role, actorId));
+  const expected = Buffer.from(computeInternalSignature(secret, timestamp, method, path, role, actorId, idempotencyKey));
   const candidate = Buffer.from(received);
   return expected.length === candidate.length && timingSafeEqual(expected, candidate);
 }

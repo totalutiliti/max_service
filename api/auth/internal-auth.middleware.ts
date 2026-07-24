@@ -19,6 +19,7 @@ export class InternalAuthMiddleware implements NestMiddleware {
     const path = request.originalUrl.split("?", 1)[0] ?? request.originalUrl;
     const role = header(request, "x-demo-role");
     const actorId = header(request, "x-demo-actor-id");
+    const idempotencyKey = header(request, "idempotency-key");
     const protectsSessionEndpoint = path.startsWith("/api/v1/auth/demo-sessions");
 
     if (!role && !actorId && !protectsSessionEndpoint) {
@@ -35,7 +36,16 @@ export class InternalAuthMiddleware implements NestMiddleware {
       secret
       && signature
       && withinReplayWindow
-      && verifyInternalSignature(secret, timestamp, request.method, path, role, actorId, signature),
+      && verifyInternalSignature(
+        secret,
+        timestamp,
+        request.method,
+        path,
+        role,
+        actorId,
+        signature,
+        idempotencyKey,
+      ),
     );
 
     if (!valid) {

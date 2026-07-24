@@ -21,8 +21,15 @@ As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace
   - mensagens bilaterais;
   - início e conclusão do serviço;
   - avaliação do cliente.
+- jornada de exceção cliente–Operação integralmente pela interface:
+  - cancelamento justificado de serviço agendado;
+  - abertura automática de ocorrência;
+  - entrada da ocorrência na fila operacional;
+  - atribuição e mudança para análise;
+  - resolução auditável;
+  - acompanhamento do estado final pelo cliente.
 
-A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. O cenário transacional gera um título exclusivo a cada execução e não depende de registros preexistentes.
+A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. Os cenários transacionais geram títulos exclusivos a cada execução e não dependem de registros preexistentes.
 
 ## Execução
 
@@ -37,6 +44,12 @@ Para executar somente a jornada do marketplace:
 
 ```bash
 npm run test:e2e -- tests/e2e/marketplace-journey.spec.ts
+```
+
+Para executar somente a jornada operacional de cancelamento:
+
+```bash
+npm run test:e2e -- tests/e2e/cancellation-operations.spec.ts
 ```
 
 ## Diagnóstico e limite

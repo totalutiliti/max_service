@@ -3860,7 +3860,7 @@ function PartnerSupportCreateDialog({
 
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="request-dialog partner-support-create" role="dialog" aria-modal="true" aria-labelledby="partner-support-create-title">
+      <section className="request-dialog partner-support-create" data-testid="support-create-dialog" role="dialog" aria-modal="true" aria-labelledby="partner-support-create-title">
         <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar nova solicitação">×</button>
         <header><p className="dialog-kicker">CANAL PROTEGIDO · ATENDIMENTO MAX</p><h2 id="partner-support-create-title">Como podemos ajudar?</h2><p>Abra uma solicitação com contexto. A conversa e cada mudança de estado ficarão registradas.</p></header>
         <form onSubmit={submit}>
@@ -4121,7 +4121,7 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
   return (
     <>
       <DashboardHeader role={role} eyebrow={role === "operacao" ? "CENTRAL DE ATENDIMENTOS" : "SUPORTE DA REDE"} title={role === "operacao" ? "Cada solicitação, contexto e decisão em um só lugar." : "Fale com a Max sem perder o contexto da sua rede."}>
-        {role === "parceiro" && <button className="button button-small" onClick={() => setCreateOpen(true)}>+ Novo atendimento</button>}
+        {role === "parceiro" && <button className="button button-small" data-testid="new-support-case" onClick={() => setCreateOpen(true)}>+ Novo atendimento</button>}
       </DashboardHeader>
       <section className="partner-support-metrics">
         <article><small>ABERTOS</small><strong>{loading ? "…" : data?.metrics.openCount ?? 0}</strong><span>Aguardando triagem</span></article>
@@ -4135,10 +4135,10 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
           <div>
             {loading && <div className="data-state">Carregando atendimentos...</div>}
             {!loading && filteredCases.length === 0 && <div className="data-state"><strong>Nenhum atendimento encontrado.</strong><span>{role === "parceiro" ? "Abra uma solicitação para falar com a equipe Max." : "A fila está em dia."}</span></div>}
-            {filteredCases.map((item) => <button key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => { setDetail(null); setDetailLoading(true); setAttachmentFile(null); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><div className={`support-sla-chip ${slaState(item)}`}>{slaLabel(item)}</div><footer><span>{role === "operacao" ? `${item.partnerName} · ${item.assignedToName ?? "sem responsável"}` : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
+            {filteredCases.map((item) => <button key={item.id} data-testid="support-case-record" data-case-code={item.publicCode} className={item.id === selectedId ? "active" : ""} onClick={() => { setAttachmentFile(null); if (item.id === selectedId) return; setDetail(null); setDetailLoading(true); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><div className={`support-sla-chip ${slaState(item)}`}>{slaLabel(item)}</div><footer><span>{role === "operacao" ? `${item.partnerName} · ${item.assignedToName ?? "sem responsável"}` : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
           </div>
         </aside>
-        <div className="partner-support-thread">
+        <div className="partner-support-thread" data-testid="support-thread">
           {detailLoading && !detail && <div className="data-state"><strong>Abrindo atendimento...</strong></div>}
           {!detailLoading && !detail && <div className="data-state"><strong>Selecione um atendimento.</strong><span>A conversa e a trilha de estado aparecerão aqui.</span></div>}
           {detail && (

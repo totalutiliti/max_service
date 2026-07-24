@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-A suíte em `tests/e2e/accessibility.spec.ts` transforma os requisitos de navegação e WCAG 2.2 AA em um contrato repetível. Ela roda contra o ambiente Docker completo, usando Google Chrome, Playwright e Axe.
+As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace e WCAG 2.2 AA em contratos repetíveis. Elas rodam contra o ambiente Docker completo, usando Google Chrome, Playwright e Axe.
 
 ## Cobertura atual
 
@@ -14,6 +14,15 @@ A suíte em `tests/e2e/accessibility.spec.ts` transforma os requisitos de navega
 - logout e revogação preservada após recarregar;
 - navegação móvel e estado `aria-current`;
 - regras automatizáveis WCAG 2 A/AA, 2.1 A/AA e 2.2 AA.
+- jornada transacional cliente–profissional integralmente pela interface:
+  - criação de pedido;
+  - localização da oportunidade e envio de proposta;
+  - comparação, consulta de agenda e aceite do horário;
+  - mensagens bilaterais;
+  - início e conclusão do serviço;
+  - avaliação do cliente.
+
+A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. O cenário transacional gera um título exclusivo a cada execução e não depende de registros preexistentes.
 
 ## Execução
 
@@ -23,6 +32,12 @@ npm run test:e2e
 ```
 
 O endereço padrão é `http://127.0.0.1:4174`. Outro ambiente pode ser testado com `E2E_BASE_URL`.
+
+Para executar somente a jornada do marketplace:
+
+```bash
+npm run test:e2e -- tests/e2e/marketplace-journey.spec.ts
+```
 
 ## Diagnóstico e limite
 

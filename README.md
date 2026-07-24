@@ -29,6 +29,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Cada período possui metas versionadas de cobertura, conversão, primeira proposta, SLA e reconciliação; o cockpit compara a janela anterior e abre alertas automáticos, enquanto alterações exigem justificativa auditável.
 - A área **Configurações** da Operação controla a ordem e a disponibilidade das categorias; cada mudança exige justificativa, preserva o histórico e gera evento append-only e auditoria.
 - A área **Conta** da Operação mantém oito gates persistentes de prontidão, com responsável, evidência, versão, histórico append-only e conflito otimista; evidência pronta não autoriza produção.
+- A mesma área possui um cockpit de saúde que verifica API, PostgreSQL, sincronismo das migrations, cofre privado e modos de integração, separando bloqueios de tráfego local dos gates de produção.
 - A Operação cria, agenda, pausa e acompanha campanhas promocionais com validade, limite total e por cliente; o cliente valida e reserva o cupom no pedido.
 - O cupom é recalculado no aceite da proposta, e o financeiro sandbox preserva valor original, desconto, valor final e campanha em um snapshot conciliável.
 - Cliente, parceiro e página pública consomem o mesmo catálogo persistente; categorias desativadas deixam de aceitar novos pedidos e indicações sem ocultar vínculos anteriores.
@@ -55,6 +56,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
 - O CI reproduz lint, builds, testes funcionais, auditoria de dependências, scanner de segredos e uma instalação Docker limpa para testar migrations, RLS e conflitos de agenda no PostgreSQL.
 - O mesmo pipeline gera um backup lógico, restaura em banco isolado, compara dados e proteções, prova o RLS com a role de runtime e remove todos os artefatos temporários.
+- Smoke tests exercitam liveness, readiness, cockpit operacional, bloqueio entre perfis e rejeição de cabeçalhos internos não assinados.
 - Nenhum pagamento real, carteira, crédito, biometria ou consulta de antecedentes está ativo; o processador financeiro é exclusivamente sandbox.
 - O nome **Max Service** e a regra comercial **12% + 2% + 2%** são hipóteses pendentes de aprovação.
 
@@ -75,9 +77,10 @@ npm run build
 npm test
 npm run test:integration
 npm run test:restore
+npm run test:smoke
 ```
 
-`test:integration` e `test:restore` exigem o PostgreSQL local do Docker ativo em `127.0.0.1:54329`. O ensaio de restauração nunca usa o banco original como destino.
+`test:integration` e `test:restore` exigem o PostgreSQL local do Docker ativo em `127.0.0.1:54329`; `test:smoke` exige também API e web. O ensaio de restauração nunca usa o banco original como destino.
 
 ## Rodar com Docker
 
@@ -87,7 +90,8 @@ docker compose up -d --build
 
 A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `http://127.0.0.1:4174/demo`. O container possui verificação de saúde e reinício automático.
 
-- API: `http://127.0.0.1:3001/health`
+- API viva: `http://127.0.0.1:3001/health/live`
+- API pronta para tráfego local: `http://127.0.0.1:3001/health/ready`
 - PostgreSQL local: `127.0.0.1:54329`
 - armazenamento privado S3: `127.0.0.1:59000` (API) e `127.0.0.1:59001` (console local);
 - serviços: `database`, `storage`, `api` e `web`;
@@ -111,6 +115,7 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - [Segurança](docs/security/threat-model.md)
 - [Autenticação e sessões](docs/security/authentication.md)
 - [Ensaio de backup e restauração](docs/operations/backup-restore.md)
+- [Saúde e observabilidade](docs/operations/observability.md)
 - [Design system](docs/ux/design-system.md)
 
 ## Limites desta etapa

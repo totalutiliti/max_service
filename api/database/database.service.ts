@@ -11,11 +11,6 @@ export class DatabaseService implements OnModuleDestroy {
     connectionTimeoutMillis: 5_000,
   });
 
-  async health() {
-    const result = await this.pool.query<{ now: Date }>("SELECT NOW() AS now");
-    return result.rows[0];
-  }
-
   async query<T extends QueryResultRow>(text: string, values: unknown[] = []) {
     return this.pool.query<T>(text, values);
   }

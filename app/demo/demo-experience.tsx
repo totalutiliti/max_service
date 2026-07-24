@@ -472,6 +472,34 @@ interface OperationActivityData {
   events: OperationActivityEvent[];
 }
 
+type SystemHealthStatus = "healthy" | "attention" | "critical";
+
+interface OperationSystemHealthData {
+  policyVersion: string;
+  checkedAt: string;
+  uptimeSeconds: number;
+  summary: {
+    totalCount: number;
+    healthyCount: number;
+    attentionCount: number;
+    criticalCount: number;
+    trafficBlockers: number;
+    productionBlockers: number;
+    localTrafficReady: boolean;
+    productionAuthorized: false;
+  };
+  checks: Array<{
+    id: string;
+    area: "runtime" | "database" | "storage" | "security" | "integration";
+    label: string;
+    status: SystemHealthStatus;
+    detail: string;
+    latencyMs: number | null;
+    trafficBlocking: boolean;
+    productionBlocking: boolean;
+  }>;
+}
+
 type OperationReadinessStatus = "blocked" | "in_progress" | "evidence_ready";
 
 interface OperationReadinessData {
@@ -4749,6 +4777,111 @@ function NotificationPreferencesPanel({ role, notify }: { role: Role; notify: (m
   );
 }
 
+const systemHealthStatusLabel: Record<SystemHealthStatus, string> = {
+  healthy: "Saudável",
+  attention: "Atenção",
+  critical: "Crítico",
+};
+
+const systemHealthAreaLabel: Record<OperationSystemHealthData["checks"][number]["area"], string> = {
+  runtime: "Aplicação",
+  database: "Dados",
+  storage: "Arquivos",
+  security: "Segurança",
+  integration: "Integrações",
+};
+
+function OperationSystemHealthPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationSystemHealthData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/system-health", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationSystemHealthData & { error?: string; message?: string };
+        if (!response.ok || !payload.summary) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível consultar a saúde do sistema.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível consultar a saúde do sistema.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const refreshHealth = () => {
+    setLoading(true);
+    setRefresh((value) => value + 1);
+  };
+
+  if (!data) {
+    return (
+      <section className="dashboard-section system-health-panel">
+        <div className="data-state">
+          <strong>{loading ? "Verificando dependências..." : "Saúde operacional indisponível."}</strong>
+          {!loading && <button className="secondary-action" onClick={refreshHealth}>Tentar novamente</button>}
+        </div>
+      </section>
+    );
+  }
+
+  const checkedAt = new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+  }).format(new Date(data.checkedAt));
+
+  return (
+    <section className={`dashboard-section system-health-panel ${data.summary.localTrafficReady ? "ready" : "blocked"}`}>
+      <header>
+        <div>
+          <small>SAÚDE OPERACIONAL · {data.policyVersion}</small>
+          <h2>{data.summary.localTrafficReady ? "Ambiente local respondendo." : "Tráfego local deve ser interrompido."}</h2>
+          <p>Diagnóstico seguro das dependências que sustentam a plataforma, sem expor credenciais, objetos ou nomes internos.</p>
+        </div>
+        <div className="system-health-header-action">
+          <span className={data.summary.localTrafficReady ? "healthy" : "critical"}>
+            <i /> {data.summary.localTrafficReady ? "PRONTO LOCALMENTE" : "INDISPONÍVEL"}
+          </span>
+          <button onClick={refreshHealth} disabled={loading}>
+            {loading ? "Verificando..." : "Atualizar diagnóstico"}
+          </button>
+        </div>
+      </header>
+      <div className="system-health-summary">
+        <article><small>SAUDÁVEIS</small><strong>{data.summary.healthyCount}</strong><span>de {data.summary.totalCount} verificações</span></article>
+        <article><small>ATENÇÃO</small><strong>{data.summary.attentionCount}</strong><span>não bloqueia o piloto local</span></article>
+        <article><small>CRÍTICOS</small><strong>{data.summary.criticalCount}</strong><span>bloqueiam tráfego</span></article>
+        <article><small>GATES DE PRODUÇÃO</small><strong>{data.summary.productionBlockers}</strong><span>ainda pendentes</span></article>
+      </div>
+      <div className="system-health-checks">
+        {data.checks.map((check) => (
+          <article key={check.id} className={check.status}>
+            <header>
+              <div><small>{systemHealthAreaLabel[check.area]}</small><strong>{check.label}</strong></div>
+              <span><i />{systemHealthStatusLabel[check.status]}</span>
+            </header>
+            <p>{check.detail}</p>
+            <footer>
+              <span>{check.trafficBlocking ? "Dependência do tráfego" : check.productionBlocking ? "Gate de produção" : "Capacidade opcional"}</span>
+              <strong>{check.latencyMs === null ? "CONFIG" : `${check.latencyMs} ms`}</strong>
+            </footer>
+          </article>
+        ))}
+      </div>
+      <footer className="system-health-policy">
+        <div><span>!</span><p><strong>Produção continua não autorizada.</strong> Saúde local comprova operação técnica, não substitui identidade, PSP, jurídico ou infraestrutura gerenciada.</p></div>
+        <time>Verificado em {checkedAt}</time>
+      </footer>
+    </section>
+  );
+}
+
 const readinessStatusLabel: Record<OperationReadinessStatus, string> = {
   blocked: "Bloqueado",
   in_progress: "Em validação",
@@ -4932,6 +5065,7 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
           <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
+        {isOperational && <OperationSystemHealthPanel notify={notify} />}
         {isOperational && <OperationReadinessPanel notify={notify} />}
         {isOperational && <MatchingOperationsPanel notify={notify} />}
         {isOperational && <RegionManagementPanel notify={notify} />}

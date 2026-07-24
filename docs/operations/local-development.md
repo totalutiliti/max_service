@@ -35,7 +35,8 @@ Endereços locais:
 
 - site: `http://127.0.0.1:4174`;
 - SaaS: `http://127.0.0.1:4174/demo`;
-- saúde da API: `http://127.0.0.1:3001/health`;
+- processo da API: `http://127.0.0.1:3001/health/live`;
+- prontidão de banco, migrations e cofre: `http://127.0.0.1:3001/health/ready`;
 - PostgreSQL: `127.0.0.1:54329`.
 - object storage privado: `127.0.0.1:59000`;
 - console local do object storage: `127.0.0.1:59001`.

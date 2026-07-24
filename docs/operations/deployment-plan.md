@@ -13,11 +13,13 @@ Nenhum deploy está autorizado nesta etapa.
 
 Lint → typecheck → unitários → integração PostgreSQL → RLS/IDOR → E2E/a11y → build → gitleaks → dependências → imagem/Trivy → migration dry-run → aprovação → deploy → smoke test → observabilidade.
 
-O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os quatro serviços em Docker limpo, aplica todas as migrations, executa testes reais de RLS e concorrência e restaura um backup lógico em banco isolado. O restore compara migrations, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. E2E/a11y em navegador, Trivy, dry-run em staging, deploy, smoke test e observabilidade continuam pendentes.
+O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os quatro serviços em Docker limpo, aplica todas as migrations, executa smoke tests de saúde/autorização, testa RLS e concorrência e restaura um backup lógico em banco isolado. O restore compara migrations, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. E2E/a11y em navegador, Trivy, dry-run em staging, deploy e observabilidade gerenciada continuam pendentes.
 
 ## Infraestrutura
 
 Frontend e API independentes, PostgreSQL gerenciado com backup/PITR, Redis gerenciado, object storage privado, cofre de segredos, identidade gerenciada, filas, logs estruturados, métricas, traces e alertas.
+
+O ambiente local já separa liveness de readiness e oferece cockpit operacional autenticado; métricas, traces, alertas externos, SLOs e retenção de logs ainda dependem da infraestrutura escolhida.
 
 ## Gate de produção
 

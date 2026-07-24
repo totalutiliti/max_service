@@ -1,4 +1,4 @@
-import { Controller, Get, MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
+import { MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
 import { DemoSessionController } from "./auth/demo-session.controller.js";
 import { DemoSessionService } from "./auth/demo-session.service.js";
 import { InternalAuthMiddleware } from "./auth/internal-auth.middleware.js";
@@ -18,6 +18,8 @@ import { NotificationsService } from "./notifications/notifications.service.js";
 import { PushDeliveryService } from "./notifications/push-delivery.service.js";
 import { OnboardingController } from "./onboarding/onboarding.controller.js";
 import { OnboardingService } from "./onboarding/onboarding.service.js";
+import { ObservabilityController } from "./observability/observability.controller.js";
+import { SystemHealthService } from "./observability/system-health.service.js";
 import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
 import { PartnersController, PublicReferralsController } from "./partners/partners.controller.js";
@@ -28,20 +30,9 @@ import { PartnerSupportService } from "./support/partner-support.service.js";
 import { OperationVerificationsController, ProviderVerificationController } from "./verifications/verifications.controller.js";
 import { VerificationsService } from "./verifications/verifications.service.js";
 
-@Controller()
-class HealthController {
-  constructor(private readonly database: DatabaseService) {}
-
-  @Get("health")
-  async health() {
-    const database = await this.database.health();
-    return { status: "ok", service: "max-service-api", database: database.now };
-  }
-}
-
 @Module({
-  controllers: [HealthController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, PrivateObjectStorageService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
+  controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

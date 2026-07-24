@@ -41,7 +41,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       WHERE name IN (
         '0042_provider_schedule.sql',
         '0043_booking_participant_visibility.sql',
-        '0044_operation_readiness_gates.sql'
+        '0044_operation_readiness_gates.sql',
+        '0045_runtime_migration_visibility.sql'
       )
       ORDER BY name
     `);
@@ -49,6 +50,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0042_provider_schedule.sql",
       "0043_booking_participant_visibility.sql",
       "0044_operation_readiness_gates.sql",
+      "0045_runtime_migration_visibility.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name

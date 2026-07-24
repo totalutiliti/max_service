@@ -49,6 +49,10 @@ export class PrivateObjectStorageService {
     }
   }
 
+  async health() {
+    await this.ensureBucket();
+  }
+
   private getClient() {
     if (this.client) return this.client;
     const endpoint = process.env.OBJECT_STORAGE_ENDPOINT;

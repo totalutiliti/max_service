@@ -917,6 +917,48 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .notification-preferences-footer strong { font-size: .61rem; }
 .notification-preferences-footer span { color: var(--muted); font-size: .53rem; }
 .notification-preferences-footer button:disabled { cursor: default; opacity: .55; }
+.system-health-panel { grid-column: 1 / -1; padding: 0; overflow: hidden; }
+.system-health-panel > header { padding: 1.25rem 1.4rem; border-bottom: 1px solid #203126; background: radial-gradient(circle at 88% 0, rgba(117,230,0,.14), transparent 29%), #101914; color: var(--white); display: flex; align-items: center; justify-content: space-between; gap: 1.3rem; }
+.system-health-panel > header > div:first-child { max-width: 720px; }
+.system-health-panel > header small { color: var(--lime); font-size: .54rem; font-weight: 850; letter-spacing: .1em; }
+.system-health-panel > header h2 { margin: .35rem 0; font-size: clamp(1.4rem, 3vw, 2.05rem); letter-spacing: -.045em; }
+.system-health-panel > header p { margin: 0; color: #aab7ad; font-size: .65rem; line-height: 1.5; }
+.system-health-header-action { flex: 0 0 auto; display: grid; justify-items: end; gap: .55rem; }
+.system-health-header-action > span { min-height: 28px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: .35rem .55rem; color: #dbe5dc; font-size: .49rem; font-weight: 850; letter-spacing: .06em; display: flex; align-items: center; gap: .35rem; }
+.system-health-header-action > span i { width: 7px; height: 7px; border-radius: 50%; background: #75e600; box-shadow: 0 0 0 4px rgba(117,230,0,.12); }
+.system-health-header-action > span.critical i { background: #ff775f; box-shadow: 0 0 0 4px rgba(255,119,95,.12); }
+.system-health-header-action > button { border: 0; background: transparent; color: #91b879; font-size: .54rem; font-weight: 800; cursor: pointer; }
+.system-health-header-action > button:disabled { cursor: wait; opacity: .6; }
+.system-health-summary { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid #e1e7df; }
+.system-health-summary article { min-height: 88px; padding: .8rem 1rem; border-right: 1px solid #e1e7df; display: grid; align-content: center; gap: .14rem; }
+.system-health-summary article:last-child { border-right: 0; }
+.system-health-summary small { color: #728075; font-size: .47rem; font-weight: 850; letter-spacing: .08em; }
+.system-health-summary strong { font-size: 1.3rem; line-height: 1; }
+.system-health-summary span { color: var(--muted); font-size: .5rem; }
+.system-health-checks { padding: 1rem 1.15rem; background: #f7f9f6; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.system-health-checks article { min-width: 0; padding: .78rem; border: 1px solid #dce4da; border-radius: 12px; background: var(--white); box-shadow: inset 3px 0 #73b834; display: grid; gap: .55rem; }
+.system-health-checks article.attention { box-shadow: inset 3px 0 #dfa63c; }
+.system-health-checks article.critical { border-color: #e8c5bd; box-shadow: inset 3px 0 #d85f49; }
+.system-health-checks article > header { display: flex; align-items: flex-start; justify-content: space-between; gap: .65rem; }
+.system-health-checks article > header > div { display: grid; gap: .12rem; }
+.system-health-checks article > header small { color: #758078; font-size: .45rem; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.system-health-checks article > header strong { font-size: .7rem; }
+.system-health-checks article > header > span { color: #4f7e26; font-size: .49rem; font-weight: 850; display: flex; align-items: center; gap: .3rem; }
+.system-health-checks article > header > span i { width: 7px; height: 7px; border-radius: 50%; background: #72b934; }
+.system-health-checks article.attention > header > span { color: #89621e; }
+.system-health-checks article.attention > header > span i { background: #dfa63c; }
+.system-health-checks article.critical > header > span { color: #9a3d2c; }
+.system-health-checks article.critical > header > span i { background: #d85f49; }
+.system-health-checks article > p { min-height: 34px; margin: 0; color: var(--muted); font-size: .55rem; line-height: 1.45; }
+.system-health-checks article > footer { padding-top: .48rem; border-top: 1px solid #e9ede8; display: flex; align-items: center; justify-content: space-between; gap: .7rem; }
+.system-health-checks article > footer span { color: #7c867e; font-size: .47rem; }
+.system-health-checks article > footer strong { color: #526057; font: 800 .48rem var(--font-geist-mono), monospace; }
+.system-health-policy { padding: .85rem 1.15rem; border-top: 1px solid #e1e7df; background: var(--white); display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.system-health-policy > div { display: flex; align-items: center; gap: .6rem; }
+.system-health-policy > div > span { width: 25px; height: 25px; flex: 0 0 auto; border-radius: 50%; background: #ead79d; color: #72561b; display: grid; place-items: center; font-weight: 900; }
+.system-health-policy p { margin: 0; color: #6f6855; font-size: .54rem; line-height: 1.45; }
+.system-health-policy p strong { color: #514525; }
+.system-health-policy time { flex: 0 0 auto; color: #7d8880; font-size: .48rem; }
 .readiness-panel { grid-column: 1 / -1; padding: 0; overflow: hidden; }
 .readiness-panel > header { padding: 1.4rem 1.5rem; background: radial-gradient(circle at 82% 8%, rgba(117,230,0,.17), transparent 27%), linear-gradient(125deg, #0c120d, #1a2517); color: var(--white); display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
 .readiness-panel > header > div:first-child { max-width: 690px; }
@@ -1448,6 +1490,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .access-brand-copy h1 { font-size: clamp(2.8rem, 6vw, 4.5rem); }
   .account-layout { grid-template-columns: 1fr; }
   .plan-card, .account-profile { grid-column: 1; }
+  .system-health-summary { grid-template-columns: repeat(2, 1fr); }
+  .system-health-summary article:nth-child(2) { border-right: 0; }
+  .system-health-summary article:nth-child(-n+2) { border-bottom: 1px solid #e1e7df; }
   .readiness-metrics { grid-template-columns: repeat(2, 1fr); }
   .readiness-metrics article:nth-child(2) { border-right: 0; }
   .readiness-metrics article:nth-child(-n+2) { border-bottom: 1px solid #e4e9e2; }
@@ -1611,6 +1656,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .booking-facts { grid-template-columns: 1fr; }
   .plan-card { display: grid; }
   .plan-price { justify-items: start; }
+  .system-health-panel > header { align-items: flex-start; }
+  .system-health-checks { grid-template-columns: 1fr; }
+  .system-health-policy { align-items: flex-start; flex-direction: column; }
   .readiness-panel > header { align-items: flex-start; }
   .readiness-gates { grid-template-columns: 1fr; }
   .provider-schedule-panel > header { align-items: stretch; flex-direction: column; }
@@ -1694,6 +1742,8 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .review-form > .primary-action { width: 100%; }
   .account-profile { grid-template-columns: auto 1fr; }
   .account-profile > button { grid-column: 1 / -1; }
+  .system-health-panel > header { flex-direction: column; }
+  .system-health-header-action { width: 100%; justify-items: start; }
   .readiness-panel > header { flex-direction: column; }
   .readiness-score { width: 96px; height: 96px; }
   .readiness-editor-grid { grid-template-columns: 1fr; }

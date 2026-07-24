@@ -26,6 +26,61 @@ async function sessionCookie(role) {
   return setCookie.split(";", 1)[0];
 }
 
+async function concurrentJsonMutation(path, cookie, payload) {
+  const idempotencyKey = randomUUID();
+  const mutate = () => fetch(`${webBaseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      cookie,
+      "content-type": "application/json",
+      "idempotency-key": idempotencyKey,
+    },
+    body: JSON.stringify(payload),
+  });
+  const responses = await Promise.all([mutate(), mutate()]);
+  const results = await Promise.all(responses.map((response) => json(response)));
+  assert.deepEqual(
+    responses.map((response) => response.headers.get("idempotency-replayed")).sort(),
+    ["false", "true"],
+  );
+  return results;
+}
+
+async function completeSyntheticBookings(cookie, requestTitle) {
+  const payload = await json(await fetch(
+    `${webBaseUrl}/api/v1/bookings?role=prestador`,
+    { headers: { cookie } },
+  ));
+  const active = payload.bookings.filter(
+    (booking) => booking.requestTitle === requestTitle
+      && (booking.status === "scheduled" || booking.status === "in_progress"),
+  );
+  for (const booking of active) {
+    if (booking.status === "scheduled") {
+      await json(await fetch(`${webBaseUrl}/api/v1/bookings`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({
+          role: "prestador",
+          bookingId: booking.id,
+          status: "in_progress",
+          note: "Limpeza do cenário sintético idempotente.",
+        }),
+      }));
+    }
+    await json(await fetch(`${webBaseUrl}/api/v1/bookings`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({
+        role: "prestador",
+        bookingId: booking.id,
+        status: "completed",
+        note: "Cenário sintético idempotente concluído.",
+      }),
+    }));
+  }
+}
+
 const livenessResponse = await fetch(`${apiBaseUrl}/health/live`);
 assert.match(
   livenessResponse.headers.get("x-request-id") ?? "",
@@ -99,9 +154,10 @@ const region = regions.regions[0];
 const neighborhood = region?.neighborhoods[0];
 assert.ok(category && region && neighborhood, "Catálogo e cobertura precisam estar semeados.");
 
+const syntheticRequestTitle = "Pedido sintético para prova idempotente";
 const requestPayload = {
   categorySlug: category.slug,
-  title: "Pedido sintético para prova idempotente",
+  title: syntheticRequestTitle,
   description: "Pedido sintético criado pelo smoke test para validar reenvios concorrentes.",
   regionId: region.id,
   neighborhoodId: neighborhood.id,
@@ -148,6 +204,7 @@ assert.equal(requestKeyReuse.status, 409);
 assert.match(JSON.stringify(await requestKeyReuse.json()), /outro conteÃºdo|outro conteúdo/i);
 
 const providerCookie = await sessionCookie("prestador");
+await completeSyntheticBookings(providerCookie, syntheticRequestTitle);
 const proposalPayload = {
   requestId: requestResults[0].request.id,
   amountCents: 12_500,
@@ -213,6 +270,41 @@ const acceptanceKeyReuse = await fetch(`${webBaseUrl}/api/v1/customer/proposals`
 assert.equal(acceptanceKeyReuse.status, 409);
 assert.match(JSON.stringify(await acceptanceKeyReuse.json()), /outro conteÃºdo|outro conteúdo/i);
 
+const messageResults = await concurrentJsonMutation(
+  "/api/v1/messaging",
+  customerCookie,
+  {
+    role: "cliente",
+    conversationId: acceptanceResults[0].booking.conversationId,
+    body: "Mensagem sintética idempotente do cliente.",
+  },
+);
+assert.equal(messageResults[0].message.id, messageResults[1].message.id);
+
+const partnerCookie = await sessionCookie("parceiro");
+const supportCreateResults = await concurrentJsonMutation(
+  "/api/v1/partner/support",
+  partnerCookie,
+  {
+    action: "create",
+    topic: "other",
+    subject: "Atendimento sintético idempotente",
+    body: "Solicitação sintética para provar a abertura concorrente segura.",
+  },
+);
+assert.equal(supportCreateResults[0].case.id, supportCreateResults[1].case.id);
+const supportCaseId = supportCreateResults[0].case.id;
+const partnerMessageResults = await concurrentJsonMutation(
+  "/api/v1/partner/support",
+  partnerCookie,
+  {
+    action: "message",
+    caseId: supportCaseId,
+    body: "Complemento sintético idempotente do parceiro.",
+  },
+);
+assert.equal(partnerMessageResults[0].event.id, partnerMessageResults[1].event.id);
+
 const forbidden = await fetch(`${webBaseUrl}/api/v1/operation/system-health`, {
   headers: { cookie: customerCookie },
 });
@@ -254,6 +346,59 @@ assert.match(limitedCapture?.headers.get("retry-after") ?? "", /^\d+$/);
 assert.equal((await limitedCapture?.json()).code, "RATE_LIMITED");
 
 const operationCookie = await sessionCookie("operacao");
+const operationMessageResults = await concurrentJsonMutation(
+  "/api/v1/operation/support",
+  operationCookie,
+  {
+    action: "message",
+    caseId: supportCaseId,
+    body: "Retorno sintético idempotente da operação.",
+  },
+);
+assert.equal(operationMessageResults[0].event.id, operationMessageResults[1].event.id);
+
+const triageResults = await concurrentJsonMutation(
+  "/api/v1/operation/support",
+  operationCookie,
+  {
+    action: "triage",
+    caseId: supportCaseId,
+    priority: "high",
+    assigneeId: "00000000-0000-4000-8000-000000000401",
+    note: "Triagem sintética concorrente com prioridade elevada.",
+  },
+);
+assert.equal(triageResults[0].case.id, triageResults[1].case.id);
+assert.equal(triageResults[0].case.priority, "high");
+
+const reviewResults = await concurrentJsonMutation(
+  "/api/v1/operation/support",
+  operationCookie,
+  {
+    action: "transition",
+    caseId: supportCaseId,
+    status: "in_review",
+    note: "Atendimento sintético assumido pela operação.",
+  },
+);
+assert.equal(reviewResults[0].case.id, reviewResults[1].case.id);
+assert.equal(reviewResults[0].case.status, "in_review");
+
+const resolvedResults = await concurrentJsonMutation(
+  "/api/v1/operation/support",
+  operationCookie,
+  {
+    action: "transition",
+    caseId: supportCaseId,
+    status: "resolved",
+    note: "Atendimento sintético concluído após validação.",
+  },
+);
+assert.equal(resolvedResults[0].case.id, resolvedResults[1].case.id);
+assert.equal(resolvedResults[0].case.status, "resolved");
+
+await completeSyntheticBookings(providerCookie, syntheticRequestTitle);
+
 const operationHealthResponse = await fetch(
   `${webBaseUrl}/api/v1/operation/system-health`,
   { headers: { cookie: operationCookie } },
@@ -272,7 +417,7 @@ assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
 assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
-assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 3, true);
+assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 10, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(
@@ -291,7 +436,7 @@ assert.equal(
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

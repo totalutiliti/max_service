@@ -61,19 +61,33 @@ export class PartnerSupportController {
   async create(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Body() input: CreatePartnerSupportCaseDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { case: await this.support.create(actorFromHeaders(role, id), input) };
+    const result = await this.support.create(actorFromHeaders(role, id), input, idempotencyKey);
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { case: result.value };
   }
 
   @Post("cases/:caseId/messages")
   async addMessage(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
     @Body() input: AddPartnerSupportMessageDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { event: await this.support.addMessage(actorFromHeaders(role, id), caseId, input.body, "partner") };
+    const result = await this.support.addMessage(
+      actorFromHeaders(role, id),
+      caseId,
+      input.body,
+      "partner",
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { event: result.value };
   }
 
   @Post("cases/:caseId/attachments")
@@ -146,10 +160,20 @@ export class OperationSupportController {
   async addMessage(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
     @Body() input: AddPartnerSupportMessageDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { event: await this.support.addMessage(actorFromHeaders(role, id), caseId, input.body, "operation") };
+    const result = await this.support.addMessage(
+      actorFromHeaders(role, id),
+      caseId,
+      input.body,
+      "operation",
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { event: result.value };
   }
 
   @Post("cases/:caseId/attachments")
@@ -200,29 +224,40 @@ export class OperationSupportController {
   async changeStatus(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
     @Body() input: ChangePartnerSupportStatusDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return {
-      case: await this.support.changeStatus(actorFromHeaders(role, id), caseId, input.status, input.note),
-    };
+    const result = await this.support.changeStatus(
+      actorFromHeaders(role, id),
+      caseId,
+      input.status,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { case: result.value };
   }
 
   @Post("cases/:caseId/triage")
   async triage(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
     @Body() input: TriagePartnerSupportCaseDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return {
-      case: await this.support.triage(
-        actorFromHeaders(role, id),
-        caseId,
-        input.priority,
-        input.assigneeId,
-        input.note,
-      ),
-    };
+    const result = await this.support.triage(
+      actorFromHeaders(role, id),
+      caseId,
+      input.priority,
+      input.assigneeId,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { case: result.value };
   }
 }

@@ -3403,6 +3403,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
   const endRef = useRef<HTMLDivElement>(null);
   const messageCursorRef = useRef<string | null>(null);
   const readCursorRef = useRef<string | null>(null);
+  const pendingMessageKey = useRef<{ fingerprint: string; key: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -3444,6 +3445,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
   useEffect(() => {
     messageCursorRef.current = null;
     readCursorRef.current = null;
+    pendingMessageKey.current = null;
     if (!selectedId) {
       const clearMessages = window.setTimeout(() => setMessages([]), 0);
       return () => window.clearTimeout(clearMessages);
@@ -3556,6 +3558,13 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
     if ((!body && !attachmentFile) || !selectedId) return;
     setSending(true);
     try {
+      const messageFingerprint = `${selectedId}\u0000${body}`;
+      const textIdempotencyKey = pendingMessageKey.current?.fingerprint === messageFingerprint
+        ? pendingMessageKey.current.key
+        : crypto.randomUUID();
+      if (!attachmentFile) {
+        pendingMessageKey.current = { fingerprint: messageFingerprint, key: textIdempotencyKey };
+      }
       const requestBody = attachmentFile ? new FormData() : null;
       if (requestBody && attachmentFile) {
         requestBody.set("role", role);
@@ -3568,7 +3577,10 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
         body: requestBody,
       } : {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": textIdempotencyKey,
+        },
         body: JSON.stringify({ role, conversationId: selectedId, body }),
       });
       const payload = await response.json() as { message?: PersistedMessage | string; error?: string };
@@ -3578,6 +3590,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
       setConversations((current) => current.map((conversation) => conversation.id === selectedId ? { ...conversation, latestMessage: sent.body, latestMessageAt: sent.createdAt } : conversation));
       setDraft("");
       setAttachmentFile(null);
+      pendingMessageKey.current = null;
     } catch (error) {
       notify(error instanceof Error ? error.message : "Não foi possível enviar a mensagem.");
     } finally {
@@ -3631,6 +3644,7 @@ function PartnerSupportCreateDialog({
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const pendingCreateKey = useRef<{ fingerprint: string; key: string } | null>(null);
 
   useEffect(() => { closeRef.current?.focus(); }, []);
 
@@ -3639,21 +3653,31 @@ function PartnerSupportCreateDialog({
     if (subject.trim().length < 5 || body.trim().length < 10 || (topic === "referral" && !referralId)) return;
     setSubmitting(true);
     try {
+      const requestPayload = {
+        action: "create" as const,
+        topic,
+        subject: subject.trim(),
+        body: body.trim(),
+        referralId: topic === "referral" ? referralId : undefined,
+      };
+      const fingerprint = JSON.stringify(requestPayload);
+      const idempotencyKey = pendingCreateKey.current?.fingerprint === fingerprint
+        ? pendingCreateKey.current.key
+        : crypto.randomUUID();
+      pendingCreateKey.current = { fingerprint, key: idempotencyKey };
       const response = await fetch("/api/v1/partner/support", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          topic,
-          subject: subject.trim(),
-          body: body.trim(),
-          referralId: topic === "referral" ? referralId : undefined,
-        }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify(requestPayload),
       });
       const payload = await response.json() as { case?: { id: string; publicCode: string }; error?: string; message?: string };
       if (!response.ok || !payload.case) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível abrir a solicitação.");
       }
+      pendingCreateKey.current = null;
       notify(`${payload.case.publicCode} aberto e enviado à equipe Max.`);
       onCreated(payload.case.id);
     } catch (error) {
@@ -3699,6 +3723,15 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
   const [createOpen, setCreateOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
+  const pendingSupportKeys = useRef(new Map<string, string>());
+
+  const idempotencyKeyFor = (fingerprint: string) => {
+    const current = pendingSupportKeys.current.get(fingerprint);
+    if (current) return current;
+    const key = crypto.randomUUID();
+    pendingSupportKeys.current.set(fingerprint, key);
+    return key;
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -3790,6 +3823,7 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
     const body = draft.trim();
     if (!selectedId || (!attachmentFile && body.length < 3) || (body.length > 0 && body.length < 3)) return;
     setSubmitting(true);
+    let mutationFingerprint = "";
     try {
       let response: Response;
       if (attachmentFile) {
@@ -3799,14 +3833,19 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
         form.set("file", attachmentFile);
         response = await fetch(endpoint, { method: "POST", body: form });
       } else {
+        mutationFingerprint = `message:${endpoint}:${selectedId}:${body}`;
         response = await fetch(endpoint, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            "idempotency-key": idempotencyKeyFor(mutationFingerprint),
+          },
           body: JSON.stringify({ action: "message", caseId: selectedId, body }),
         });
       }
       const payload = await response.json() as { event?: PartnerSupportEvent; error?: string; message?: string };
       if (!response.ok || !payload.event) throw new Error(payload.error ?? payload.message ?? "Não foi possível enviar a mensagem.");
+      if (mutationFingerprint) pendingSupportKeys.current.delete(mutationFingerprint);
       setDraft("");
       setAttachmentFile(null);
       refreshCenter();
@@ -3835,15 +3874,21 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
 
   const transition = async (status: "in_review" | "resolved") => {
     if (!selectedId || transitionNote.trim().length < 10) return;
+    const note = transitionNote.trim();
+    const mutationFingerprint = `transition:${selectedId}:${status}:${note}`;
     setSubmitting(true);
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "transition", caseId: selectedId, status, note: transitionNote.trim() }),
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKeyFor(mutationFingerprint),
+        },
+        body: JSON.stringify({ action: "transition", caseId: selectedId, status, note }),
       });
       const payload = await response.json() as { case?: PartnerSupportCase; error?: string; message?: string };
       if (!response.ok || !payload.case) throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar o atendimento.");
+      pendingSupportKeys.current.delete(mutationFingerprint);
       setTransitionNote("");
       refreshCenter();
       notify(status === "resolved" ? "Atendimento resolvido com histórico preservado." : "Atendimento assumido pela Operação.");
@@ -3856,23 +3901,29 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
 
   const triage = async () => {
     if (!selectedId || !triageAssigneeId || triageNote.trim().length < 10) return;
+    const note = triageNote.trim();
+    const mutationFingerprint = `triage:${selectedId}:${triagePriority}:${triageAssigneeId}:${note}`;
     setSubmitting(true);
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKeyFor(mutationFingerprint),
+        },
         body: JSON.stringify({
           action: "triage",
           caseId: selectedId,
           priority: triagePriority,
           assigneeId: triageAssigneeId,
-          note: triageNote.trim(),
+          note,
         }),
       });
       const payload = await response.json() as { case?: PartnerSupportCase; error?: string; message?: string };
       if (!response.ok || !payload.case) {
         throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a triagem.");
       }
+      pendingSupportKeys.current.delete(mutationFingerprint);
       setTriageNote("");
       refreshCenter();
       notify("Triagem registrada com responsável, prioridade e novos prazos.");

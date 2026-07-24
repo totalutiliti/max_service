@@ -202,6 +202,15 @@ test("slot ocupado desaparece e banco rejeita booking ou bloqueio sobreposto", a
 
       await setActor(client, "provider", actors.provider);
       await client.query(`
+        UPDATE bookings
+        SET
+          status = 'completed',
+          completed_at = COALESCE(completed_at, now()),
+          updated_at = now()
+        WHERE provider_id = $1
+          AND status IN ('scheduled', 'in_progress')
+      `, [actors.provider]);
+      await client.query(`
         INSERT INTO proposals (
           id,
           request_id,

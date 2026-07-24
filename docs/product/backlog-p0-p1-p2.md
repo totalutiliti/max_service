@@ -10,7 +10,7 @@
 - parceiro, atribuição, painel, captura pública por link/QR e triagem operacional;
 - moderação, documentos privados e administração;
 - PSP sandbox, regra 12/2/2 configurável e ledger;
-- ampliar idempotência para mensagens, suporte, anexos e comandos operacionais e adicionar E2E/a11y em navegador; criação de pedido, envio de proposta e aceite já possuem chave assinada, garantia transacional, RLS e teste concorrente, enquanto migrations, isolamento da agenda, rate limit, headers HTTP, CORS e limites de corpo também são testados automaticamente no CI;
+- ampliar idempotência para uploads binários, bloqueios de agenda e comandos operacionais restantes, além de adicionar E2E/a11y em navegador; criação de pedido, envio de proposta, aceite, mensagens de texto, abertura e atualização de atendimentos já possuem chave assinada, garantia transacional, RLS e teste concorrente, enquanto migrations, isolamento da agenda, rate limit, headers HTTP, CORS e limites de corpo também são testados automaticamente no CI;
 - ampliar observabilidade para exportação de métricas, traces, alertas e SLOs gerenciados; liveness, readiness, cockpit operacional, IDs de correlação, logs JSON sem PII, métricas locais limitadas e smoke tests de autorização já estão materializados;
 - concluir os oito gates persistentes de prontidão: identidade, marca/domínio, modelo jurídico/fiscal, PSP, privacidade/retenção, autorização e escopo formal do piloto; backup/restore lógico já é ensaiado automaticamente, mas infraestrutura gerenciada, PITR, RPO/RTO e object storage ainda estão pendentes.
 

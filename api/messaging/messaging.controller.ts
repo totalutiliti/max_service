@@ -40,10 +40,19 @@ export class MessagingController {
   async send(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Param("conversationId") conversationId: string,
     @Body() input: SendMessageDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
-    return { message: await this.messaging.send(actorFromHeaders(role, id), conversationId, input.body) };
+    const result = await this.messaging.send(
+      actorFromHeaders(role, id),
+      conversationId,
+      input.body,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { message: result.value };
   }
 
   @Patch("conversations/:conversationId/read")

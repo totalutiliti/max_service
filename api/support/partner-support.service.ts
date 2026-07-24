@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { createHash, randomUUID } from "node:crypto";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import { validatePartnerSupportAttachment } from "./partner-support-attachment-validation.js";
@@ -80,6 +81,7 @@ export class PartnerSupportService {
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: PrivateObjectStorageService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   private ensureScope(actor: Actor, scope: "partner" | "operation") {
@@ -227,7 +229,7 @@ export class PartnerSupportService {
     });
   }
 
-  async create(actor: Actor, input: CreatePartnerSupportCaseDto) {
+  async create(actor: Actor, input: CreatePartnerSupportCaseDto, idempotencyKey: string | undefined) {
     this.ensureScope(actor, "partner");
     const subject = this.normalizeText(input.subject, 5, "Informe um assunto com pelo menos 5 caracteres.");
     const body = this.normalizeText(input.body, 10, "Descreva a solicitação com pelo menos 10 caracteres.");
@@ -239,6 +241,17 @@ export class PartnerSupportService {
     }
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: "/api/v1/partner/support/cases",
+        payload: {
+          topic: input.topic,
+          subject,
+          body,
+          referralId: input.referralId ?? null,
+        },
+      }, async () => {
       const active = await client.query<{ count: number }>(`
         SELECT count(*)::int AS count
         FROM partner_support_cases
@@ -295,13 +308,26 @@ export class PartnerSupportService {
         entityId: caseId,
       });
       return created.rows[0];
+      });
     });
   }
 
-  async addMessage(actor: Actor, caseId: string, rawBody: string, scope: "partner" | "operation") {
+  async addMessage(
+    actor: Actor,
+    caseId: string,
+    rawBody: string,
+    scope: "partner" | "operation",
+    idempotencyKey: string | undefined,
+  ) {
     this.ensureScope(actor, scope);
     const body = this.normalizeText(rawBody, 3, "Escreva uma mensagem com pelo menos 3 caracteres.");
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/${scope}/support/cases/${caseId}/messages`,
+        payload: { body },
+      }, async () => {
       const current = await client.query<{
         id: string;
         partnerId: string;
@@ -355,6 +381,7 @@ export class PartnerSupportService {
         entityId: caseId,
       });
       return event.rows[0];
+      });
     });
   }
 
@@ -546,10 +573,17 @@ export class PartnerSupportService {
     priority: "normal" | "high",
     assigneeId: string,
     rawNote: string,
+    idempotencyKey: string | undefined,
   ) {
     this.ensureScope(actor, "operation");
     const note = this.normalizeText(rawNote, 10, "Registre uma justificativa com pelo menos 10 caracteres.");
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/support/cases/${caseId}/triage`,
+        payload: { priority, assigneeId, note },
+      }, async () => {
       const current = await client.query<{
         status: "open" | "in_review" | "resolved";
         priority: "normal" | "high";
@@ -648,6 +682,7 @@ export class PartnerSupportService {
         entityId: caseId,
       });
       return updated.rows[0];
+      });
     });
   }
 
@@ -656,10 +691,17 @@ export class PartnerSupportService {
     caseId: string,
     status: "in_review" | "resolved",
     rawNote: string,
+    idempotencyKey: string | undefined,
   ) {
     this.ensureScope(actor, "operation");
     const note = this.normalizeText(rawNote, 10, "Registre uma justificativa com pelo menos 10 caracteres.");
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/support/cases/${caseId}/transitions`,
+        payload: { status, note },
+      }, async () => {
       const current = await client.query<{
         status: "open" | "in_review" | "resolved";
         partnerId: string;
@@ -728,6 +770,7 @@ export class PartnerSupportService {
         entityId: caseId,
       });
       return updated.rows[0];
+      });
     });
   }
 }

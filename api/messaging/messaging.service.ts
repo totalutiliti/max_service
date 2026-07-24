@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import { validatePrivateImage } from "../storage/private-image-validation.js";
@@ -11,6 +12,7 @@ export class MessagingService {
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: PrivateObjectStorageService,
+    private readonly idempotency: IdempotencyService,
   ) {}
 
   async conversations(actor: Actor) {
@@ -185,7 +187,7 @@ export class MessagingService {
     });
   }
 
-  async send(actor: Actor, conversationId: string, body: string) {
+  async send(actor: Actor, conversationId: string, body: string, idempotencyKey: string | undefined) {
     if (actor.role !== "customer" && actor.role !== "provider") {
       throw new ForbiddenException("Este perfil não pode enviar mensagens nesta conversa.");
     }
@@ -194,6 +196,12 @@ export class MessagingService {
     if (!messageBody) throw new BadRequestException("Escreva uma mensagem antes de enviar.");
 
     return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/conversations/${conversationId}/messages`,
+        payload: { body: messageBody },
+      }, async () => {
       const conversation = await client.query<{ id: string; otherUserId: string; requestCode: string }>(`
         SELECT
           c.id,
@@ -226,6 +234,7 @@ export class MessagingService {
         entityId: conversationId,
       });
       return { ...result.rows[0], attachment: null };
+      });
     });
   }
 

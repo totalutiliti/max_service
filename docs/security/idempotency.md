@@ -2,11 +2,17 @@
 
 ## Objetivo
 
-Reenvios por timeout, perda de conexão ou clique repetido não podem criar pedidos, propostas ou bookings duplicados. A proteção inicial cobre as três mutações centrais do marketplace:
+Reenvios por timeout, perda de conexão ou clique repetido não podem criar pedidos, propostas, bookings, mensagens ou efeitos operacionais duplicados. A proteção transacional cobre:
 
 - `POST /api/v1/service-requests`;
 - `POST /api/v1/service-requests/:requestId/proposals`;
-- `POST /api/v1/proposals/:proposalId/accept`.
+- `POST /api/v1/proposals/:proposalId/accept`;
+- mensagens de texto em `POST /api/v1/conversations/:conversationId/messages`;
+- abertura de caso em `POST /api/v1/partner/support/cases`;
+- mensagens de texto do parceiro e da Operação em seus respectivos casos;
+- triagem e transições de estado do atendimento pela Operação.
+
+Uploads binários ainda não usam esse executor: neles, a confirmação precisa coordenar PostgreSQL e armazenamento de objetos sem deixar arquivo órfão ou resposta persistida antes do upload definitivo.
 
 ## Contrato HTTP
 
@@ -54,10 +60,10 @@ Uma rotina de expurgo/particionamento para registros expirados ainda deve ser de
 
 - testes unitários validam formato, JSON canônico, hash e vínculo da chave à assinatura interna;
 - teste integrado comprova RLS de leitura e conclusão;
-- smoke test dispara pares realmente concorrentes nas três rotas, confirma um único identificador e observa um replay em cada par;
+- smoke test dispara pares realmente concorrentes nas três mutações centrais e em sete comandos de comunicação/atendimento, confirma um único identificador e observa um replay em cada par;
 - o mesmo smoke reutiliza a chave com conteúdo diferente e exige `409`;
 - o cockpit soma `idempotencyReplayCount` sem reter chave, corpo ou identidade.
 
 ## Próxima expansão
 
-Antes do piloto externo, o mesmo padrão deve cobrir outras criações que possam produzir efeitos repetidos, especialmente mensagens, casos de suporte, anexos, bloqueios de agenda e comandos operacionais.
+Antes do piloto externo, a próxima expansão deve definir o protocolo idempotente dos uploads binários, incluindo compensação/expurgo de objetos, e cobrir bloqueios de agenda e os demais comandos operacionais que ainda possam produzir efeitos repetidos.

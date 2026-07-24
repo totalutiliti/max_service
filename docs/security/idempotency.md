@@ -61,7 +61,7 @@ Nos quatro fluxos binários, o hash idempotente considera nome normalizado, MIME
 
 O objeto é enviado durante a mesma unidade transacional que reserva a chave e persiste seus metadados. Uma requisição concorrente aguarda o primeiro commit e reproduz a resposta sem executar um segundo envio. Se o banco ou a persistência da resposta falhar de forma observável, a compensação remove o objeto antes de devolver o erro.
 
-Se o processo for interrompido depois do envio e antes do commit, uma nova tentativa equivalente deriva exatamente a mesma chave e sobrescreve o mesmo objeto, em vez de acumular cópias. Um expurgo por idade ainda é necessário para remover o objeto único que pode permanecer se essa tentativa nunca for refeita.
+Se o processo for interrompido depois do envio e antes do commit, uma nova tentativa equivalente deriva exatamente a mesma chave e sobrescreve o mesmo objeto, em vez de acumular cópias. Se essa tentativa nunca for refeita, a reconciliação diária preserva o objeto por 24 horas e depois remove somente o órfão que continuar sem metadados confirmados.
 
 ## Isolamento e dados
 
@@ -83,4 +83,4 @@ Uma rotina de expurgo/particionamento para registros expirados ainda deve ser de
 
 ## Próxima expansão
 
-Antes do piloto externo, a próxima expansão deve automatizar a reconciliação entre metadados confirmados e objetos privados e o expurgo por idade. O protocolo idempotente, a compensação de falhas observáveis e as chaves determinísticas dos uploads já estão materializados.
+Antes do piloto externo, o processo já materializado precisa ser ligado a um scheduler gerenciado, alertas e credencial de manutenção dedicada. O protocolo idempotente, a compensação de falhas observáveis, as chaves determinísticas e o expurgo conservador dos uploads estão materializados no Docker e no CI.

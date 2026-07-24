@@ -548,6 +548,25 @@ interface OperationSystemHealthData {
     }>;
     note: string;
   };
+  privateStorageReconciliation: null | {
+    runId: string;
+    policyVersion: string;
+    mode: "dry_run" | "apply";
+    status: "running" | "succeeded" | "failed";
+    cutoffAt: string;
+    startedAt: string;
+    completedAt: string | null;
+    listedObjects: number;
+    referencedObjects: number;
+    managedOrphans: number;
+    eligibleOrphans: number;
+    recentOrphans: number;
+    missingReferences: number;
+    sizeMismatches: number;
+    ignoredObjects: number;
+    deletedObjects: number;
+    raceProtectedObjects: number;
+  };
 }
 
 type OperationReadinessStatus = "blocked" | "in_progress" | "evidence_ready";
@@ -5132,6 +5151,31 @@ function OperationSystemHealthPanel({ notify }: { notify: (message: string) => v
         <article><small>CRÍTICOS</small><strong>{data.summary.criticalCount}</strong><span>bloqueiam tráfego</span></article>
         <article><small>GATES DE PRODUÇÃO</small><strong>{data.summary.productionBlockers}</strong><span>ainda pendentes</span></article>
       </div>
+      <section className={`system-storage-reconciliation ${data.privateStorageReconciliation?.status ?? "pending"}`}>
+        <header>
+          <div>
+            <small>COFRE PRIVADO · {data.privateStorageReconciliation?.policyVersion ?? "AGUARDANDO PRIMEIRA EXECUÇÃO"}</small>
+            <h3>{data.privateStorageReconciliation?.status === "succeeded" ? "Objetos e metadados reconciliados." : data.privateStorageReconciliation?.status === "failed" ? "A última reconciliação falhou." : "Reconciliação ainda em andamento."}</h3>
+          </div>
+          <span>{data.privateStorageReconciliation?.mode === "apply" ? "EXPURGO SEGURO" : "SOMENTE INSPEÇÃO"}</span>
+        </header>
+        {data.privateStorageReconciliation ? (
+          <>
+            <div>
+              <article><small>OBJETOS / REFERÊNCIAS</small><strong>{data.privateStorageReconciliation.listedObjects} / {data.privateStorageReconciliation.referencedObjects}</strong><span>inventário privado agregado</span></article>
+              <article><small>ÓRFÃOS ELEGÍVEIS</small><strong>{data.privateStorageReconciliation.eligibleOrphans}</strong><span>recentes preservados: {data.privateStorageReconciliation.recentOrphans}</span></article>
+              <article><small>EXCLUÍDOS</small><strong>{data.privateStorageReconciliation.deletedObjects}</strong><span>corridas evitadas: {data.privateStorageReconciliation.raceProtectedObjects}</span></article>
+              <article><small>DIVERGÊNCIAS</small><strong>{data.privateStorageReconciliation.missingReferences + data.privateStorageReconciliation.sizeMismatches}</strong><span>ausentes: {data.privateStorageReconciliation.missingReferences} · tamanho: {data.privateStorageReconciliation.sizeMismatches}</span></article>
+            </div>
+            <footer>
+              <span>Nenhuma chave ou nome de arquivo é exposto neste painel.</span>
+              <time>{new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(data.privateStorageReconciliation.completedAt ?? data.privateStorageReconciliation.startedAt))}</time>
+            </footer>
+          </>
+        ) : (
+          <p>O processo diário ainda não registrou sua primeira leitura do cofre.</p>
+        )}
+      </section>
       <section className="system-telemetry">
         <header>
           <div>

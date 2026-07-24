@@ -73,6 +73,34 @@ services:
     volumes:
       - max-service-objects:/data
 
+  storage-maintenance:
+    image: max-service-api
+    container_name: max-service-storage-maintenance
+    restart: unless-stopped
+    command:
+      - node
+      - scripts/private-storage-reconciliation.mjs
+      - --apply
+      - --minimum-age-hours
+      - "24"
+      - --max-deletes
+      - "100"
+      - --interval-hours
+      - "24"
+    environment:
+      NODE_ENV: production
+      PRIVATE_STORAGE_RECONCILIATION_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@database:5432/max_service
+      OBJECT_STORAGE_ENDPOINT: http://storage:9000
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_BUCKET: max-service-private
+      OBJECT_STORAGE_ACCESS_KEY: max_service_local
+      OBJECT_STORAGE_SECRET_KEY: max_service_objects_local
+    depends_on:
+      api:
+        condition: service_healthy
+      storage:
+        condition: service_started
+
   web:
     build:
       context: .

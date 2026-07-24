@@ -63,6 +63,16 @@ jobs:
       - name: Testar saúde e fronteiras de acesso
         run: npm run test:smoke
 
+      - name: Reconciliar cofre privado
+        env:
+          TEST_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@127.0.0.1:54329/max_service
+          OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:59000
+          OBJECT_STORAGE_REGION: us-east-1
+          OBJECT_STORAGE_BUCKET: max-service-private
+          OBJECT_STORAGE_ACCESS_KEY: max_service_local
+          OBJECT_STORAGE_SECRET_KEY: max_service_objects_local
+        run: npm run test:storage
+
       - name: Testar migrations, RLS e conflitos
         env:
           TEST_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@127.0.0.1:54329/max_service

@@ -750,10 +750,17 @@ assert.equal(
   ),
   true,
 );
+assert.equal(
+  operationHealth.privateStorageReconciliation?.policyVersion,
+  "PRIVATE-STORAGE-RECONCILIATION-2026-01",
+);
+assert.equal(operationHealth.privateStorageReconciliation?.status, "succeeded");
+assert.equal(operationHealth.privateStorageReconciliation?.missingReferences, 0);
+assert.equal(operationHealth.privateStorageReconciliation?.sizeMismatches, 0);
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "idempotent_operation_commands", "idempotent_binary_uploads", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "idempotent_operation_commands", "idempotent_binary_uploads", "private_storage_reconciliation", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

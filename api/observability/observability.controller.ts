@@ -61,6 +61,6 @@ export class ObservabilityController {
     if (actor.role !== "operation") {
       throw new ForbiddenException("Apenas a Operação pode consultar a saúde do sistema.");
     }
-    return this.systemHealth.inspect();
+    return this.systemHealth.inspect(actor);
   }
 }

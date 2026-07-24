@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import {
@@ -40,12 +41,16 @@ export class SystemHealthService {
     };
   }
 
-  async inspect() {
+  async inspect(actor?: Actor) {
     const report = await this.inspectDependencies();
+    const privateStorageReconciliation = actor?.role === "operation"
+      ? await this.latestPrivateStorageReconciliation(actor)
+      : null;
     return {
       ...report,
       telemetry: this.telemetry.snapshot(),
       abuseProtection: this.rateLimits.snapshot(),
+      privateStorageReconciliation,
     };
   }
 
@@ -199,6 +204,60 @@ export class SystemHealthService {
         productionBlocking: true,
       };
     }
+  }
+
+  private latestPrivateStorageReconciliation(actor: Actor) {
+    return this.database.withActor(actor, async (client) => {
+      const result = await client.query<{
+        runId: string;
+        policyVersion: string;
+        mode: "dry_run" | "apply";
+        status: "running" | "succeeded" | "failed";
+        cutoffAt: Date;
+        startedAt: Date;
+        completedAt: Date | null;
+        listedObjects: number;
+        referencedObjects: number;
+        managedOrphans: number;
+        eligibleOrphans: number;
+        recentOrphans: number;
+        missingReferences: number;
+        sizeMismatches: number;
+        ignoredObjects: number;
+        deletedObjects: number;
+        raceProtectedObjects: number;
+      }>(`
+        SELECT
+          id AS "runId",
+          policy_version AS "policyVersion",
+          mode,
+          status,
+          cutoff_at AS "cutoffAt",
+          started_at AS "startedAt",
+          completed_at AS "completedAt",
+          listed_objects AS "listedObjects",
+          referenced_objects AS "referencedObjects",
+          managed_orphans AS "managedOrphans",
+          eligible_orphans AS "eligibleOrphans",
+          recent_orphans AS "recentOrphans",
+          missing_references AS "missingReferences",
+          size_mismatches AS "sizeMismatches",
+          ignored_objects AS "ignoredObjects",
+          deleted_objects AS "deletedObjects",
+          race_protected_objects AS "raceProtectedObjects"
+        FROM private_storage_reconciliation_runs
+        ORDER BY started_at DESC
+        LIMIT 1
+      `);
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        ...row,
+        cutoffAt: row.cutoffAt.toISOString(),
+        startedAt: row.startedAt.toISOString(),
+        completedAt: row.completedAt?.toISOString() ?? null,
+      };
+    });
   }
 }
 

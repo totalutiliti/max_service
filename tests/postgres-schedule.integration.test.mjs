@@ -43,7 +43,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0043_booking_participant_visibility.sql',
         '0044_operation_readiness_gates.sql',
         '0045_runtime_migration_visibility.sql',
-        '0046_idempotent_marketplace_mutations.sql'
+        '0046_idempotent_marketplace_mutations.sql',
+        '0047_private_storage_reconciliation.sql'
       )
       ORDER BY name
     `);
@@ -53,6 +54,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0044_operation_readiness_gates.sql",
       "0045_runtime_migration_visibility.sql",
       "0046_idempotent_marketplace_mutations.sql",
+      "0047_private_storage_reconciliation.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name
@@ -149,6 +151,55 @@ test("RLS isola registros idempotentes e permite concluir somente a operação d
       assert.equal(immutableReplay.rowCount, 0);
     });
   } finally {
+    await pool.end();
+  }
+});
+
+test("RLS expõe a reconciliação agregada somente para a Operação", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const runId = randomUUID();
+    await client.query(`
+      INSERT INTO private_storage_reconciliation_runs (
+        id,
+        policy_version,
+        mode,
+        status,
+        cutoff_at,
+        completed_at,
+        listed_objects,
+        referenced_objects
+      ) VALUES (
+        $1,
+        'PRIVATE-STORAGE-RECONCILIATION-2026-01',
+        'dry_run',
+        'succeeded',
+        now() - interval '24 hours',
+        now(),
+        4,
+        4
+      )
+    `, [runId]);
+    await client.query("SET LOCAL ROLE max_service_app");
+
+    await setActor(client, "customer", actors.customer);
+    const customerView = await client.query(
+      "SELECT count(*)::int AS count FROM private_storage_reconciliation_runs WHERE id = $1",
+      [runId],
+    );
+    assert.equal(customerView.rows[0].count, 0);
+
+    await setActor(client, "operation", actors.operation);
+    const operationView = await client.query(
+      "SELECT count(*)::int AS count FROM private_storage_reconciliation_runs WHERE id = $1",
+      [runId],
+    );
+    assert.equal(operationView.rows[0].count, 1);
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
     await pool.end();
   }
 });

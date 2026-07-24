@@ -29,6 +29,7 @@ Fluxo recomendado:
 docker compose up -d --build
 docker compose ps
 npm test
+npm run test:storage
 ```
 
 Endereços locais:
@@ -40,5 +41,13 @@ Endereços locais:
 - PostgreSQL: `127.0.0.1:54329`.
 - object storage privado: `127.0.0.1:59000`;
 - console local do object storage: `127.0.0.1:59001`.
+
+O serviço `storage-maintenance` executa uma reconciliação ao iniciar e repete a inspeção a cada 24 horas. A política local só considera objetos de prefixos conhecidos, exige idade mínima de 24 horas e limita cada rodada a cem exclusões. O resultado agregado aparece em **Operação → Conta**.
+
+Para acompanhar a execução:
+
+```bash
+docker compose logs storage-maintenance
+```
 
 Nunca usar anexos ou dados reais em seed. Nunca aplicar `db push`. As senhas literais do Compose são deliberadamente locais e devem ser substituídas por segredos provisionados fora do repositório em qualquer ambiente compartilhado.

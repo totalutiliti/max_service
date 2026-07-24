@@ -19,6 +19,7 @@ COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=build /app/.api-dist ./.api-dist
 COPY --from=build /app/api/migrations ./api/migrations
 COPY --from=build /app/package.json ./package.json
+COPY scripts/private-storage-reconciliation.mjs ./scripts/private-storage-reconciliation.mjs
 
 USER node
 EXPOSE 3001

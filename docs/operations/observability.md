@@ -54,7 +54,7 @@ O check **Transporte HTTPS** diferencia os headers defensivos já aplicados no c
 
 ## Evidência automatizada
 
-`npm run test:smoke` valida liveness, readiness, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 27 ações de marketplace, comunicação, atendimento, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
+`npm run test:smoke` valida liveness, readiness, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 30 ações de marketplace, comunicação, atendimento, disputa formal, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
 
 ## Próximos requisitos de produção
 

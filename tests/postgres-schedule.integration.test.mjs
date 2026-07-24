@@ -10,6 +10,7 @@ const databaseUrl = process.env.TEST_DATABASE_URL
 const actors = {
   customer: "00000000-0000-4000-8000-000000000101",
   provider: "00000000-0000-4000-8000-000000000201",
+  partner: "00000000-0000-4000-8000-000000000301",
   operation: "00000000-0000-4000-8000-000000000401",
 };
 
@@ -44,7 +45,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0044_operation_readiness_gates.sql',
         '0045_runtime_migration_visibility.sql',
         '0046_idempotent_marketplace_mutations.sql',
-        '0047_private_storage_reconciliation.sql'
+        '0047_private_storage_reconciliation.sql',
+        '0048_partner_support_disputes.sql'
       )
       ORDER BY name
     `);
@@ -55,6 +57,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0045_runtime_migration_visibility.sql",
       "0046_idempotent_marketplace_mutations.sql",
       "0047_private_storage_reconciliation.sql",
+      "0048_partner_support_disputes.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name
@@ -200,6 +203,112 @@ test("RLS expõe a reconciliação agregada somente para a Operação", async ()
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
+    await pool.end();
+  }
+});
+
+test("RLS isola a contestação formal e reserva a decisão à Operação", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    await withRollback(pool, async (client) => {
+      const disputeId = randomUUID();
+      const eventId = randomUUID();
+      const supportCaseId = "76000000-0000-4000-8000-000000000001";
+
+      await setActor(client, "operation", actors.operation);
+      await client.query(`
+        UPDATE partner_support_cases
+        SET
+          status = 'resolved',
+          assigned_to = $2,
+          resolution = 'Resolução sintética preparada para o teste de isolamento.',
+          resolved_at = now(),
+          updated_at = now()
+        WHERE id = $1
+      `, [supportCaseId, actors.operation]);
+
+      await setActor(client, "partner", actors.partner);
+      await client.query(`
+        INSERT INTO partner_support_disputes (
+          id,
+          public_code,
+          case_id,
+          partner_id,
+          reason,
+          statement
+        ) VALUES (
+          $1,
+          $2,
+          $3,
+          $4,
+          'evidence_not_considered',
+          'Contestação sintética criada para validar as fronteiras de acesso.'
+        )
+      `, [
+        disputeId,
+        `DP-${disputeId.slice(0, 6).toUpperCase()}`,
+        supportCaseId,
+        actors.partner,
+      ]);
+      await client.query(`
+        INSERT INTO partner_support_dispute_events (
+          id,
+          dispute_id,
+          actor_id,
+          event_type,
+          from_status,
+          to_status,
+          body
+        ) VALUES (
+          $1,
+          $2,
+          $3,
+          'opened',
+          NULL,
+          'open',
+          'Contestação sintética criada para validar as fronteiras de acesso.'
+        )
+      `, [eventId, disputeId, actors.partner]);
+
+      await setActor(client, "customer", actors.customer);
+      const customerView = await client.query(
+        "SELECT count(*)::int AS count FROM partner_support_disputes WHERE id = $1",
+        [disputeId],
+      );
+      assert.equal(customerView.rows[0].count, 0);
+
+      await setActor(client, "partner", actors.partner);
+      const partnerView = await client.query(
+        "SELECT count(*)::int AS count FROM partner_support_disputes WHERE id = $1",
+        [disputeId],
+      );
+      assert.equal(partnerView.rows[0].count, 1);
+      const partnerDecision = await client.query(`
+        UPDATE partner_support_disputes
+        SET
+          status = 'in_review',
+          assigned_to = $2,
+          reviewed_at = now(),
+          updated_at = now()
+        WHERE id = $1
+        RETURNING id
+      `, [disputeId, actors.operation]);
+      assert.equal(partnerDecision.rowCount, 0);
+
+      await setActor(client, "operation", actors.operation);
+      const operationDecision = await client.query(`
+        UPDATE partner_support_disputes
+        SET
+          status = 'in_review',
+          assigned_to = $2,
+          reviewed_at = now(),
+          updated_at = now()
+        WHERE id = $1
+        RETURNING id
+      `, [disputeId, actors.operation]);
+      assert.equal(operationDecision.rowCount, 1);
+    });
+  } finally {
     await pool.end();
   }
 });

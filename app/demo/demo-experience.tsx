@@ -294,6 +294,40 @@ interface SupportCaseDetail extends SupportCase {
 type PartnerSupportTopic = "referral" | "account" | "finance_sandbox" | "other";
 type PartnerSupportStatus = "open" | "in_review" | "resolved";
 type PartnerSupportSlaState = "pending" | "met" | "breached";
+type PartnerSupportDisputeReason =
+  | "resolution_incomplete"
+  | "evidence_not_considered"
+  | "commercial_divergence"
+  | "other";
+type PartnerSupportDisputeStatus = "open" | "in_review" | "upheld" | "rejected";
+
+interface PartnerSupportDisputeEvent {
+  id: string;
+  eventType: "opened" | "status_changed";
+  fromStatus: PartnerSupportDisputeStatus | null;
+  toStatus: PartnerSupportDisputeStatus;
+  body: string;
+  createdAt: string;
+  actorName: string;
+  actorRole: "partner" | "operation";
+}
+
+interface PartnerSupportDispute {
+  id: string;
+  publicCode: string;
+  reason: PartnerSupportDisputeReason;
+  statement: string;
+  status: PartnerSupportDisputeStatus;
+  assignedToId: string | null;
+  assignedToName: string | null;
+  decision: string | null;
+  openedAt: string;
+  reviewedAt: string | null;
+  decidedAt: string | null;
+  updatedAt: string;
+  eventCount: number;
+  events?: PartnerSupportDisputeEvent[];
+}
 
 interface PartnerSupportCase {
   id: string;
@@ -326,6 +360,7 @@ interface PartnerSupportCase {
   latestEventAt: string | null;
   latestActorName: string | null;
   latestActorRole: "partner" | "operation" | null;
+  dispute: PartnerSupportDispute | null;
   eventCount: number;
 }
 
@@ -371,6 +406,7 @@ interface PartnerSupportData {
     waitingOperationCount: number;
     unassignedCount: number;
     slaBreachedCount: number;
+    activeDisputeCount: number;
   };
   referrals: PartnerSupportReferral[];
   operators: Array<{ id: string; publicCode: string; displayName: string }>;
@@ -3798,6 +3834,20 @@ const partnerSupportStatusLabel: Record<PartnerSupportStatus, string> = {
   resolved: "Resolvido",
 };
 
+const partnerSupportDisputeReasonLabel: Record<PartnerSupportDisputeReason, string> = {
+  resolution_incomplete: "Solução incompleta",
+  evidence_not_considered: "Evidência não considerada",
+  commercial_divergence: "Divergência comercial",
+  other: "Outro motivo",
+};
+
+const partnerSupportDisputeStatusLabel: Record<PartnerSupportDisputeStatus, string> = {
+  open: "Contestação aberta",
+  in_review: "Em análise formal",
+  upheld: "Contestação acolhida",
+  rejected: "Decisão mantida",
+};
+
 function PartnerSupportCreateDialog({
   referrals,
   onClose,
@@ -3875,23 +3925,104 @@ function PartnerSupportCreateDialog({
   );
 }
 
+function PartnerSupportDisputeDialog({
+  caseId,
+  caseCode,
+  onClose,
+  onCreated,
+  notify,
+}: {
+  caseId: string;
+  caseCode: string;
+  onClose: () => void;
+  onCreated: () => void;
+  notify: (message: string) => void;
+}) {
+  const [reason, setReason] = useState<PartnerSupportDisputeReason>("resolution_incomplete");
+  const [statement, setStatement] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const pendingKey = useRef<{ fingerprint: string; key: string } | null>(null);
+
+  useEffect(() => { closeRef.current?.focus(); }, []);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalizedStatement = statement.trim();
+    if (normalizedStatement.length < 20) return;
+    const requestPayload = {
+      action: "dispute" as const,
+      caseId,
+      reason,
+      statement: normalizedStatement,
+    };
+    const fingerprint = JSON.stringify(requestPayload);
+    const idempotencyKey = pendingKey.current?.fingerprint === fingerprint
+      ? pendingKey.current.key
+      : crypto.randomUUID();
+    pendingKey.current = { fingerprint, key: idempotencyKey };
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/v1/partner/support", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKey,
+        },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as {
+        dispute?: { publicCode: string };
+        error?: string;
+        message?: string;
+      };
+      if (!response.ok || !payload.dispute) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível abrir a contestação.");
+      }
+      pendingKey.current = null;
+      notify(`${payload.dispute.publicCode} aberta para análise formal da Operação.`);
+      onCreated();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível abrir a contestação.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog partner-support-create support-dispute-dialog" data-testid="support-dispute-dialog" role="dialog" aria-modal="true" aria-labelledby="support-dispute-title">
+        <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar contestação">×</button>
+        <header><p className="dialog-kicker">REVISÃO FORMAL · {caseCode}</p><h2 id="support-dispute-title">Contestar resolução</h2><p>A Operação analisará o histórico completo. Uma única contestação pode ser aberta para este atendimento.</p></header>
+        <form onSubmit={submit}>
+          <label className="field"><span>Motivo da contestação</span><select value={reason} onChange={(event) => setReason(event.target.value as PartnerSupportDisputeReason)}>{Object.entries(partnerSupportDisputeReasonLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="field"><span>Por que a resolução deve ser revista?</span><textarea value={statement} minLength={20} maxLength={2000} onChange={(event) => setStatement(event.target.value)} placeholder="Explique os pontos da resolução, fatos ou evidências que precisam de nova análise." required /><small>{statement.trim().length}/2000</small></label>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Voltar</button><button type="submit" className="danger-action" disabled={submitting || statement.trim().length < 20}>{submitting ? "Registrando..." : "Abrir contestação formal"}</button></footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao"; notify: (message: string) => void }) {
   const endpoint = role === "parceiro" ? "/api/v1/partner/support" : "/api/v1/operation/support";
   const [data, setData] = useState<PartnerSupportData | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<PartnerSupportCaseDetail | null>(null);
   const [query, setQuery] = useState("");
-  const [caseFilter, setCaseFilter] = useState<"all" | PartnerSupportStatus | "sla">("all");
+  const [caseFilter, setCaseFilter] = useState<"all" | PartnerSupportStatus | "sla" | "dispute">("all");
   const [draft, setDraft] = useState("");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [transitionNote, setTransitionNote] = useState("");
   const [triagePriority, setTriagePriority] = useState<"normal" | "high">("normal");
   const [triageAssigneeId, setTriageAssigneeId] = useState("");
   const [triageNote, setTriageNote] = useState("");
+  const [disputeNote, setDisputeNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [disputeOpen, setDisputeOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
   const pendingSupportKeys = useRef(new Map<string, string>());
@@ -3969,7 +4100,9 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
     const matchesFilter = caseFilter === "all"
       || item.status === caseFilter
       || (caseFilter === "sla" && item.status !== "resolved"
-        && (item.firstResponseSla === "breached" || item.resolutionSla === "breached"));
+        && (item.firstResponseSla === "breached" || item.resolutionSla === "breached"))
+      || (caseFilter === "dispute" && item.dispute?.status !== undefined
+        && ["open", "in_review"].includes(item.dispute.status));
     return matchesQuery && matchesFilter;
   });
   const timestamp = (value: string | null) => value
@@ -4118,6 +4251,46 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
     }
   };
 
+  const transitionDispute = async (status: "in_review" | "upheld" | "rejected") => {
+    if (!selectedId || disputeNote.trim().length < 20) return;
+    const note = disputeNote.trim();
+    const mutationFingerprint = `dispute:${selectedId}:${status}:${note}`;
+    setSubmitting(true);
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": idempotencyKeyFor(mutationFingerprint),
+        },
+        body: JSON.stringify({
+          action: "dispute_transition",
+          caseId: selectedId,
+          disputeStatus: status,
+          note,
+        }),
+      });
+      const payload = await response.json() as {
+        dispute?: PartnerSupportDispute;
+        error?: string;
+        message?: string;
+      };
+      if (!response.ok || !payload.dispute) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a contestação.");
+      }
+      pendingSupportKeys.current.delete(mutationFingerprint);
+      setDisputeNote("");
+      refreshCenter();
+      notify(status === "in_review"
+        ? "Análise formal iniciada e registrada."
+        : "Decisão da contestação registrada e comunicada ao parceiro.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a contestação.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <>
       <DashboardHeader role={role} eyebrow={role === "operacao" ? "CENTRAL DE ATENDIMENTOS" : "SUPORTE DA REDE"} title={role === "operacao" ? "Cada solicitação, contexto e decisão em um só lugar." : "Fale com a Max sem perder o contexto da sua rede."}>
@@ -4128,14 +4301,15 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
         <article><small>{role === "operacao" ? "SEM RESPONSÁVEL" : "EM ANÁLISE"}</small><strong>{loading ? "…" : role === "operacao" ? data?.metrics.unassignedCount ?? 0 : data?.metrics.inReviewCount ?? 0}</strong><span>{role === "operacao" ? "Precisam de atribuição" : "Com a equipe Max"}</span></article>
         <article><small>{role === "operacao" ? "AGUARDANDO OPERAÇÃO" : "RESOLVIDOS"}</small><strong>{loading ? "…" : role === "operacao" ? data?.metrics.waitingOperationCount ?? 0 : data?.metrics.resolvedCount ?? 0}</strong><span>{role === "operacao" ? "Última mensagem do parceiro" : "Histórico disponível"}</span></article>
         <article className={(data?.metrics.slaBreachedCount ?? 0) > 0 ? "breached" : ""}><small>FORA DO PRAZO</small><strong>{loading ? "…" : data?.metrics.slaBreachedCount ?? 0}</strong><span>Política {data?.cases[0]?.slaPolicyVersion ?? "SUPPORT-SLA"}</span></article>
+        <article className={(data?.metrics.activeDisputeCount ?? 0) > 0 ? "dispute" : ""}><small>CONTESTAÇÕES</small><strong>{loading ? "…" : data?.metrics.activeDisputeCount ?? 0}</strong><span>Em análise formal</span></article>
       </section>
       <section className="partner-support-center">
         <aside className="partner-support-list">
-          <div className="partner-support-toolbar"><label><span>Buscar atendimento</span><input aria-label="Buscar atendimento" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === "operacao" ? "Código, parceiro ou assunto" : "Código, assunto ou indicação"} /></label><label><span>Filtrar fila</span><select aria-label="Filtrar atendimentos" value={caseFilter} onChange={(event) => setCaseFilter(event.target.value as typeof caseFilter)}><option value="all">Todos</option><option value="open">Abertos</option><option value="in_review">Em análise</option><option value="resolved">Resolvidos</option><option value="sla">Prazo excedido</option></select></label></div>
+          <div className="partner-support-toolbar"><label><span>Buscar atendimento</span><input aria-label="Buscar atendimento" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={role === "operacao" ? "Código, parceiro ou assunto" : "Código, assunto ou indicação"} /></label><label><span>Filtrar fila</span><select aria-label="Filtrar atendimentos" value={caseFilter} onChange={(event) => setCaseFilter(event.target.value as typeof caseFilter)}><option value="all">Todos</option><option value="open">Abertos</option><option value="in_review">Em análise</option><option value="resolved">Resolvidos</option><option value="sla">Prazo excedido</option><option value="dispute">Com contestação</option></select></label></div>
           <div>
             {loading && <div className="data-state">Carregando atendimentos...</div>}
             {!loading && filteredCases.length === 0 && <div className="data-state"><strong>Nenhum atendimento encontrado.</strong><span>{role === "parceiro" ? "Abra uma solicitação para falar com a equipe Max." : "A fila está em dia."}</span></div>}
-            {filteredCases.map((item) => <button key={item.id} data-testid="support-case-record" data-case-code={item.publicCode} className={item.id === selectedId ? "active" : ""} onClick={() => { setAttachmentFile(null); if (item.id === selectedId) return; setDetail(null); setDetailLoading(true); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><div className={`support-sla-chip ${slaState(item)}`}>{slaLabel(item)}</div><footer><span>{role === "operacao" ? `${item.partnerName} · ${item.assignedToName ?? "sem responsável"}` : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
+            {filteredCases.map((item) => <button key={item.id} data-testid="support-case-record" data-case-code={item.publicCode} className={item.id === selectedId ? "active" : ""} onClick={() => { setAttachmentFile(null); if (item.id === selectedId) return; setDetail(null); setDetailLoading(true); setSelectedId(item.id); }}><header><strong>{item.publicCode}</strong><span className={`status-pill ${item.status === "resolved" ? "success" : item.status === "open" ? "warning" : "neutral"}`}>{partnerSupportStatusLabel[item.status]}</span></header><h3>{item.subject}</h3><p>{item.latestEventBody ?? partnerSupportTopicLabel[item.topic]}</p><div className="support-list-chips"><div className={`support-sla-chip ${slaState(item)}`}>{slaLabel(item)}</div>{item.dispute && <div className={`support-dispute-chip ${item.dispute.status}`}>{partnerSupportDisputeStatusLabel[item.dispute.status]}</div>}</div><footer><span>{role === "operacao" ? `${item.partnerName} · ${item.assignedToName ?? "sem responsável"}` : item.referralCode ?? partnerSupportTopicLabel[item.topic]}</span><time>{timestamp(item.latestEventAt ?? item.createdAt)}</time></footer></button>)}
           </div>
         </aside>
         <div className="partner-support-thread" data-testid="support-thread">
@@ -4179,6 +4353,51 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
                     </article>
                   ))}
                 {detail.resolution && <section className="support-resolution"><span>✓</span><div><small>RESOLUÇÃO REGISTRADA</small><strong>{detail.resolution}</strong><p>{detail.resolvedAt ? timestamp(detail.resolvedAt) : ""}</p></div></section>}
+                {detail.status === "resolved" && !detail.dispute && role === "parceiro" && (
+                  <section className="support-dispute-invite">
+                    <div><small>REVISÃO FORMAL</small><strong>A resolução não contemplou todos os pontos?</strong><p>Abra uma única contestação para que a Operação revise o histórico e registre uma decisão justificada.</p></div>
+                    <button className="danger-action" data-testid="open-support-dispute" onClick={() => setDisputeOpen(true)}>Contestar resolução</button>
+                  </section>
+                )}
+                {detail.dispute && (
+                  <section className={`support-dispute-panel ${detail.dispute.status}`} data-testid="support-dispute-panel">
+                    <header>
+                      <div><small>{detail.dispute.publicCode} · REVISÃO FORMAL</small><strong>{partnerSupportDisputeReasonLabel[detail.dispute.reason]}</strong></div>
+                      <span className={`support-dispute-status ${detail.dispute.status}`}>{partnerSupportDisputeStatusLabel[detail.dispute.status]}</span>
+                    </header>
+                    <blockquote>{detail.dispute.statement}</blockquote>
+                    <div className="support-dispute-events">
+                      {(detail.dispute.events ?? []).map((event) => (
+                        <article key={event.id}>
+                          <span>{event.eventType === "opened" ? "+" : "→"}</span>
+                          <div>
+                            <strong>{event.eventType === "opened"
+                              ? "Contestação registrada"
+                              : `${event.fromStatus ? partnerSupportDisputeStatusLabel[event.fromStatus] : ""} → ${partnerSupportDisputeStatusLabel[event.toStatus]}`}</strong>
+                            <p>{event.body}</p>
+                            <small>{event.actorName} · {timestamp(event.createdAt)}</small>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                    {detail.dispute.decision && (
+                      <div className="support-dispute-decision">
+                        <small>DECISÃO FORMAL</small>
+                        <strong>{detail.dispute.decision}</strong>
+                        <span>{detail.dispute.assignedToName ?? "Equipe Max"} · {timestamp(detail.dispute.decidedAt)}</span>
+                      </div>
+                    )}
+                    {role === "operacao" && ["open", "in_review"].includes(detail.dispute.status) && (
+                      <div className="support-dispute-transition">
+                        <div><small>ANÁLISE DA CONTESTAÇÃO</small><strong>{detail.dispute.status === "open" ? "Assuma a revisão antes de decidir." : "Registre uma decisão fundamentada e definitiva."}</strong></div>
+                        <label><span>Justificativa formal</span><textarea aria-label="Justificativa da contestação" minLength={20} maxLength={1000} value={disputeNote} onChange={(event) => setDisputeNote(event.target.value)} placeholder="Explique a análise do histórico e os fundamentos da decisão." /><small>{disputeNote.trim().length}/1000</small></label>
+                        {detail.dispute.status === "open"
+                          ? <button className="secondary-action" disabled={submitting || disputeNote.trim().length < 20} onClick={() => transitionDispute("in_review")}>{submitting ? "Salvando..." : "Iniciar análise formal"}</button>
+                          : <div className="support-dispute-actions"><button className="primary-action" disabled={submitting || disputeNote.trim().length < 20} onClick={() => transitionDispute("upheld")}>Acolher contestação</button><button className="danger-action" disabled={submitting || disputeNote.trim().length < 20} onClick={() => transitionDispute("rejected")}>Manter decisão</button></div>}
+                      </div>
+                    )}
+                  </section>
+                )}
                 <div ref={endRef} />
               </div>
               {detail.status !== "resolved" && (
@@ -4238,6 +4457,7 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
         </div>
       </section>
       {createOpen && <PartnerSupportCreateDialog referrals={data?.referrals ?? []} onClose={() => setCreateOpen(false)} onCreated={(caseId) => { setCreateOpen(false); setSelectedId(caseId); refreshCenter(); }} notify={notify} />}
+      {disputeOpen && detail && <PartnerSupportDisputeDialog caseId={detail.id} caseCode={detail.publicCode} onClose={() => setDisputeOpen(false)} onCreated={() => { setDisputeOpen(false); refreshCenter(); }} notify={notify} />}
     </>
   );
 }

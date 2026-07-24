@@ -48,3 +48,32 @@ export class TriagePartnerSupportCaseDto {
   @MaxLength(1000)
   note!: string;
 }
+
+export class CreatePartnerSupportDisputeDto {
+  @IsIn([
+    "resolution_incomplete",
+    "evidence_not_considered",
+    "commercial_divergence",
+    "other",
+  ])
+  reason!:
+    | "resolution_incomplete"
+    | "evidence_not_considered"
+    | "commercial_divergence"
+    | "other";
+
+  @IsString()
+  @MinLength(20)
+  @MaxLength(2000)
+  statement!: string;
+}
+
+export class ChangePartnerSupportDisputeStatusDto {
+  @IsIn(["in_review", "upheld", "rejected"])
+  status!: "in_review" | "upheld" | "rejected";
+
+  @IsString()
+  @MinLength(20)
+  @MaxLength(1000)
+  note!: string;
+}

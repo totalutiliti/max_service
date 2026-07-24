@@ -77,7 +77,7 @@ Uma rotina de expurgo/particionamento para registros expirados ainda deve ser de
 
 - testes unitários validam formato, JSON canônico, hash e vínculo da chave à assinatura interna;
 - teste integrado comprova RLS de leitura e conclusão;
-- smoke test dispara pares realmente concorrentes em 27 ações de marketplace, comunicação, atendimento, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados, confirma um único identificador e observa um replay em cada par;
+- smoke test dispara pares realmente concorrentes em 30 ações de marketplace, comunicação, atendimento, disputa formal, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados, confirma um único identificador e observa um replay em cada par;
 - o mesmo smoke reutiliza chaves JSON e binárias com conteúdo diferente e exige `409`;
 - o cockpit soma `idempotencyReplayCount` sem reter chave, corpo ou identidade.
 

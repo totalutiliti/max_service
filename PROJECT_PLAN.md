@@ -27,9 +27,10 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 
 ## Progresso implementado
 
-- Fases 1, 3 e 4 possuem jornadas persistentes demonstráveis no Docker local; o navegador executa automaticamente no CI a jornada cliente–profissional da criação do pedido à avaliação, o cancelamento com tratamento pela Operação, a indicação do Parceiro até a aprovação para onboarding e o atendimento compartilhado da rede até a resolução.
+- Fases 1, 3 e 4 possuem jornadas persistentes demonstráveis no Docker local; o navegador executa automaticamente no CI a jornada cliente–profissional da criação do pedido à avaliação, o cancelamento com tratamento pela Operação, a indicação do Parceiro até a aprovação para onboarding e o atendimento compartilhado da rede da abertura à resolução e à decisão de eventual contestação formal.
 - A Fase 4 já inclui rede do parceiro, captura pública por link/QR com consentimento, triagem operacional de indicações, central compartilhada de atendimento parceiro–Operação, fila interna de ocorrências, moderação manual de profissionais, atividade auditável pesquisável e gestão versionada do catálogo para a Operação.
 - A central da rede separa comunicação externa de notas internas, vincula opcionalmente cada caso a uma indicação do próprio parceiro, bloqueia mensagens após a resolução e restringe transições justificadas à Operação.
+- Uma resolução pode receber uma única contestação formal do parceiro; motivo, relato, análise e decisão acolhida ou mantida ficam em trilha append-only, com RLS, idempotência, notificação e auditoria.
 - A triagem da central distribui casos entre múltiplos operadores, permite elevar a prioridade e acompanha SLA versionado de primeira resposta e resolução, com atrasos preservados e visíveis para parceiro e Operação.
 - Mensagens da central aceitam um anexo privado sintético PDF/JPEG/PNG de até 2 MB, guardado no object storage com metadados relacionais, hash de integridade, RLS e auditoria de cada acesso.
 - O catálogo piloto é persistente e único para cliente, parceiro e captura pública; a Operação pode ordenar, ativar ou desativar categorias com justificativa, RLS, evento append-only e proteção contra catálogo vazio.

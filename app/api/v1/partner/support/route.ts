@@ -63,12 +63,14 @@ export async function POST(request: Request) {
   }
 
   const payload = await request.json() as {
-    action?: "create" | "message";
+    action?: "create" | "message" | "dispute";
     caseId?: string;
     topic?: "referral" | "account" | "finance_sandbox" | "other";
     subject?: string;
     body?: string;
     referralId?: string;
+    reason?: "resolution_incomplete" | "evidence_not_considered" | "commercial_divergence" | "other";
+    statement?: string;
   };
 
   if (payload.action === "create") {
@@ -85,6 +87,14 @@ export async function POST(request: Request) {
       request,
       "partner",
       { body: payload.body },
+    );
+  }
+  if (payload.action === "dispute" && payload.caseId) {
+    return proxyDemoRequest(
+      `/api/v1/partner/support/cases/${encodeURIComponent(payload.caseId)}/disputes`,
+      request,
+      "partner",
+      { reason: payload.reason, statement: payload.statement },
     );
   }
   return Response.json({ error: "Ação de atendimento inválida." }, { status: 400 });

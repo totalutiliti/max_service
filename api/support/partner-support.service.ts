@@ -62,6 +62,7 @@ const supportCaseSelect = `
       WHEN support.resolved_at IS NOT NULL THEN 'met'
       ELSE 'pending'
     END AS "resolutionSla",
+    dispute_record.dispute AS dispute,
     (SELECT count(*)::int FROM partner_support_events event WHERE event.case_id = support.id) AS "eventCount"
   FROM partner_support_cases support
   JOIN users partner ON partner.id = support.partner_id
@@ -75,6 +76,33 @@ const supportCaseSelect = `
     ORDER BY event.created_at DESC, event.id DESC
     LIMIT 1
   ) latest_event ON true
+  LEFT JOIN LATERAL (
+    SELECT
+      dispute.status,
+      jsonb_build_object(
+        'id', dispute.id,
+        'publicCode', dispute.public_code,
+        'reason', dispute.reason,
+        'statement', dispute.statement,
+        'status', dispute.status,
+        'assignedToId', dispute.assigned_to,
+        'assignedToName', dispute_assignee.display_name,
+        'decision', dispute.decision,
+        'openedAt', dispute.opened_at,
+        'reviewedAt', dispute.reviewed_at,
+        'decidedAt', dispute.decided_at,
+        'updatedAt', dispute.updated_at,
+        'eventCount', (
+          SELECT count(*)::int
+          FROM partner_support_dispute_events dispute_event
+          WHERE dispute_event.dispute_id = dispute.id
+        )
+      ) AS dispute
+    FROM partner_support_disputes dispute
+    LEFT JOIN users dispute_assignee ON dispute_assignee.id = dispute.assigned_to
+    WHERE dispute.case_id = support.id
+    LIMIT 1
+  ) dispute_record ON true
 `;
 
 @Injectable()
@@ -104,6 +132,10 @@ export class PartnerSupportService {
     return this.database.withActor(actor, async (client) => {
       const cases = await client.query(`${supportCaseSelect}
         ORDER BY
+          CASE
+            WHEN dispute_record.status IN ('open', 'in_review') THEN 0
+            ELSE 1
+          END,
           CASE
             WHEN support.status <> 'resolved'
               AND (
@@ -140,7 +172,12 @@ export class PartnerSupportService {
                 OR support.first_responded_at > support.first_response_due_at
                 OR now() > support.resolution_due_at
               )
-          )::int AS "slaBreachedCount"
+          )::int AS "slaBreachedCount",
+          (
+            SELECT count(*)::int
+            FROM partner_support_disputes dispute
+            WHERE dispute.status IN ('open', 'in_review')
+          ) AS "activeDisputeCount"
         FROM partner_support_cases support
         LEFT JOIN LATERAL (
           SELECT event.actor_id
@@ -226,7 +263,37 @@ export class PartnerSupportService {
         WHERE event.case_id = $1
         ORDER BY event.created_at, event.id
       `, [caseId]);
-      return { ...record.rows[0], events: events.rows };
+      const dispute = record.rows[0].dispute as { id: string } | null;
+      const disputeEvents = dispute
+        ? await client.query(`
+            SELECT
+              event.id,
+              event.event_type AS "eventType",
+              event.from_status AS "fromStatus",
+              event.to_status AS "toStatus",
+              event.body,
+              event.created_at AS "createdAt",
+              CASE
+                WHEN event.actor_id = dispute.partner_id THEN partner.display_name
+                ELSE COALESCE(actor.display_name, 'Equipe Max')
+              END AS "actorName",
+              CASE
+                WHEN event.actor_id = dispute.partner_id THEN 'partner'
+                ELSE 'operation'
+              END AS "actorRole"
+            FROM partner_support_dispute_events event
+            JOIN partner_support_disputes dispute ON dispute.id = event.dispute_id
+            JOIN users partner ON partner.id = dispute.partner_id
+            LEFT JOIN users actor ON actor.id = event.actor_id
+            WHERE event.dispute_id = $1
+            ORDER BY event.created_at, event.id
+          `, [dispute.id])
+        : { rows: [] };
+      return {
+        ...record.rows[0],
+        events: events.rows,
+        dispute: dispute ? { ...record.rows[0].dispute, events: disputeEvents.rows } : null,
+      };
     });
   }
 
@@ -777,6 +844,217 @@ export class PartnerSupportService {
         entityId: caseId,
       });
       return updated.rows[0];
+      });
+    });
+  }
+
+  async createDispute(
+    actor: Actor,
+    caseId: string,
+    reason:
+      | "resolution_incomplete"
+      | "evidence_not_considered"
+      | "commercial_divergence"
+      | "other",
+    rawStatement: string,
+    idempotencyKey: string | undefined,
+  ) {
+    this.ensureScope(actor, "partner");
+    const statement = this.normalizeText(
+      rawStatement,
+      20,
+      "Descreva a contestação com pelo menos 20 caracteres.",
+    );
+    return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/partner/support/cases/${caseId}/disputes`,
+        payload: { reason, statement },
+      }, async () => {
+        const supportCase = await client.query<{
+          id: string;
+          publicCode: string;
+          status: "open" | "in_review" | "resolved";
+        }>(`
+          SELECT id, public_code AS "publicCode", status
+          FROM partner_support_cases
+          WHERE id = $1
+        `, [caseId]);
+        if (!supportCase.rows[0]) {
+          throw new NotFoundException("Solicitação de atendimento não encontrada.");
+        }
+        if (supportCase.rows[0].status !== "resolved") {
+          throw new ConflictException("A contestação só pode ser aberta após a resolução do atendimento.");
+        }
+
+        const existing = await client.query(`
+          SELECT id
+          FROM partner_support_disputes
+          WHERE case_id = $1
+        `, [caseId]);
+        if (existing.rows[0]) {
+          throw new ConflictException("Este atendimento já possui uma contestação formal.");
+        }
+
+        const disputeId = randomUUID();
+        const publicCode = `DP-${randomUUID().replaceAll("-", "").slice(0, 6).toUpperCase()}`;
+        const created = await client.query(`
+          INSERT INTO partner_support_disputes (
+            id, public_code, case_id, partner_id, reason, statement
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (case_id) DO NOTHING
+          RETURNING
+            id,
+            public_code AS "publicCode",
+            reason,
+            statement,
+            status,
+            opened_at AS "openedAt",
+            updated_at AS "updatedAt"
+        `, [disputeId, publicCode, caseId, actor.id, reason, statement]);
+        if (!created.rows[0]) {
+          throw new ConflictException("Este atendimento já possui uma contestação formal.");
+        }
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO partner_support_dispute_events (
+            id, dispute_id, actor_id, event_type, from_status, to_status, body
+          ) VALUES ($1, $2, $3, 'opened', NULL, 'open', $4)
+        `, [eventId, disputeId, actor.id, statement]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_support_dispute.created', 'partner_support_dispute', $3, $4::jsonb)",
+          [actor.id, actor.role, disputeId, JSON.stringify({
+            publicCode,
+            caseId,
+            supportCaseCode: supportCase.rows[0].publicCode,
+            reason,
+            eventId,
+          })],
+        );
+        await createNotification(client, {
+          userId: "00000000-0000-4000-8000-000000000401",
+          actorId: actor.id,
+          type: "case_opened",
+          title: `Nova contestação · ${publicCode}`,
+          body: `Atendimento ${supportCase.rows[0].publicCode}: ${statement.slice(0, 400)}`,
+          entityType: "partner_support_case",
+          entityId: caseId,
+        });
+        return created.rows[0];
+      });
+    });
+  }
+
+  async changeDisputeStatus(
+    actor: Actor,
+    caseId: string,
+    status: "in_review" | "upheld" | "rejected",
+    rawNote: string,
+    idempotencyKey: string | undefined,
+  ) {
+    this.ensureScope(actor, "operation");
+    const note = this.normalizeText(
+      rawNote,
+      20,
+      "Registre uma justificativa com pelo menos 20 caracteres.",
+    );
+    return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/support/cases/${caseId}/disputes/transitions`,
+        payload: { status, note },
+      }, async () => {
+        const current = await client.query<{
+          id: string;
+          publicCode: string;
+          status: "open" | "in_review" | "upheld" | "rejected";
+          partnerId: string;
+          supportCaseCode: string;
+        }>(`
+          SELECT
+            dispute.id,
+            dispute.public_code AS "publicCode",
+            dispute.status,
+            dispute.partner_id AS "partnerId",
+            support.public_code AS "supportCaseCode"
+          FROM partner_support_disputes dispute
+          JOIN partner_support_cases support ON support.id = dispute.case_id
+          WHERE dispute.case_id = $1
+          FOR UPDATE OF dispute
+        `, [caseId]);
+        if (!current.rows[0]) {
+          throw new NotFoundException("Contestação formal não encontrada.");
+        }
+        if (current.rows[0].status === status) {
+          throw new ConflictException("A contestação já está neste estado.");
+        }
+        if (current.rows[0].status === "upheld" || current.rows[0].status === "rejected") {
+          throw new ConflictException("A contestação já recebeu uma decisão final.");
+        }
+        if (status === "in_review" && current.rows[0].status !== "open") {
+          throw new ConflictException("Somente contestações abertas podem entrar em análise.");
+        }
+        if (
+          (status === "upheld" || status === "rejected")
+          && current.rows[0].status !== "in_review"
+        ) {
+          throw new ConflictException("Inicie a análise antes de decidir a contestação.");
+        }
+
+        const updated = await client.query(`
+          UPDATE partner_support_disputes
+          SET
+            status = $2,
+            assigned_to = COALESCE(assigned_to, $3),
+            reviewed_at = COALESCE(reviewed_at, now()),
+            decision = CASE WHEN $2 IN ('upheld', 'rejected') THEN $4 ELSE NULL END,
+            decided_at = CASE WHEN $2 IN ('upheld', 'rejected') THEN now() ELSE NULL END,
+            updated_at = now()
+          WHERE id = $1
+          RETURNING
+            id,
+            public_code AS "publicCode",
+            reason,
+            statement,
+            status,
+            assigned_to AS "assignedToId",
+            decision,
+            opened_at AS "openedAt",
+            reviewed_at AS "reviewedAt",
+            decided_at AS "decidedAt",
+            updated_at AS "updatedAt"
+        `, [current.rows[0].id, status, actor.id, note]);
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO partner_support_dispute_events (
+            id, dispute_id, actor_id, event_type, from_status, to_status, body
+          ) VALUES ($1, $2, $3, 'status_changed', $4, $5, $6)
+        `, [eventId, current.rows[0].id, actor.id, current.rows[0].status, status, note]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'partner_support_dispute.status_changed', 'partner_support_dispute', $3, $4::jsonb)",
+          [actor.id, actor.role, current.rows[0].id, JSON.stringify({
+            publicCode: current.rows[0].publicCode,
+            caseId,
+            supportCaseCode: current.rows[0].supportCaseCode,
+            from: current.rows[0].status,
+            to: status,
+            eventId,
+          })],
+        );
+        await createNotification(client, {
+          userId: current.rows[0].partnerId,
+          actorId: actor.id,
+          type: "case_updated",
+          title: status === "in_review"
+            ? `Contestação em análise · ${current.rows[0].publicCode}`
+            : `Contestação decidida · ${current.rows[0].publicCode}`,
+          body: note.slice(0, 500),
+          entityType: "partner_support_case",
+          entityId: caseId,
+        });
+        return updated.rows[0];
       });
     });
   }

@@ -63,13 +63,14 @@ export async function POST(request: Request) {
   }
 
   const payload = await request.json() as {
-    action?: "message" | "transition" | "triage";
+    action?: "message" | "transition" | "triage" | "dispute_transition";
     caseId?: string;
     body?: string;
     status?: "in_review" | "resolved";
     priority?: "normal" | "high";
     assigneeId?: string;
     note?: string;
+    disputeStatus?: "in_review" | "upheld" | "rejected";
   };
   if (!payload.caseId) {
     return Response.json({ error: "caseId é obrigatório." }, { status: 400 });
@@ -96,6 +97,14 @@ export async function POST(request: Request) {
       request,
       "operation",
       { priority: payload.priority, assigneeId: payload.assigneeId, note: payload.note },
+    );
+  }
+  if (payload.action === "dispute_transition") {
+    return proxyDemoRequest(
+      `/api/v1/operation/support/cases/${encodeURIComponent(payload.caseId)}/disputes/transitions`,
+      request,
+      "operation",
+      { status: payload.disputeStatus, note: payload.note },
     );
   }
   return Response.json({ error: "Ação de atendimento inválida." }, { status: 400 });

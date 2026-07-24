@@ -66,6 +66,8 @@
 - a triagem segue `invited → in_review → approved | rejected`; aprovação significa aptidão para onboarding e não cria conta nem ativa automaticamente o profissional;
 - cada mudança da triagem exige justificativa e gera `partner_referral_events` append-only e `audit_events`; o parceiro consulta o status, mas os eventos internos são exclusivos da operação;
 - cada atendimento do parceiro pertence à sua rede, pode vincular somente uma indicação da mesma rede e aceita mensagens apenas enquanto não estiver resolvido;
+- cada atendimento resolvido aceita no máximo uma `partner_support_dispute`; somente o parceiro titular abre, e somente a Operação conduz `open → in_review → upheld | rejected`;
+- motivo, relato, responsável, decisão e instantes da disputa são consistentes por constraints; `partner_support_dispute_events` preserva abertura e transições justificadas em ordem append-only;
 - a Operação pode atribuir o atendimento apenas a um usuário operacional e elevar a prioridade de normal para alta, nunca reduzi-la durante o caso; cada mudança exige justificativa, evento append-only e auditoria;
 - a política `SUPPORT-SLA-2026-01` define primeira resposta/resolução em 4 h/48 h no fluxo normal e 1 h/8 h na prioridade alta; os prazos ficam persistidos e o primeiro prazo é preservado depois da resposta;
 - cada mensagem de atendimento aceita no máximo um anexo append-only PDF/JPEG/PNG sintético de 2 MB; evento, caso e autor são vinculados por chave estrangeira composta;

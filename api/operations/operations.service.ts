@@ -110,6 +110,8 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "partner_support_case.attachment_downloaded": { category: "operation", title: "Anexo de atendimento acessado", detail: "Download privado registrado na auditoria." },
   "partner_support_case.triaged": { category: "operation", title: "Triagem de atendimento", detail: "Prioridade, responsável e prazos operacionais atualizados com justificativa." },
   "partner_support_case.status_changed": { category: "operation", title: "Atendimento atualizado", detail: "Estado da solicitação do parceiro alterado com justificativa." },
+  "partner_support_dispute.created": { category: "growth", title: "Contestação formal aberta", detail: "Parceiro contestou a resolução de um atendimento." },
+  "partner_support_dispute.status_changed": { category: "operation", title: "Contestação atualizada", detail: "Análise ou decisão formal registrada pela Operação." },
   "marketing_campaign.created": { category: "growth", title: "Campanha criada", detail: "Nova regra promocional publicada pela Operação." },
   "marketing_campaign.status_changed": { category: "growth", title: "Campanha atualizada", detail: "Disponibilidade da campanha alterada com justificativa." },
   "marketing_campaign.reserved": { category: "growth", title: "Cupom reservado", detail: "Benefício promocional vinculado a um pedido." },
@@ -143,6 +145,7 @@ const auditEntityPrefix: Record<string, string> = {
   provider_matching: "MT",
   partner_support_case: "AT",
   partner_support_attachment: "AA",
+  partner_support_dispute: "DP",
   marketing_campaign: "CP",
   campaign_reservation: "CR",
   operation_report: "RP",
@@ -1797,6 +1800,7 @@ export class OperationsService {
                   'service_category.reordered',
                   'partner_support_case.triaged',
                   'partner_support_case.status_changed',
+                  'partner_support_dispute.status_changed',
                   'marketing_campaign.status_changed',
                   'operation_report_goals.updated'
                 )

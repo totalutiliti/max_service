@@ -22,6 +22,9 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | preferências/histórico de notificações | somente próprios | somente próprios | somente próprios | somente próprios | auditoria agregada |
 | indicações | nenhum | somente o próprio vínculo | somente a própria rede | visão completa | auditado |
 | eventos de revisão da indicação | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
+| atendimento da rede | nenhum | nenhum | somente os próprios casos e mensagens | visão completa e tratamento | auditado |
+| contestação formal | nenhum | nenhum | abre e consulta somente a própria | análise e decisão justificadas | auditado |
+| eventos da contestação | nenhum | nenhum | histórico da própria disputa | leitura e inclusão append-only | auditado |
 | categorias de serviço | ativas para novos pedidos; histórico referenciado | ativas e histórico referenciado | ativas para indicar; histórico da rede | leitura completa e alteração justificada | auditado |
 | eventos do catálogo | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
 | campanhas | somente ativas e vigentes para validar cupom | nenhum | nenhum | leitura, criação e mudança justificada | auditado |

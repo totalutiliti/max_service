@@ -41,7 +41,10 @@ As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace
   - triagem com responsável, prioridade e novos prazos;
   - início da análise;
   - resposta da Operação;
-  - resolução justificada e confirmação pelo parceiro.
+  - resolução justificada e confirmação pelo parceiro;
+  - abertura de contestação formal pelo parceiro;
+  - início da revisão pela Operação;
+  - decisão fundamentada e acompanhamento do desfecho pelo parceiro.
 
 A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. Os cenários transacionais geram títulos exclusivos a cada execução e não dependem de registros preexistentes.
 

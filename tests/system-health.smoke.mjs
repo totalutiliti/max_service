@@ -584,6 +584,45 @@ const resolvedResults = await concurrentJsonMutation(
 assert.equal(resolvedResults[0].case.id, resolvedResults[1].case.id);
 assert.equal(resolvedResults[0].case.status, "resolved");
 
+const disputeCreateResults = await concurrentJsonMutation(
+  "/api/v1/partner/support",
+  partnerCookie,
+  {
+    action: "dispute",
+    caseId: supportCaseId,
+    reason: "evidence_not_considered",
+    statement: "Contestação sintética concorrente para revisar as evidências registradas.",
+  },
+);
+assert.equal(disputeCreateResults[0].dispute.id, disputeCreateResults[1].dispute.id);
+assert.equal(disputeCreateResults[0].dispute.status, "open");
+
+const disputeReviewResults = await concurrentJsonMutation(
+  "/api/v1/operation/support",
+  operationCookie,
+  {
+    action: "dispute_transition",
+    caseId: supportCaseId,
+    disputeStatus: "in_review",
+    note: "Contestação sintética assumida para revisão operacional completa.",
+  },
+);
+assert.equal(disputeReviewResults[0].dispute.id, disputeReviewResults[1].dispute.id);
+assert.equal(disputeReviewResults[0].dispute.status, "in_review");
+
+const disputeDecisionResults = await concurrentJsonMutation(
+  "/api/v1/operation/support",
+  operationCookie,
+  {
+    action: "dispute_transition",
+    caseId: supportCaseId,
+    disputeStatus: "upheld",
+    note: "Contestação sintética acolhida após a revisão das evidências preservadas.",
+  },
+);
+assert.equal(disputeDecisionResults[0].dispute.id, disputeDecisionResults[1].dispute.id);
+assert.equal(disputeDecisionResults[0].dispute.status, "upheld");
+
 const bookingId = acceptanceResults[0].booking.bookingId;
 const startedBookingResults = await concurrentJsonMutation(
   "/api/v1/bookings",
@@ -734,7 +773,7 @@ assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
 assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
-assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 27, true);
+assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 30, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(

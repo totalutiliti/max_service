@@ -59,6 +59,10 @@ async function snapshot(pool) {
       UNION ALL
       SELECT 'bookings', count(*)::int FROM bookings
       UNION ALL
+      SELECT 'partner_support_disputes', count(*)::int FROM partner_support_disputes
+      UNION ALL
+      SELECT 'partner_support_dispute_events', count(*)::int FROM partner_support_dispute_events
+      UNION ALL
       SELECT 'operation_readiness_gates', count(*)::int FROM operation_readiness_gates
       UNION ALL
       SELECT 'operation_readiness_gate_events', count(*)::int FROM operation_readiness_gate_events

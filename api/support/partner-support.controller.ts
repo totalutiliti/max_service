@@ -22,7 +22,9 @@ import {
 import { maximumPartnerSupportAttachmentBytes } from "./partner-support-attachment-validation.js";
 import {
   AddPartnerSupportMessageDto,
+  ChangePartnerSupportDisputeStatusDto,
   ChangePartnerSupportStatusDto,
+  CreatePartnerSupportDisputeDto,
   CreatePartnerSupportCaseDto,
   TriagePartnerSupportCaseDto,
 } from "./partner-support.dto.js";
@@ -135,6 +137,26 @@ export class PartnerSupportController {
     );
     setPrivateFileHeaders(response, file.originalName, file.contentType, file.bytes.length, "inline");
     return new StreamableFile(file.bytes);
+  }
+
+  @Post("cases/:caseId/disputes")
+  async createDispute(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
+    @Body() input: CreatePartnerSupportDisputeDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const result = await this.support.createDispute(
+      actorFromHeaders(role, id),
+      caseId,
+      input.reason,
+      input.statement,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { dispute: result.value };
   }
 }
 
@@ -265,5 +287,25 @@ export class OperationSupportController {
     );
     response.setHeader("idempotency-replayed", String(result.replayed));
     return { case: result.value };
+  }
+
+  @Post("cases/:caseId/disputes/transitions")
+  async changeDisputeStatus(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
+    @Body() input: ChangePartnerSupportDisputeStatusDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const result = await this.support.changeDisputeStatus(
+      actorFromHeaders(role, id),
+      caseId,
+      input.status,
+      input.note,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { dispute: result.value };
   }
 }

@@ -25,9 +25,15 @@ async function sessionCookie(role) {
   return setCookie.split(";", 1)[0];
 }
 
-const liveness = await json(await fetch(`${apiBaseUrl}/health/live`));
+const livenessResponse = await fetch(`${apiBaseUrl}/health/live`);
+assert.match(
+  livenessResponse.headers.get("x-request-id") ?? "",
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+);
+const liveness = await json(livenessResponse);
 assert.equal(liveness.status, "ok");
 assert.equal(liveness.service, "max-service-api");
+assert.equal(liveness.telemetry, undefined);
 
 const readiness = await json(await fetch(`${apiBaseUrl}/health/ready`));
 assert.equal(readiness.status, "ready");
@@ -36,16 +42,7 @@ assert.deepEqual(
   ["runtime", "database", "migrations", "storage"],
 );
 assert.equal(readiness.checks.every((check) => check.status === "healthy"), true);
-
-const operationCookie = await sessionCookie("operacao");
-const operationHealth = await json(await fetch(
-  `${webBaseUrl}/api/v1/operation/system-health`,
-  { headers: { cookie: operationCookie } },
-));
-assert.equal(operationHealth.summary.localTrafficReady, true);
-assert.equal(operationHealth.summary.productionAuthorized, false);
-assert.equal(operationHealth.summary.criticalCount, 0);
-assert.equal(operationHealth.checks.some((check) => check.id === "payments"), true);
+assert.equal(readiness.telemetry, undefined);
 
 const customerCookie = await sessionCookie("cliente");
 const forbidden = await fetch(`${webBaseUrl}/api/v1/operation/system-health`, {
@@ -61,9 +58,35 @@ const unsigned = await fetch(`${apiBaseUrl}/api/v1/operation/system-health`, {
 });
 assert.equal(unsigned.status, 401);
 
+const operationCookie = await sessionCookie("operacao");
+const operationHealthResponse = await fetch(
+  `${webBaseUrl}/api/v1/operation/system-health`,
+  { headers: { cookie: operationCookie } },
+);
+assert.match(
+  operationHealthResponse.headers.get("x-request-id") ?? "",
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+);
+const operationHealth = await json(operationHealthResponse);
+assert.equal(operationHealth.summary.localTrafficReady, true);
+assert.equal(operationHealth.summary.productionAuthorized, false);
+assert.equal(operationHealth.summary.criticalCount, 0);
+assert.equal(operationHealth.checks.some((check) => check.id === "payments"), true);
+assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01");
+assert.equal(operationHealth.telemetry.probeCount >= 2, true);
+assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
+assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
+assert.equal(
+  operationHealth.telemetry.topRoutes.every(
+    (route) => !route.route.includes("?") && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(route.route),
+  ),
+  true,
+);
+
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "operation_cockpit", "role_boundary", "signed_channel"],
+  probes: ["liveness", "readiness", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
+  telemetryRequests: operationHealth.telemetry.requestCount,
 }, null, 2));

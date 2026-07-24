@@ -92,6 +92,7 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 
 - API viva: `http://127.0.0.1:3001/health/live`
 - API pronta para tráfego local: `http://127.0.0.1:3001/health/ready`
+- cockpit autenticado em **Operação → Conta**, com dependências e telemetria local dos últimos cinco minutos;
 - PostgreSQL local: `127.0.0.1:54329`
 - armazenamento privado S3: `127.0.0.1:59000` (API) e `127.0.0.1:59001` (console local);
 - serviços: `database`, `storage`, `api` e `web`;

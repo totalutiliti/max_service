@@ -498,6 +498,27 @@ interface OperationSystemHealthData {
     trafficBlocking: boolean;
     productionBlocking: boolean;
   }>;
+  telemetry: {
+    policyVersion: string;
+    processStartedAt: string;
+    retainedSamples: number;
+    windowMinutes: number;
+    requestCount: number;
+    probeCount: number;
+    rejected4xxCount: number;
+    error5xxCount: number;
+    slowCount: number;
+    averageLatencyMs: number;
+    p95LatencyMs: number;
+    topRoutes: Array<{
+      method: string;
+      route: string;
+      requestCount: number;
+      averageLatencyMs: number;
+      errorCount: number;
+    }>;
+    note: string;
+  };
 }
 
 type OperationReadinessStatus = "blocked" | "in_progress" | "evidence_ready";
@@ -4859,6 +4880,38 @@ function OperationSystemHealthPanel({ notify }: { notify: (message: string) => v
         <article><small>CRÍTICOS</small><strong>{data.summary.criticalCount}</strong><span>bloqueiam tráfego</span></article>
         <article><small>GATES DE PRODUÇÃO</small><strong>{data.summary.productionBlockers}</strong><span>ainda pendentes</span></article>
       </div>
+      <section className="system-telemetry">
+        <header>
+          <div>
+            <small>TRÁFEGO · ÚLTIMOS {data.telemetry.windowMinutes} MINUTOS</small>
+            <h3>Telemetria desta réplica</h3>
+          </div>
+          <span>{data.telemetry.policyVersion}</span>
+        </header>
+        <div className="system-telemetry-metrics">
+          <article><small>REQUISIÇÕES</small><strong>{data.telemetry.requestCount}</strong><span>probes separados: {data.telemetry.probeCount}</span></article>
+          <article><small>LATÊNCIA MÉDIA</small><strong>{data.telemetry.averageLatencyMs} ms</strong><span>p95: {data.telemetry.p95LatencyMs} ms</span></article>
+          <article><small>REJEIÇÕES 4XX</small><strong>{data.telemetry.rejected4xxCount}</strong><span>acesso ou entrada recusada</span></article>
+          <article><small>ERROS 5XX</small><strong>{data.telemetry.error5xxCount}</strong><span>lentas ≥ 1 s: {data.telemetry.slowCount}</span></article>
+        </div>
+        <div className="system-telemetry-routes">
+          <div className="system-telemetry-routes-head">
+            <strong>Rotas mais acessadas</strong>
+            <span>IDs e parâmetros removidos antes da agregação</span>
+          </div>
+          {data.telemetry.topRoutes.length === 0 ? (
+            <p className="system-telemetry-empty">Ainda não há tráfego de aplicação nesta janela.</p>
+          ) : data.telemetry.topRoutes.map((route) => (
+            <article key={`${route.method}:${route.route}`}>
+              <span>{route.method}</span>
+              <code>{route.route}</code>
+              <strong>{route.requestCount}</strong>
+              <small>{route.averageLatencyMs} ms · {route.errorCount} erro(s)</small>
+            </article>
+          ))}
+        </div>
+        <footer>{data.telemetry.note} Nenhuma query string, payload ou identidade individual é coletada.</footer>
+      </section>
       <div className="system-health-checks">
         {data.checks.map((check) => (
           <article key={check.id} className={check.status}>

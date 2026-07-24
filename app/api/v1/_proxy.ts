@@ -29,10 +29,10 @@ export async function proxyDemoRequest(
     });
     return new Response(await response.text(), {
       status: response.status,
-      headers: {
+      headers: forwardedHeaders(response, {
         "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8",
         "cache-control": "no-store",
-      },
+      }),
     });
   } catch {
     return Response.json(
@@ -62,7 +62,10 @@ export async function proxyDemoBinaryRequest(
     const response = await fetch(`${apiUrl()}${path}`, { method: request.method, headers, body, cache: "no-store" });
     return new Response(await response.text(), {
       status: response.status,
-      headers: { "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8", "cache-control": "no-store" },
+      headers: forwardedHeaders(response, {
+        "content-type": response.headers.get("content-type") ?? "application/json; charset=utf-8",
+        "cache-control": "no-store",
+      }),
     });
   } catch {
     return Response.json({ error: "O armazenamento privado está temporariamente indisponível." }, { status: 503 });
@@ -81,8 +84,10 @@ export async function proxyDemoDownloadRequest(path: string, request: Request, r
     });
     const disposition = response.headers.get("content-disposition");
     const length = response.headers.get("content-length");
+    const requestId = response.headers.get("x-request-id");
     if (disposition) headers.set("content-disposition", disposition);
     if (length) headers.set("content-length", length);
+    if (requestId) headers.set("x-request-id", requestId);
     return new Response(response.body, { status: response.status, headers });
   } catch {
     return Response.json({ error: "O arquivo privado está temporariamente indisponível." }, { status: 503 });
@@ -106,4 +111,11 @@ async function authorize(path: string, request: Request, role: AllowedDemoRole):
 
 export function proxyCustomerRequest(path: string, request: Request, payload?: unknown) {
   return proxyDemoRequest(path, request, "customer", payload);
+}
+
+function forwardedHeaders(response: Response, initial: HeadersInit) {
+  const headers = new Headers(initial);
+  const requestId = response.headers.get("x-request-id");
+  if (requestId) headers.set("x-request-id", requestId);
+  return headers;
 }

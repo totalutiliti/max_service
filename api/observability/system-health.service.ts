@@ -8,8 +8,9 @@ import {
   summarizeSystemHealth,
   type SystemHealthCheck,
 } from "./system-health.js";
+import { RequestTelemetryService } from "./request-telemetry.service.js";
 
-interface SystemHealthReport {
+interface DependencyHealthReport {
   policyVersion: string;
   checkedAt: string;
   uptimeSeconds: number;
@@ -19,12 +20,13 @@ interface SystemHealthReport {
 
 @Injectable()
 export class SystemHealthService {
-  private cached: { expiresAt: number; report: SystemHealthReport } | null = null;
-  private inspection: Promise<SystemHealthReport> | null = null;
+  private cached: { expiresAt: number; report: DependencyHealthReport } | null = null;
+  private inspection: Promise<DependencyHealthReport> | null = null;
 
   constructor(
     private readonly database: DatabaseService,
     private readonly storage: PrivateObjectStorageService,
+    private readonly telemetry: RequestTelemetryService,
   ) {}
 
   liveness() {
@@ -36,7 +38,15 @@ export class SystemHealthService {
     };
   }
 
-  inspect() {
+  async inspect() {
+    const report = await this.inspectDependencies();
+    return {
+      ...report,
+      telemetry: this.telemetry.snapshot(),
+    };
+  }
+
+  private inspectDependencies() {
     if (this.cached && this.cached.expiresAt > Date.now()) {
       return Promise.resolve(this.cached.report);
     }
@@ -53,7 +63,7 @@ export class SystemHealthService {
     return this.inspection;
   }
 
-  private async buildReport(): Promise<SystemHealthReport> {
+  private async buildReport(): Promise<DependencyHealthReport> {
     const checks = await Promise.all([
       this.databaseCheck(),
       this.migrationsCheck(),

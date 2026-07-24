@@ -935,6 +935,29 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
 .system-health-summary small { color: #728075; font-size: .47rem; font-weight: 850; letter-spacing: .08em; }
 .system-health-summary strong { font-size: 1.3rem; line-height: 1; }
 .system-health-summary span { color: var(--muted); font-size: .5rem; }
+.system-telemetry { border-bottom: 1px solid #dfe6dd; background: #f2f6f0; }
+.system-telemetry > header { padding: .9rem 1.15rem .7rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.system-telemetry > header > div { display: grid; gap: .16rem; }
+.system-telemetry > header small { color: #4f7e26; font-size: .46rem; font-weight: 850; letter-spacing: .08em; }
+.system-telemetry > header h3 { margin: 0; font-size: .8rem; }
+.system-telemetry > header > span { color: #748078; font: 750 .44rem var(--font-geist-mono), monospace; }
+.system-telemetry-metrics { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid #dfe6dd; border-bottom: 1px solid #dfe6dd; background: var(--white); }
+.system-telemetry-metrics article { min-width: 0; padding: .72rem 1rem; border-right: 1px solid #e1e7df; display: grid; gap: .13rem; }
+.system-telemetry-metrics article:last-child { border-right: 0; }
+.system-telemetry-metrics small { color: #718076; font-size: .44rem; font-weight: 850; letter-spacing: .07em; }
+.system-telemetry-metrics strong { font-size: .92rem; }
+.system-telemetry-metrics span { color: var(--muted); font-size: .47rem; }
+.system-telemetry-routes { padding: .75rem 1.15rem; display: grid; gap: .38rem; }
+.system-telemetry-routes-head { margin-bottom: .08rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.system-telemetry-routes-head strong { font-size: .58rem; }
+.system-telemetry-routes-head span { color: #77837a; font-size: .45rem; }
+.system-telemetry-routes article { min-width: 0; padding: .48rem .55rem; border: 1px solid #dfe6dd; border-radius: 8px; background: rgba(255,255,255,.72); display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px 105px; align-items: center; gap: .55rem; }
+.system-telemetry-routes article > span { color: #427020; font: 850 .44rem var(--font-geist-mono), monospace; }
+.system-telemetry-routes article code { min-width: 0; overflow: hidden; color: #38433b; font-size: .49rem; text-overflow: ellipsis; white-space: nowrap; }
+.system-telemetry-routes article strong { text-align: right; font-size: .57rem; }
+.system-telemetry-routes article small { color: #77837a; font-size: .44rem; text-align: right; }
+.system-telemetry-empty { margin: 0; padding: .75rem; border: 1px dashed #cfd8cc; border-radius: 8px; color: #758078; font-size: .51rem; text-align: center; }
+.system-telemetry > footer { padding: .65rem 1.15rem; border-top: 1px solid #dfe6dd; color: #748078; font-size: .46rem; line-height: 1.45; }
 .system-health-checks { padding: 1rem 1.15rem; background: #f7f9f6; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
 .system-health-checks article { min-width: 0; padding: .78rem; border: 1px solid #dce4da; border-radius: 12px; background: var(--white); box-shadow: inset 3px 0 #73b834; display: grid; gap: .55rem; }
 .system-health-checks article.attention { box-shadow: inset 3px 0 #dfa63c; }
@@ -1493,6 +1516,9 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .system-health-summary { grid-template-columns: repeat(2, 1fr); }
   .system-health-summary article:nth-child(2) { border-right: 0; }
   .system-health-summary article:nth-child(-n+2) { border-bottom: 1px solid #e1e7df; }
+  .system-telemetry-metrics { grid-template-columns: repeat(2, 1fr); }
+  .system-telemetry-metrics article:nth-child(2) { border-right: 0; }
+  .system-telemetry-metrics article:nth-child(-n+2) { border-bottom: 1px solid #e1e7df; }
   .readiness-metrics { grid-template-columns: repeat(2, 1fr); }
   .readiness-metrics article:nth-child(2) { border-right: 0; }
   .readiness-metrics article:nth-child(-n+2) { border-bottom: 1px solid #e4e9e2; }
@@ -1658,6 +1684,8 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .plan-price { justify-items: start; }
   .system-health-panel > header { align-items: flex-start; }
   .system-health-checks { grid-template-columns: 1fr; }
+  .system-telemetry-routes article { grid-template-columns: 42px minmax(0, 1fr) 28px; }
+  .system-telemetry-routes article small { grid-column: 2 / -1; text-align: left; }
   .system-health-policy { align-items: flex-start; flex-direction: column; }
   .readiness-panel > header { align-items: flex-start; }
   .readiness-gates { grid-template-columns: 1fr; }
@@ -1744,6 +1772,12 @@ footer { padding: 1.7rem clamp(1rem, 6vw, 6rem); background: var(--ink); color: 
   .account-profile > button { grid-column: 1 / -1; }
   .system-health-panel > header { flex-direction: column; }
   .system-health-header-action { width: 100%; justify-items: start; }
+  .system-telemetry > header, .system-telemetry-routes-head { align-items: flex-start; flex-direction: column; }
+  .system-telemetry-metrics { grid-template-columns: 1fr; }
+  .system-telemetry-metrics article { border-right: 0; border-bottom: 1px solid #e1e7df; }
+  .system-telemetry-metrics article:last-child { border-bottom: 0; }
+  .system-telemetry-metrics article:nth-child(2) { border-right: 0; }
+  .system-telemetry-metrics article:nth-child(-n+2) { border-bottom: 1px solid #e1e7df; }
   .readiness-panel > header { flex-direction: column; }
   .readiness-score { width: 96px; height: 96px; }
   .readiness-editor-grid { grid-template-columns: 1fr; }

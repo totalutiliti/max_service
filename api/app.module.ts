@@ -19,6 +19,8 @@ import { PushDeliveryService } from "./notifications/push-delivery.service.js";
 import { OnboardingController } from "./onboarding/onboarding.controller.js";
 import { OnboardingService } from "./onboarding/onboarding.service.js";
 import { ObservabilityController } from "./observability/observability.controller.js";
+import { RequestTelemetryMiddleware } from "./observability/request-telemetry.middleware.js";
+import { RequestTelemetryService } from "./observability/request-telemetry.service.js";
 import { SystemHealthService } from "./observability/system-health.service.js";
 import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
@@ -32,10 +34,10 @@ import { VerificationsService } from "./verifications/verifications.service.js";
 
 @Module({
   controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(InternalAuthMiddleware).forRoutes("*");
+    consumer.apply(RequestTelemetryMiddleware, InternalAuthMiddleware).forRoutes("*");
   }
 }

@@ -45,6 +45,10 @@ As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace
   - abertura de contestação formal pelo parceiro;
   - início da revisão pela Operação;
   - decisão fundamentada e acompanhamento do desfecho pelo parceiro.
+- jornada operacional de campanha:
+  - leitura do monitor de abuso agregado e da ressalva contra decisão automática;
+  - criação auditável de campanha por categoria, região e consentimento;
+  - confirmação do público e da saúde da campanha na listagem.
 
 A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. Os cenários transacionais geram títulos exclusivos a cada execução e não dependem de registros preexistentes.
 
@@ -79,6 +83,12 @@ Para executar somente a jornada de atendimento da rede:
 
 ```bash
 npm run test:e2e -- tests/e2e/support-operations.spec.ts
+```
+
+Para executar somente a jornada de campanhas:
+
+```bash
+npm run test:e2e -- tests/e2e/campaign-operations.spec.ts
 ```
 
 ## Diagnóstico e limite

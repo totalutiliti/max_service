@@ -543,6 +543,78 @@ assert.match(limitedCapture?.headers.get("retry-after") ?? "", /^\d+$/);
 assert.equal((await limitedCapture?.json()).code, "RATE_LIMITED");
 
 const operationCookie = await sessionCookie("operacao");
+const campaignCode = `CTX${Date.now().toString(36).toUpperCase()}`;
+const campaignCreateResponse = await fetch(`${webBaseUrl}/api/v1/operation/campaigns`, {
+  method: "POST",
+  headers: {
+    cookie: operationCookie,
+    "content-type": "application/json",
+    "idempotency-key": randomUUID(),
+  },
+  body: JSON.stringify({
+    action: "create",
+    campaign: {
+      name: "Campanha contextual sintética",
+      code: campaignCode,
+      description: "Benefício sintético segmentado para validar contexto e monitoramento.",
+      discountType: "fixed",
+      discountValue: 1_000,
+      minAmountCents: 5_000,
+      totalRedemptionLimit: 20,
+      perCustomerLimit: 1,
+      targetingMode: "contextual",
+      targetCategoryId: category.id,
+      targetRegionId: region.id,
+      startsAt: new Date(Date.now() - 60_000).toISOString(),
+      endsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+      note: "Campanha sintética criada pelo smoke test para validar segmentação contextual.",
+    },
+  }),
+});
+const createdCampaign = await json(campaignCreateResponse);
+assert.equal(createdCampaign.campaign.targetingMode, "contextual");
+assert.equal(createdCampaign.campaign.targetCategoryId, category.id);
+assert.equal(createdCampaign.campaign.targetRegionId, region.id);
+
+const otherCategory = categories.categories.find((item) => item.id !== category.id);
+assert.ok(otherCategory, "O catálogo precisa de uma segunda categoria para testar a segmentação.");
+const outsideSegmentResponse = await fetch(`${webBaseUrl}/api/v1/campaigns`, {
+  method: "POST",
+  headers: { cookie: customerCookie, "content-type": "application/json" },
+  body: JSON.stringify({
+    code: campaignCode,
+    categoryId: otherCategory.id,
+    regionId: region.id,
+  }),
+});
+assert.equal(outsideSegmentResponse.status, 409);
+assert.match(JSON.stringify(await outsideSegmentResponse.json()), /categoria ou regiÃ£o|categoria ou região/i);
+
+const acceptedCampaign = await json(await fetch(`${webBaseUrl}/api/v1/campaigns`, {
+  method: "POST",
+  headers: { cookie: customerCookie, "content-type": "application/json" },
+  body: JSON.stringify({
+    code: campaignCode,
+    categoryId: category.id,
+    regionId: region.id,
+  }),
+}));
+assert.equal(acceptedCampaign.offer.code, campaignCode);
+assert.equal(acceptedCampaign.offer.targetingMode, "contextual");
+assert.match(acceptedCampaign.offer.consentBasis, /sem perfil comportamental/i);
+
+const campaignReport = await json(await fetch(
+  `${webBaseUrl}/api/v1/operation/campaigns`,
+  { headers: { cookie: operationCookie } },
+));
+const monitoredCampaign = campaignReport.campaigns.find((item) => item.code === campaignCode);
+assert.ok(monitoredCampaign, "A campanha sintética precisa aparecer no relatório operacional.");
+assert.equal(monitoredCampaign.validationCount24h >= 2, true);
+assert.equal(monitoredCampaign.outsideSegmentCount24h >= 1, true);
+assert.equal(campaignReport.monitoring.attemptCount24h >= 2, true);
+assert.equal(Array.isArray(campaignReport.catalog.categories), true);
+assert.equal(Array.isArray(campaignReport.catalog.regions), true);
+
 const riskDetail = await json(await fetch(
   `${webBaseUrl}/api/v1/operation/referrals?referralId=${encodeURIComponent(riskReferral.referral.id)}`,
   { headers: { cookie: operationCookie } },

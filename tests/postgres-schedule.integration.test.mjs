@@ -47,7 +47,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0046_idempotent_marketplace_mutations.sql',
         '0047_private_storage_reconciliation.sql',
         '0048_partner_support_disputes.sql',
-        '0049_partner_referral_risk_assessments.sql'
+        '0049_partner_referral_risk_assessments.sql',
+        '0050_campaign_targeting_monitoring.sql'
       )
       ORDER BY name
     `);
@@ -60,6 +61,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0047_private_storage_reconciliation.sql",
       "0048_partner_support_disputes.sql",
       "0049_partner_referral_risk_assessments.sql",
+      "0050_campaign_targeting_monitoring.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name
@@ -99,6 +101,82 @@ test("RLS isola agenda e gates de prontidão por papel", async () => {
       await setActor(client, "operation", actors.operation);
       const operationGates = await client.query("SELECT count(*)::int AS count FROM operation_readiness_gates");
       assert.equal(operationGates.rows[0].count, 8);
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("RLS protege tentativas de cupom e expõe somente o estado agregado ao cliente atual", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    await withRollback(pool, async (client) => {
+      const attemptId = randomUUID();
+      await setActor(client, "customer", actors.customer);
+      await client.query(`
+        INSERT INTO campaign_validation_attempts (
+          id,
+          customer_id,
+          campaign_id,
+          code_fingerprint,
+          context_category_id,
+          context_region_id,
+          result
+        ) VALUES (
+          $1,
+          $2,
+          'a1000000-0000-4000-8000-000000000001',
+          $3,
+          '10000000-0000-4000-8000-000000000001',
+          'b2000000-0000-4000-8000-000000000001',
+          'accepted'
+        )
+      `, [attemptId, actors.customer, "b".repeat(64)]);
+
+      const hiddenFromCustomer = await client.query(
+        "SELECT count(*)::int AS count FROM campaign_validation_attempts WHERE id = $1",
+        [attemptId],
+      );
+      assert.equal(hiddenFromCustomer.rows[0].count, 0);
+
+      const ownAggregate = await client.query(`
+        SELECT attempt_count_15m AS "attemptCount15m"
+        FROM campaign_validation_abuse_state($1)
+      `, [actors.customer]);
+      assert.equal(ownAggregate.rows[0].attemptCount15m >= 1, true);
+
+      await setActor(client, "provider", actors.provider);
+      const hiddenFromProvider = await client.query(
+        "SELECT count(*)::int AS count FROM campaign_validation_attempts WHERE id = $1",
+        [attemptId],
+      );
+      assert.equal(hiddenFromProvider.rows[0].count, 0);
+      await client.query("SAVEPOINT forbidden_campaign_monitoring");
+      try {
+        await client.query("SELECT * FROM campaign_validation_abuse_state($1)", [actors.customer]);
+        assert.fail("O agregado de campanha deveria estar restrito ao cliente atual.");
+      } catch (error) {
+        assert.equal(error.code, "42501");
+      }
+      await client.query("ROLLBACK TO SAVEPOINT forbidden_campaign_monitoring");
+
+      await setActor(client, "operation", actors.operation);
+      const visibleToOperation = await client.query(
+        "SELECT result FROM campaign_validation_attempts WHERE id = $1",
+        [attemptId],
+      );
+      assert.equal(visibleToOperation.rows[0].result, "accepted");
+      const targeting = await client.query(`
+        SELECT targeting_mode AS "targetingMode", eligibility_snapshot AS "eligibilitySnapshot"
+        FROM marketing_campaigns campaign
+        LEFT JOIN campaign_reservations reservation ON reservation.campaign_id = campaign.id
+        WHERE campaign.id = 'a1000000-0000-4000-8000-000000000001'
+        LIMIT 1
+      `);
+      assert.equal(targeting.rows[0].targetingMode, "contextual");
+      if (targeting.rows[0].eligibilitySnapshot) {
+        assert.equal(typeof targeting.rows[0].eligibilitySnapshot, "object");
+      }
     });
   } finally {
     await pool.end();

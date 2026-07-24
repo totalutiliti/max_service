@@ -15,6 +15,7 @@ As políticas locais protegem:
 | captura pública de indicação | convite | 5/10 min |
 | validação de cupom | réplica | 300/min |
 | validação de cupom | cliente | 30/min |
+| recusas de cupom | cliente persistente | 10/15 min |
 
 Uma requisição permitida recebe `RateLimit-Policy`, `RateLimit-Limit`, `RateLimit-Remaining` e `RateLimit-Reset`. Ao atingir o limite, a API responde `429`, `Retry-After`, `cache-control: no-store` e o código estável `RATE_LIMITED`. O BFF preserva esses cabeçalhos e o `x-request-id`.
 
@@ -26,9 +27,11 @@ Uma requisição permitida recebe `RateLimit-Policy`, `RateLimit-Limit`, `RateLi
 - buckets expirados são removidos e o mais antigo é descartado quando a capacidade é atingida;
 - o cockpit da Operação expõe apenas contagens e nomes fechados de políticas;
 - respostas `429` entram na telemetria agregada, sem ampliar o schema de logs.
+- tentativas de cupom persistem somente SHA-256 do código normalizado, contexto mínimo e resultado; o código bruto nunca entra no monitor;
+- o relatório de campanhas mostra contagens de 24 horas e níveis de atenção sem expor identificadores de cliente e sem tomar decisão automática.
 
 ## Limite da etapa
 
 A implementação atual existe para o piloto local e é independente por processo. Reinício zera os contadores e duas réplicas não compartilham estado. A autenticação demonstrativa também não representa contas individuais reais, portanto usa um limite global.
 
-Produção exige store distribuído de baixa latência, chaves por IP/conta definidas na borda confiável, proteção contra indisponibilidade do store, limites homologados por carga, desafios progressivos, detecção de padrões, alertas e runbook. A evidência local não altera `productionAuthorized: false`.
+Produção exige store distribuído de baixa latência para os limites de borda, chaves por IP/conta definidas na fronteira confiável, proteção contra indisponibilidade do store, limites homologados por carga, retenção aprovada para eventos de campanha, desafios progressivos, alertas e runbook. A evidência local não altera `productionAuthorized: false`.

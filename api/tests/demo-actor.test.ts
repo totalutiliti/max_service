@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { demoActorIds, parseDemoActor } from "../auth/demo-actor.js";
-import { calculateCampaignDiscount, isValidCouponCode, normalizeCouponCode } from "../campaigns/campaign-rules.js";
+import {
+  calculateCampaignDiscount,
+  campaignAbuseLevel,
+  campaignEligibilityResult,
+  isValidCouponCode,
+  normalizeCouponCode,
+} from "../campaigns/campaign-rules.js";
 import { computeInternalSignature, verifyInternalSignature } from "../auth/internal-signature.js";
 import { computeSandboxSignature, verifySandboxSignature } from "../finance/finance-signature.js";
 import { maximumRequestAttachmentBytes, validateRequestAttachment } from "../marketplace/request-attachment-validation.js";
@@ -198,6 +204,58 @@ test("normaliza cupons e reproduz os limites do desconto congelado no banco", ()
     maxDiscountCents: null,
     minAmountCents: 100,
   }), 1_400);
+});
+
+test("classifica monitoramento de cupons sem transformar sinal em decisão automática", () => {
+  assert.equal(campaignAbuseLevel({
+    rejectedCount: 2,
+    blockedCount: 0,
+    suspiciousCustomerCount: 0,
+  }), "low");
+  assert.equal(campaignAbuseLevel({
+    rejectedCount: 5,
+    blockedCount: 0,
+    suspiciousCustomerCount: 0,
+  }), "attention");
+  assert.equal(campaignAbuseLevel({
+    rejectedCount: 1,
+    blockedCount: 1,
+    suspiciousCustomerCount: 0,
+  }), "high");
+  assert.equal(campaignAbuseLevel({
+    rejectedCount: 2,
+    blockedCount: 0,
+    suspiciousCustomerCount: 3,
+  }), "high");
+});
+
+test("exige contexto e consentimento somente quando a campanha os declara", () => {
+  const base = {
+    totalUsage: 2,
+    totalRedemptionLimit: 100,
+    customerUsage: 0,
+    perCustomerLimit: 1,
+    targetingMode: "contextual" as const,
+    targetCategoryId: "10000000-0000-4000-8000-000000000001",
+    targetRegionId: "b2000000-0000-4000-8000-000000000001",
+    contextCategoryId: "10000000-0000-4000-8000-000000000001",
+    contextRegionId: "b2000000-0000-4000-8000-000000000001",
+    marketingConsentGranted: false,
+  };
+  assert.equal(campaignEligibilityResult(base), "accepted");
+  assert.equal(campaignEligibilityResult({
+    ...base,
+    contextCategoryId: "10000000-0000-4000-8000-000000000002",
+  }), "outside_segment");
+  assert.equal(campaignEligibilityResult({
+    ...base,
+    targetingMode: "consented",
+  }), "consent_required");
+  assert.equal(campaignEligibilityResult({
+    ...base,
+    targetingMode: "consented",
+    marketingConsentGranted: true,
+  }), "accepted");
 });
 
 test("limita períodos e percentuais dos relatórios operacionais", () => {

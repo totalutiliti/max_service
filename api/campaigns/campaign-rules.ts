@@ -23,3 +23,42 @@ export function calculateCampaignDiscount(listAmountCents: number, rule: Campaig
     );
   return Math.max(0, Math.min(rawDiscount, listAmountCents - 100));
 }
+
+export type CampaignAbuseLevel = "low" | "attention" | "high";
+
+export function campaignAbuseLevel(input: {
+  rejectedCount: number;
+  blockedCount: number;
+  suspiciousCustomerCount: number;
+}): CampaignAbuseLevel {
+  if (input.blockedCount > 0 || input.suspiciousCustomerCount >= 3) return "high";
+  if (input.rejectedCount >= 5 || input.suspiciousCustomerCount > 0) return "attention";
+  return "low";
+}
+
+export type CampaignEligibilityResult =
+  | "accepted"
+  | "outside_segment"
+  | "consent_required"
+  | "total_limit"
+  | "customer_limit";
+
+export function campaignEligibilityResult(input: {
+  totalUsage: number;
+  totalRedemptionLimit: number;
+  customerUsage: number;
+  perCustomerLimit: number;
+  targetingMode: "contextual" | "consented";
+  targetCategoryId: string | null;
+  targetRegionId: string | null;
+  contextCategoryId?: string;
+  contextRegionId?: string;
+  marketingConsentGranted: boolean;
+}): CampaignEligibilityResult {
+  if (input.totalUsage >= input.totalRedemptionLimit) return "total_limit";
+  if (input.customerUsage >= input.perCustomerLimit) return "customer_limit";
+  if (input.targetCategoryId && input.targetCategoryId !== input.contextCategoryId) return "outside_segment";
+  if (input.targetRegionId && input.targetRegionId !== input.contextRegionId) return "outside_segment";
+  if (input.targetingMode === "consented" && !input.marketingConsentGranted) return "consent_required";
+  return "accepted";
+}

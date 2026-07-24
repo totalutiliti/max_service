@@ -29,6 +29,7 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | eventos do catálogo | nenhum | nenhum | nenhum | leitura e inclusão append-only | auditado |
 | campanhas | somente ativas e vigentes para validar cupom | nenhum | nenhum | leitura, criação e mudança justificada | auditado |
 | reservas de campanha | somente as próprias | nenhum | nenhum | visão completa | auditado |
+| tentativas de validação de campanha | inclusão própria; apenas agregado recente por função restrita | nenhum | nenhum | leitura para relatório agregado | retenção e manutenção auditadas |
 | conversa/mensagem | membro | membro | nenhum | apenas caso autorizado | excepcional e auditado |
 | cursor de leitura da conversa | somente o próprio | somente o próprio | nenhum | nenhum no piloto | excepcional e auditado |
 | anexo da conversa | membro | membro | nenhum | nenhum no piloto | excepcional e auditado |
@@ -76,7 +77,9 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - cliente não enxerga dados de indicação e prestador vê somente seu vínculo convertido;
 - parceiro enxerga zero eventos internos e atualiza zero estados da triagem; somente a operação executa `invited → in_review → approved | rejected`;
 - cliente, prestador e parceiro alteram zero categorias e enxergam zero eventos do catálogo; somente a operação ordena ou muda disponibilidade com justificativa;
-- cliente valida apenas campanha ativa e vigente, reserva somente no próprio pedido e não ultrapassa os limites; prestador e parceiro recebem zero campanhas/reservas, e somente a operação cria ou muda estado;
+- cliente valida apenas campanha ativa, vigente e compatível com categoria/região; campanhas consentidas exigem preferência promocional vigente, e a reserva ocorre somente no próprio pedido sem ultrapassar limites;
+- cliente e prestador recebem zero linhas da trilha bruta de validações; a função de abuso aceita somente o cliente atual, enquanto a Operação projeta contagens agregadas sem código ou identificação pessoal;
+- prestador e parceiro recebem zero campanhas/reservas, e somente a operação cria ou muda estado;
 - categoria desativada desaparece de novos pedidos, indicação manual e captura pública, sem ocultar pedidos ou indicações históricas;
 - desativação repetida, movimento além dos limites da lista e tentativa de desativar a última categoria ativa são bloqueados;
 - decisão sem análise, justificativa curta, repetição de estado e nova transição após decisão final são bloqueadas;

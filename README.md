@@ -31,7 +31,8 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - A área **Configurações** da Operação controla a ordem e a disponibilidade das categorias; cada mudança exige justificativa, preserva o histórico e gera evento append-only e auditoria.
 - A área **Conta** da Operação mantém oito gates persistentes de prontidão, com responsável, evidência, versão, histórico append-only e conflito otimista; evidência pronta não autoriza produção.
 - A mesma área possui um cockpit de saúde que verifica API, PostgreSQL, sincronismo das migrations, cofre privado, última reconciliação de objetos e modos de integração, separando bloqueios de tráfego local dos gates de produção.
-- A Operação cria, agenda, pausa e acompanha campanhas promocionais com validade, limite total e por cliente; o cliente valida e reserva o cupom no pedido.
+- A Operação cria, agenda, pausa e acompanha campanhas promocionais com validade, limite total e por cliente; cada campanha pode limitar categoria e região e, quando usa segmentação promocional, exige consentimento vigente.
+- A validação do cupom registra somente hash do código e contexto mínimo, contém temporariamente repetição abusiva e entrega à Operação métricas agregadas de 24 horas, sem decisão automatizada sobre clientes.
 - O cupom é recalculado no aceite da proposta, e o financeiro sandbox preserva valor original, desconto, valor final e campanha em um snapshot conciliável.
 - Cliente, parceiro e página pública consomem o mesmo catálogo persistente; categorias desativadas deixam de aceitar novos pedidos e indicações sem ocultar vínculos anteriores.
 - Os quatro perfis têm uma central persistente de notificações, com atualização automática do contador, leitura individual ou em massa.
@@ -122,6 +123,7 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - [Segurança](docs/security/threat-model.md)
 - [Autenticação e sessões](docs/security/authentication.md)
 - [Proteção contra abuso](docs/security/abuse-protection.md)
+- [Campanhas consentidas e monitoramento](docs/security/campaign-targeting.md)
 - [Proteção preventiva das indicações](docs/security/referral-risk.md)
 - [Segurança HTTP](docs/security/http-security.md)
 - [Idempotência das mutações](docs/security/idempotency.md)

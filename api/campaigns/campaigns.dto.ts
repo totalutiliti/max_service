@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -16,6 +17,14 @@ export class ValidateCouponDto {
   @MinLength(3)
   @MaxLength(32)
   code!: string;
+
+  @IsOptional()
+  @IsUUID("4")
+  categoryId?: string;
+
+  @IsOptional()
+  @IsUUID("4")
+  regionId?: string;
 }
 
 export class CreateCampaignDto {
@@ -61,6 +70,18 @@ export class CreateCampaignDto {
   @Min(1)
   @Max(100)
   perCustomerLimit!: number;
+
+  @IsOptional()
+  @IsIn(["contextual", "consented"])
+  targetingMode?: "contextual" | "consented";
+
+  @IsOptional()
+  @IsUUID("4")
+  targetCategoryId?: string;
+
+  @IsOptional()
+  @IsUUID("4")
+  targetRegionId?: string;
 
   @IsISO8601()
   startsAt!: string;

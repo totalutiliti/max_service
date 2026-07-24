@@ -926,6 +926,8 @@ interface OperationMatchingData {
 
 type CampaignDiscountType = "fixed" | "percentage";
 type CampaignAction = "activate" | "pause";
+type CampaignTargetingMode = "contextual" | "consented";
+type CampaignAbuseLevel = "low" | "attention" | "high";
 
 interface CampaignOffer {
   name: string;
@@ -936,6 +938,9 @@ interface CampaignOffer {
   maxDiscountCents: number | null;
   minAmountCents: number;
   endsAt: string;
+  targetingMode: CampaignTargetingMode;
+  eligibilityLabel: string;
+  consentBasis: string;
 }
 
 interface MarketingCampaign extends CampaignOffer {
@@ -944,6 +949,10 @@ interface MarketingCampaign extends CampaignOffer {
   perCustomerLimit: number;
   startsAt: string;
   status: "active" | "paused";
+  targetCategoryId: string | null;
+  targetCategoryName: string | null;
+  targetRegionId: string | null;
+  targetRegionName: string | null;
   createdAt: string;
   updatedAt: string;
   createdByName: string;
@@ -954,6 +963,14 @@ interface MarketingCampaign extends CampaignOffer {
   latestEventNote: string | null;
   latestEventAt: string | null;
   latestActorName: string | null;
+  validationCount24h: number;
+  rejectedCount24h: number;
+  blockedCount24h: number;
+  consentDeniedCount24h: number;
+  outsideSegmentCount24h: number;
+  suspiciousCustomerCount24h: number;
+  conversionRate: number;
+  abuseLevel: CampaignAbuseLevel;
 }
 
 interface CampaignData {
@@ -964,6 +981,17 @@ interface CampaignData {
     inactiveCount: number;
     redeemedCount: number;
     discountGrantedCents: number;
+  };
+  monitoring: {
+    attemptCount24h: number;
+    rejectedCount24h: number;
+    blockedCount24h: number;
+    suspiciousCustomerCount24h: number;
+    abuseLevel: CampaignAbuseLevel;
+  };
+  catalog: {
+    categories: Array<{ id: string; name: string; icon: string }>;
+    regions: Array<{ id: string; name: string; city: string; state: string }>;
   };
   campaigns: MarketingCampaign[];
 }
@@ -1844,7 +1872,11 @@ function RequestDialog({
       const response = await fetch("/api/v1/campaigns", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: couponCode.trim() }),
+        body: JSON.stringify({
+          code: couponCode.trim(),
+          categoryId: selectedCategory?.id,
+          regionId: selectedRegion?.id,
+        }),
       });
       const payload = await response.json() as { offer?: CampaignOffer; error?: string; message?: string };
       if (!response.ok || !payload.offer) throw new Error(payload.error ?? payload.message ?? "Cupom indisponível.");
@@ -1915,9 +1947,9 @@ function RequestDialog({
       <section className="request-dialog" data-testid="service-request-dialog" role="dialog" aria-modal="true" aria-labelledby="request-title">
         <button className="dialog-close" ref={closeRef} onClick={onClose} aria-label="Fechar">×</button>
         {step < 4 && <><p className="dialog-kicker">NOVO PEDIDO · ETAPA {step} DE 3</p><div className="dialog-progress"><span style={{ width: `${step * 33.33}%` }} /></div></>}
-        {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map((category) => <button key={category.id} onClick={() => setCategorySlug(category.slug)} className={categorySlug === category.slug ? "selected" : ""} aria-pressed={categorySlug === category.slug}><span>{category.icon}</span>{category.name}<i aria-hidden="true">✓</i></button>)}</div></div>}
+        {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map((category) => <button key={category.id} onClick={() => { setCategorySlug(category.slug); setCouponOffer(null); }} className={categorySlug === category.slug ? "selected" : ""} aria-pressed={categorySlug === category.slug}><span>{category.icon}</span>{category.name}<i aria-hidden="true">✓</i></button>)}</div></div>}
         {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><label className="upload-placeholder"><input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} /><span>＋</span><strong>Adicionar fotos sintéticas</strong><small>Opcional · até 3 JPEG/PNG de 512 KB</small></label>{photos.length > 0 && <ul className="request-photo-selection">{photos.map((photo) => <li key={`${photo.name}-${photo.size}`}><span>{photo.type === "image/png" ? "PNG" : "JPG"}</span><div><strong>{photo.name}</strong><small>{Math.ceil(photo.size / 1024)} KB · privado</small></div><button type="button" onClick={() => setPhotos((current) => current.filter((item) => item !== photo))} aria-label={`Remover ${photo.name}`}>×</button></li>)}</ul>}<p className="synthetic-file-note">Use apenas imagens sintéticas nesta demonstração. Os arquivos ficam privados e sem link público.</p></div>}
-        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Escolha uma área coberta. Você poderá ajustar os detalhes pelo chat.</p><div className="location-fields"><label className="field"><span>Região do piloto</span><select value={selectedRegion?.id ?? ""} onChange={(event) => changeRegion(event.target.value)}>{regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Bairro</span><select value={selectedNeighborhood?.id ?? ""} onChange={(event) => setNeighborhoodId(event.target.value)}>{selectedRegion?.neighborhoods.map((neighborhood) => <option key={neighborhood.id} value={neighborhood.id}>{neighborhood.name}</option>)}</select></label></div><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="coupon-box"><div><span>CUPOM PROMOCIONAL</span><small>Experimente BEMVINDO20</small></div><div className="coupon-input"><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase().slice(0, 32)); setCouponOffer(null); }} placeholder="DIGITE SEU CUPOM" /><button type="button" onClick={validateCoupon} disabled={couponChecking || couponCode.trim().length < 3}>{couponChecking ? "Validando..." : "Aplicar"}</button></div>{couponOffer && <p className="coupon-success"><strong>{couponOffer.code} aplicado</strong>{couponOffer.description} · válido para propostas a partir de {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(couponOffer.minAmountCents / 100)}.</p>}</div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
+        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Escolha uma área coberta. Você poderá ajustar os detalhes pelo chat.</p><div className="location-fields"><label className="field"><span>Região do piloto</span><select value={selectedRegion?.id ?? ""} onChange={(event) => { changeRegion(event.target.value); setCouponOffer(null); }}>{regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Bairro</span><select value={selectedNeighborhood?.id ?? ""} onChange={(event) => setNeighborhoodId(event.target.value)}>{selectedRegion?.neighborhoods.map((neighborhood) => <option key={neighborhood.id} value={neighborhood.id}>{neighborhood.name}</option>)}</select></label></div><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="coupon-box"><div><span>CUPOM PROMOCIONAL</span><small>Experimente BEMVINDO20</small></div><div className="coupon-input"><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase().slice(0, 32)); setCouponOffer(null); }} placeholder="DIGITE SEU CUPOM" aria-label="Cupom promocional" /><button type="button" onClick={validateCoupon} disabled={couponChecking || couponCode.trim().length < 3}>{couponChecking ? "Validando..." : "Aplicar"}</button></div>{couponOffer && <p className="coupon-success"><strong>{couponOffer.code} aplicado</strong>{couponOffer.description} · válido para propostas a partir de {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(couponOffer.minAmountCents / 100)}.<small>{couponOffer.eligibilityLabel} · {couponOffer.consentBasis}.</small></p>}</div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
         {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Somente profissionais com cobertura ativa poderão enviar propostas.</p><div className="success-summary"><span>{selectedCategory?.icon}</span><div><small>Categoria</small><strong>{selectedCategory?.name}</strong><small>{selectedNeighborhood?.name} · {selectedRegion?.name} · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}{couponOffer ? ` · cupom ${couponOffer.code}` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving || !selectedCategory || !selectedRegion || !selectedNeighborhood}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
         {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={!selectedCategory || !selectedRegion || !selectedNeighborhood || (step === 2 && description.trim().length < 10)}>Continuar →</button></footer>}
       </section>
@@ -4910,12 +4942,17 @@ function CampaignManagementPanel({ notify }: { notify: (message: string) => void
     if (new Date(campaign.startsAt).getTime() > referenceTime) return { label: "Agendada", tone: "warning" };
     return { label: "No ar", tone: "success" };
   };
+  const abuseLabel: Record<CampaignAbuseLevel, string> = {
+    low: "Fluxo normal",
+    attention: "Atenção",
+    high: "Revisar",
+  };
 
   return (
     <section className="dashboard-section catalog-management campaign-management">
       <header>
         <div><small>CRESCIMENTO CONTROLADO</small><h2>Campanhas e cupons</h2><p>Publique benefícios com validade, orçamento de usos e trilha de decisão.</p></div>
-        <div className="campaign-header-actions"><button className="secondary-action" onClick={reload} disabled={loading}>Atualizar ↻</button><button className="primary-action" onClick={() => setCreating(true)}>Nova campanha +</button></div>
+        <div className="campaign-header-actions"><button className="secondary-action" onClick={reload} disabled={loading}>Atualizar ↻</button><button className="primary-action" onClick={() => setCreating(true)} disabled={loading}>Nova campanha +</button></div>
       </header>
       <div className="catalog-metrics campaign-metrics">
         <article><strong>{loading ? "…" : data?.metrics.liveCount ?? 0}</strong><span>campanhas no ar</span></article>
@@ -4923,6 +4960,16 @@ function CampaignManagementPanel({ notify }: { notify: (message: string) => void
         <article><strong>{loading ? "…" : money(data?.metrics.discountGrantedCents ?? 0)}</strong><span>benefício concedido</span></article>
         <article><strong>{loading ? "…" : data?.metrics.inactiveCount ?? 0}</strong><span>pausadas ou encerradas</span></article>
       </div>
+      <section className={`campaign-monitoring ${data?.monitoring.abuseLevel ?? "low"}`} data-testid="campaign-monitoring">
+        <header><div><small>MONITORAMENTO DE ABUSO · 24H</small><h3>{loading ? "Carregando sinais…" : abuseLabel[data?.monitoring.abuseLevel ?? "low"]}</h3></div><span>Sem decisão automática</span></header>
+        <div>
+          <article><strong>{loading ? "…" : data?.monitoring.attemptCount24h ?? 0}</strong><small>tentativas</small></article>
+          <article><strong>{loading ? "…" : data?.monitoring.rejectedCount24h ?? 0}</strong><small>recusadas</small></article>
+          <article><strong>{loading ? "…" : data?.monitoring.blockedCount24h ?? 0}</strong><small>contidas</small></article>
+          <article><strong>{loading ? "…" : data?.monitoring.suspiciousCustomerCount24h ?? 0}</strong><small>contas para revisão</small></article>
+        </div>
+        <p>Códigos inválidos são guardados apenas como impressão criptográfica. Os sinais servem para revisão operacional e a contenção temporária ocorre após dez recusas em quinze minutos.</p>
+      </section>
       <div className="campaign-list">
         {loading && <div className="data-state">Carregando campanhas...</div>}
         {!loading && data?.campaigns.length === 0 && <div className="data-state">Nenhuma campanha publicada.</div>}
@@ -4932,26 +4979,41 @@ function CampaignManagementPanel({ notify }: { notify: (message: string) => void
             ? money(campaign.discountValue)
             : `${(campaign.discountValue / 100).toLocaleString("pt-BR")}% · teto ${money(campaign.maxDiscountCents ?? 0)}`;
           return (
-            <article key={campaign.id}>
+            <article key={campaign.id} data-testid="campaign-record" data-campaign-code={campaign.code}>
               <div className="campaign-code"><small>CUPOM</small><strong>{campaign.code}</strong><span>{campaign.name}</span></div>
               <div className="campaign-benefit"><small>BENEFÍCIO</small><strong>{benefit}</strong><span>mínimo {money(campaign.minAmountCents)}</span></div>
-              <div className="campaign-progress"><div><small>USO</small><strong>{campaign.usedCount} / {campaign.totalRedemptionLimit}</strong></div><progress value={campaign.usedCount} max={campaign.totalRedemptionLimit} /><span>{campaign.redeemedCount} convertido(s) · até {campaign.perCustomerLimit} por cliente</span></div>
+              <div className="campaign-progress"><div><small>USO</small><strong>{campaign.usedCount} / {campaign.totalRedemptionLimit}</strong></div><progress value={campaign.usedCount} max={campaign.totalRedemptionLimit} /><span>{campaign.redeemedCount} convertido(s) · {campaign.conversionRate.toLocaleString("pt-BR")}% · até {campaign.perCustomerLimit} por cliente</span></div>
               <div className="campaign-period"><small>JANELA</small><strong>{formatted(campaign.startsAt)}</strong><span>até {formatted(campaign.endsAt)}</span></div>
               <span className={`status-pill ${display.tone}`}>{display.label}</span>
               <button className={campaign.status === "active" ? "danger-action" : "secondary-action"} disabled={display.label === "Encerrada"} onClick={() => setPending({ campaign, action: campaign.status === "active" ? "pause" : "activate" })}>{campaign.status === "active" ? "Pausar" : "Ativar"}</button>
+              <div className="campaign-insights">
+                <span><small>PÚBLICO</small><strong>{campaign.targetCategoryName ?? "Todas as categorias"} · {campaign.targetRegionName ?? "Todas as regiões"}</strong><em>{campaign.targetingMode === "consented" ? "consentimento promocional obrigatório" : "somente contexto do pedido"}</em></span>
+                <span><small>VALIDAÇÕES · 24H</small><strong>{campaign.validationCount24h} tentativa(s) · {campaign.rejectedCount24h} recusada(s)</strong><em>{campaign.consentDeniedCount24h} sem consentimento · {campaign.outsideSegmentCount24h} fora do público</em></span>
+                <span className={`campaign-risk ${campaign.abuseLevel}`}><small>SAÚDE</small><strong>{abuseLabel[campaign.abuseLevel]}</strong><em>{campaign.blockedCount24h} contida(s) · {campaign.suspiciousCustomerCount24h} conta(s) para revisão</em></span>
+              </div>
               {campaign.latestEventAt && <div className="campaign-latest"><strong>Última decisão</strong><span>{campaign.latestEventNote} · {campaign.latestActorName} · {formatted(campaign.latestEventAt)}</span></div>}
             </article>
           );
         })}
       </div>
       <footer><span>i</span><p><strong>Cálculo confiável:</strong> o cupom é reservado no pedido e recalculado no servidor quando uma proposta é aceita. O valor congelado entra no sandbox financeiro e não pode ser alterado pelo navegador.</p></footer>
-      {creating && <CampaignCreateDialog onClose={() => setCreating(false)} onSaved={() => { setCreating(false); reload(); }} notify={notify} />}
+      {creating && <CampaignCreateDialog catalog={data?.catalog ?? { categories: [], regions: [] }} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); reload(); }} notify={notify} />}
       {pending && <CampaignStatusDialog pending={pending} onClose={() => setPending(null)} onSaved={() => { setPending(null); reload(); }} notify={notify} />}
     </section>
   );
 }
 
-function CampaignCreateDialog({ onClose, onSaved, notify }: { onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {
+function CampaignCreateDialog({
+  catalog,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  catalog: CampaignData["catalog"];
+  onClose: () => void;
+  onSaved: () => void;
+  notify: (message: string) => void;
+}) {
   const now = new Date();
   const later = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
   const localDate = (value: Date) => {
@@ -4967,6 +5029,9 @@ function CampaignCreateDialog({ onClose, onSaved, notify }: { onClose: () => voi
   const [minimum, setMinimum] = useState("80");
   const [totalLimit, setTotalLimit] = useState("100");
   const [customerLimit, setCustomerLimit] = useState("1");
+  const [targetingMode, setTargetingMode] = useState<CampaignTargetingMode>("contextual");
+  const [targetCategoryId, setTargetCategoryId] = useState("");
+  const [targetRegionId, setTargetRegionId] = useState("");
   const [startsAt, setStartsAt] = useState(localDate(now));
   const [endsAt, setEndsAt] = useState(localDate(later));
   const [note, setNote] = useState("");
@@ -4988,6 +5053,9 @@ function CampaignCreateDialog({ onClose, onSaved, notify }: { onClose: () => voi
         minAmountCents: Math.round(Number(minimum) * 100),
         totalRedemptionLimit: Number(totalLimit),
         perCustomerLimit: Number(customerLimit),
+        targetingMode,
+        targetCategoryId: targetCategoryId || undefined,
+        targetRegionId: targetRegionId || undefined,
         startsAt: new Date(startsAt).toISOString(),
         endsAt: new Date(endsAt).toISOString(),
         note: note.trim(),
@@ -5014,7 +5082,7 @@ function CampaignCreateDialog({ onClose, onSaved, notify }: { onClose: () => voi
     }
   };
 
-  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog campaign-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-create-title"><button className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>%</span><div><p className="dialog-kicker">NOVA REGRA PROMOCIONAL</p><h2 id="campaign-create-title">Crie uma campanha controlada.</h2><p>Todos os limites ficam congelados nos pedidos que usarem este código.</p></div></header><form onSubmit={submit}><div className="campaign-form-grid"><label className="field"><span>Nome da campanha</span><input minLength={3} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} required /></label><label className="field"><span>Código</span><input minLength={3} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{2,31}" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="BEMVINDO20" required /></label><label className="field campaign-wide"><span>Descrição para o cliente</span><textarea minLength={10} maxLength={240} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} required /></label><label className="field"><span>Tipo de desconto</span><select value={discountType} onChange={(event) => setDiscountType(event.target.value as CampaignDiscountType)}><option value="fixed">Valor fixo (R$)</option><option value="percentage">Percentual (%)</option></select></label><label className="field"><span>{discountType === "fixed" ? "Desconto em reais" : "Percentual"}</span><input type="number" min="1" max={discountType === "fixed" ? "10000" : "50"} step={discountType === "fixed" ? ".01" : ".1"} value={discount} onChange={(event) => setDiscount(event.target.value)} required /></label>{discountType === "percentage" && <label className="field"><span>Teto em reais</span><input type="number" min="1" step=".01" value={maxDiscount} onChange={(event) => setMaxDiscount(event.target.value)} required /></label>}<label className="field"><span>Pedido mínimo (R$)</span><input type="number" min="1" step=".01" value={minimum} onChange={(event) => setMinimum(event.target.value)} required /></label><label className="field"><span>Limite total de usos</span><input type="number" min="1" max="100000" value={totalLimit} onChange={(event) => setTotalLimit(event.target.value)} required /></label><label className="field"><span>Limite por cliente</span><input type="number" min="1" max="100" value={customerLimit} onChange={(event) => setCustomerLimit(event.target.value)} required /></label><label className="field"><span>Início</span><input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} required /></label><label className="field"><span>Fim</span><input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} required /></label><label className="field campaign-wide"><span>Justificativa operacional</span><textarea minLength={10} maxLength={1000} rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Objetivo, público e aprovação desta campanha..." required /><small>{note.length}/1000 caracteres</small></label></div><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Publicando..." : "Publicar e auditar →"}</button></footer></form></section></div>;
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="request-dialog campaign-dialog" data-testid="campaign-create-dialog" role="dialog" aria-modal="true" aria-labelledby="campaign-create-title"><button className="dialog-close" onClick={onClose} aria-label="Fechar">×</button><header><span>%</span><div><p className="dialog-kicker">NOVA REGRA PROMOCIONAL</p><h2 id="campaign-create-title">Crie uma campanha controlada.</h2><p>Todos os limites e critérios de público ficam congelados nos pedidos elegíveis.</p></div></header><form onSubmit={submit}><div className="campaign-form-grid"><label className="field"><span>Nome da campanha</span><input minLength={3} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} required /></label><label className="field"><span>Código</span><input minLength={3} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{2,31}" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="BEMVINDO20" required /></label><label className="field campaign-wide"><span>Descrição para o cliente</span><textarea minLength={10} maxLength={240} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} required /></label><label className="field"><span>Tipo de desconto</span><select value={discountType} onChange={(event) => setDiscountType(event.target.value as CampaignDiscountType)}><option value="fixed">Valor fixo (R$)</option><option value="percentage">Percentual (%)</option></select></label><label className="field"><span>{discountType === "fixed" ? "Desconto em reais" : "Percentual"}</span><input type="number" min="1" max={discountType === "fixed" ? "10000" : "50"} step={discountType === "fixed" ? ".01" : ".1"} value={discount} onChange={(event) => setDiscount(event.target.value)} required /></label>{discountType === "percentage" && <label className="field"><span>Teto em reais</span><input type="number" min="1" step=".01" value={maxDiscount} onChange={(event) => setMaxDiscount(event.target.value)} required /></label>}<label className="field"><span>Pedido mínimo (R$)</span><input type="number" min="1" step=".01" value={minimum} onChange={(event) => setMinimum(event.target.value)} required /></label><label className="field"><span>Limite total de usos</span><input type="number" min="1" max="100000" value={totalLimit} onChange={(event) => setTotalLimit(event.target.value)} required /></label><label className="field"><span>Limite por cliente</span><input type="number" min="1" max="100" value={customerLimit} onChange={(event) => setCustomerLimit(event.target.value)} required /></label><label className="field"><span>Critério de público</span><select value={targetingMode} onChange={(event) => setTargetingMode(event.target.value as CampaignTargetingMode)}><option value="contextual">Contexto do pedido</option><option value="consented">Contexto + consentimento promocional</option></select><small>{targetingMode === "consented" ? "Disponível somente com autorização vigente para campanhas." : "Usa apenas categoria e região escolhidas no pedido."}</small></label><label className="field"><span>Categoria-alvo</span><select value={targetCategoryId} onChange={(event) => setTargetCategoryId(event.target.value)}><option value="">Todas as categorias</option>{catalog.categories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.name}</option>)}</select></label><label className="field"><span>Região-alvo</span><select value={targetRegionId} onChange={(event) => setTargetRegionId(event.target.value)}><option value="">Todas as regiões</option>{catalog.regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Início</span><input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} required /></label><label className="field"><span>Fim</span><input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} required /></label><label className="field campaign-wide"><span>Justificativa operacional</span><textarea minLength={10} maxLength={1000} rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Objetivo, público, base de consentimento e aprovação..." required /><small>{note.length}/1000 caracteres</small></label></div><footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Publicando..." : "Publicar e auditar →"}</button></footer></form></section></div>;
 }
 
 function CampaignStatusDialog({ pending, onClose, onSaved, notify }: { pending: { campaign: MarketingCampaign; action: CampaignAction }; onClose: () => void; onSaved: () => void; notify: (message: string) => void }) {

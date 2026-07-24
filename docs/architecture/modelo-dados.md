@@ -29,7 +29,7 @@
 
 ### Crescimento e receita
 
-`partner_referral_links`, `partner_referrals`, `partner_referral_events`, `marketing_campaigns`, `marketing_campaign_events`, `campaign_reservations`, `commercial_rules`, `payment_intents`, `payment_allocations`, `payment_transactions`, `financial_ledger_entries`; campanhas congelam a regra na reserva, e comissões, cashback e recebíveis são tipos de alocação/ledger. Publicidade permanece como evolução posterior.
+`partner_referral_links`, `partner_referrals`, `partner_referral_events`, `marketing_campaigns`, `marketing_campaign_events`, `campaign_validation_attempts`, `campaign_reservations`, `commercial_rules`, `payment_intents`, `payment_allocations`, `payment_transactions`, `financial_ledger_entries`; campanhas congelam regra e elegibilidade na reserva, e comissões, cashback e recebíveis são tipos de alocação/ledger. Publicidade permanece como evolução posterior.
 
 ### Operação
 
@@ -83,8 +83,10 @@
 - um evento de PSP tem chave idempotente única;
 - lançamentos de recebível, taxa, comissão e cashback não são editados: correções geram débitos de estorno;
 - regra financeira aplicada é congelada por versão no booking/payment intent.
-- uma campanha possui código único, janela, estado, pedido mínimo e limites total/por cliente; apenas a Operação cria ou muda o estado, sempre com justificativa e evento append-only; a contagem global usa uma função de escopo mínimo para não ampliar a leitura do cliente sob RLS;
-- cada pedido possui no máximo uma reserva de campanha; a reserva congela código e regra, e o aceite a transforma uma única vez em `redeemed` ou `ineligible`;
+- uma campanha possui código único, janela, estado, pedido mínimo, limites total/por cliente e público opcional por categoria/região; o modo `consented` exige preferência promocional vigente, enquanto o modo `contextual` usa somente o pedido corrente;
+- apenas a Operação cria ou muda o estado, sempre com justificativa e evento append-only; a contagem global e o estado recente de abuso usam funções de escopo mínimo para não ampliar a leitura do cliente sob RLS;
+- cada validação persiste hash SHA-256 do código, contexto mínimo e resultado, nunca o código digitado; clientes não leem a trilha bruta e a Operação recebe somente projeções agregadas pela API;
+- cada pedido possui no máximo uma reserva de campanha; a reserva congela código, regra e snapshot de elegibilidade, e o aceite a transforma uma única vez em `redeemed` ou `ineligible`;
 - o desconto é calculado no servidor sobre a proposta aceita, preserva ao menos R$ 1 de valor final e fica reconciliado por `valor de lista = valor final + desconto` no payment intent;
 - a soma das alocações de um intent é exatamente o valor bruto, com o resíduo de arredondamento absorvido pelo recebível do profissional;
 - liquidação exige serviço concluído; estorno de autorização exige serviço cancelado;

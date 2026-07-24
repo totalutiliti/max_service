@@ -19,7 +19,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - relatório operacional agregado por período, com funil, categorias, crescimento, suporte, reconciliação e exportação CSV sem dados pessoais;
 - metas operacionais versionadas, comparação com o período anterior e monitor de desvios com limites ajustáveis e justificativa;
 - gestão operacional do catálogo compartilhado por cliente, parceiro e captura pública, sem apagar histórico ao desativar uma categoria;
-- campanhas e cupons persistentes, com criação e pausa pela Operação, limites de uso, reserva transacional no pedido e desconto congelado no aceite;
+- campanhas e cupons persistentes, com criação e pausa pela Operação, público por categoria/região, consentimento promocional opcional, monitoramento agregado de abuso, reserva transacional no pedido e desconto congelado no aceite;
 - mensagens transacionais e notificações internas persistentes, contadores reais de não lidas e sincronização incremental automática;
 - Web Push opt-in por aparelho para avisos transacionais, com fila durável, revogação da assinatura pelo próprio usuário, assuntos configuráveis e horário silencioso por fuso brasileiro;
 - central persistente de atendimento parceiro–Operação, com contexto opcional da indicação, conversa append-only, anexos privados sintéticos, transições justificadas, atribuição entre operadores, prioridade e SLA versionado de primeira resposta e resolução; e-mail e escalonamento externo permanecem como integrações posteriores;

@@ -18,7 +18,7 @@
 
 - ampliar as preferências granulares e horários já materializados no Web Push para e-mail/SMS somente após seleção e homologação dos provedores;
 - ampliar a central de suporte, que já possui SLA, atribuição entre múltiplos operadores, anexos privados e fluxo formal de disputa, com escalonamento externo após escolha do provedor;
-- segmentação consentida, monitoramento de abuso e relatórios avançados para as campanhas e cupons já materializados;
+- calibrar com evidências reais os limiares e a retenção do monitoramento de campanhas já materializado, preservando agregação, contenção temporária e revisão humana;
 - anúncios contextuais moderados;
 - agendamento e entrega externa consentida para os relatórios, cujos alertas e metas comparativas já estão materializados;
 - calibrar com evidências reais os limiares do antifraude explicável já materializado, mantendo revisão humana e sem fontes externas;

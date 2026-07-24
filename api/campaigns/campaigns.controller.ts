@@ -22,7 +22,10 @@ export class CampaignsController {
     @Headers("x-demo-actor-id") id: string | undefined,
     @Body() input: ValidateCouponDto,
   ) {
-    return this.campaigns.validateCoupon(actorFromHeaders(role, id), input.code);
+    return this.campaigns.validateCoupon(actorFromHeaders(role, id), input.code, {
+      categoryId: input.categoryId,
+      regionId: input.regionId,
+    });
   }
 
   @Get("operation/campaigns")

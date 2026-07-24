@@ -13,7 +13,7 @@ Industrial, direto e confiável. A engrenagem representa trabalho; as linhas de 
 | lime-500 | `#75e600` | ação primária |
 | lime-300 | `#b9ff63` | destaque sobre fundo escuro |
 | silver-100 | `#edf1ed` | texto principal claro |
-| stone-500 | `#69736c` | texto secundário |
+| stone-500 | `#566158` | texto secundário acessível sobre superfícies claras |
 | paper | `#f5f7f3` | superfície clara |
 | danger | `#d7463e` | erro/bloqueio |
 | warning | `#d89016` | atenção |
@@ -35,3 +35,5 @@ Tipografia: sans-serif de alta legibilidade; pesos 600/800 em títulos curtos. E
 ## Acessibilidade
 
 WCAG 2.2 AA, ordem de foco lógica, `skip link`, landmarks, labels, mensagens anunciadas, redução de movimento, contraste verificado, teclado completo e texto selecionável.
+
+A suíte Playwright/Axe valida automaticamente acesso, quatro áreas de cada perfil, navegação móvel, radiogroup por setas/Home/End, destino de foco do `skip link` e revogação da sessão. A automação complementa, mas não substitui, revisão manual com leitor de tela e pessoas usuárias.

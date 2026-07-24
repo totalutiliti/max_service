@@ -13,7 +13,7 @@ Nenhum deploy está autorizado nesta etapa.
 
 Lint → typecheck → unitários → integração PostgreSQL → RLS/IDOR → E2E/a11y → build → gitleaks → dependências → imagem/Trivy → migration dry-run → aprovação → deploy → smoke test → observabilidade.
 
-O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os quatro serviços em Docker limpo, aplica todas as migrations, executa smoke tests de saúde/autorização, testa RLS, conflitos de agenda e reenvios concorrentes idempotentes e restaura um backup lógico em banco isolado. O restore compara migrations, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. E2E/a11y em navegador, Trivy, dry-run em staging, deploy e observabilidade gerenciada continuam pendentes.
+O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os cinco serviços em Docker limpo, aplica todas as migrations, executa E2E/a11y WCAG 2.2 AA no Chrome, smoke tests de saúde/autorização, RLS, conflitos de agenda, reenvios concorrentes idempotentes e restauração de backup lógico em banco isolado. O restore compara migrations, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. Trivy, dry-run em staging, deploy e observabilidade gerenciada continuam pendentes.
 
 ## Infraestrutura
 

@@ -150,7 +150,7 @@ export default function Home() {
         <Link className="button" href="/demo">Abrir demonstração →</Link>
       </section>
 
-      <footer>
+      <footer className="site-footer">
         <div className="footer-brand"><strong>MAX</strong> SERVICE <span>Produto em validação · piloto regional</span></div>
         <p>© 2026 Max Service. Esta demonstração usa dados fictícios e não processa pagamentos.</p>
       </footer>

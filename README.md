@@ -56,6 +56,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Pedidos agendados bloqueiam novas propostas e aceite duplicado; cada mudança relevante gera histórico e auditoria.
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
 - O CI reproduz lint, builds, testes funcionais, auditoria de dependências, scanner de segredos e uma instalação Docker limpa para testar migrations, RLS e conflitos de agenda no PostgreSQL.
+- Playwright e Axe percorrem os quatro perfis, suas quatro áreas, o acesso e a versão móvel, verificando WCAG 2.2 AA, teclado, foco, navegação e revogação de sessão; falhas preservam relatório, captura e trace por sete dias no CI.
 - O mesmo pipeline gera um backup lógico, restaura em banco isolado, compara dados e proteções, prova o RLS com a role de runtime e remove todos os artefatos temporários.
 - Um processo de manutenção reconcilia diariamente os quatro conjuntos de metadados com o bucket privado, preserva objetos recentes ou desconhecidos, expurga somente órfãos com mais de 24 horas e registra apenas contagens agregadas protegidas por RLS.
 - Smoke tests exercitam liveness, readiness, cockpit operacional, bloqueio entre perfis, rejeição de cabeçalhos internos não assinados e pares concorrentes de 27 ações idempotentes cobertas, incluindo os quatro uploads privados.
@@ -81,9 +82,10 @@ npm run test:integration
 npm run test:storage
 npm run test:restore
 npm run test:smoke
+npm run test:e2e
 ```
 
-`test:integration`, `test:storage` e `test:restore` exigem os serviços locais do Docker; `test:smoke` exige também API e web. O ensaio de restauração nunca usa o banco original como destino.
+`test:integration`, `test:storage` e `test:restore` exigem os serviços locais do Docker; `test:smoke` e `test:e2e` exigem também API e web. O E2E usa o Google Chrome instalado no sistema. O ensaio de restauração nunca usa o banco original como destino.
 
 ## Rodar com Docker
 
@@ -125,6 +127,7 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - [Ensaio de backup e restauração](docs/operations/backup-restore.md)
 - [Saúde e observabilidade](docs/operations/observability.md)
 - [Design system](docs/ux/design-system.md)
+- [E2E e acessibilidade](docs/ux/e2e-accessibility.md)
 
 ## Limites desta etapa
 

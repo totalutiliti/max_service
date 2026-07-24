@@ -1193,8 +1193,22 @@ function uiRole(role: DemoSession["role"]): Role {
 
 function AccessScreen({ role, setRole, onEnter, busy, error }: { role: Role; setRole: (role: Role) => void; onEnter: () => void; busy: boolean; error: string }) {
   const selected = roleDetails[role];
+  const accessRoles = Object.keys(roleDetails) as Role[];
+  const moveRoleSelection = (event: React.KeyboardEvent<HTMLButtonElement>, currentRole: Role) => {
+    const currentIndex = accessRoles.indexOf(currentRole);
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (currentIndex + 1) % accessRoles.length;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (currentIndex - 1 + accessRoles.length) % accessRoles.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = accessRoles.length - 1;
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    const nextRole = accessRoles[nextIndex];
+    setRole(nextRole);
+    window.requestAnimationFrame(() => document.getElementById(`access-role-${nextRole}`)?.focus());
+  };
   return (
-    <main className="access-page">
+    <main className="access-page" data-testid="access-screen">
       <section className="access-brand-panel">
         <Link className="brand-lockup" href="/" aria-label="Max Service - início">
           <Image src="/max-service-mark.png" alt="" width={58} height={58} priority />
@@ -1216,13 +1230,18 @@ function AccessScreen({ role, setRole, onEnter, busy, error }: { role: Role; set
           <h2 id="access-title">Escolha como deseja entrar.</h2>
           <p className="access-intro">Você poderá trocar de perfil a qualquer momento dentro da plataforma.</p>
           <div className="access-role-grid" role="radiogroup" aria-label="Perfil de acesso">
-            {(Object.keys(roleDetails) as Role[]).map((item) => (
+            {accessRoles.map((item) => (
               <button
                 key={item}
+                id={`access-role-${item}`}
+                type="button"
+                data-testid={`access-role-${item}`}
                 className={role === item ? "selected" : ""}
                 onClick={() => setRole(item)}
+                onKeyDown={(event) => moveRoleSelection(event, item)}
                 role="radio"
                 aria-checked={role === item}
+                tabIndex={role === item ? 0 : -1}
               >
                 <span className="access-role-icon">{roleDetails[item].short}</span>
                 <span><strong>{roleDetails[item].label}</strong><small>{roleDetails[item].description}</small></span>
@@ -1235,7 +1254,7 @@ function AccessScreen({ role, setRole, onEnter, busy, error }: { role: Role; set
             <span>Sessão local protegida e temporária</span>
           </div>
           {error && <p className="access-error" role="alert">{error}</p>}
-          <button className="button access-submit" onClick={onEnter} disabled={busy}>{busy ? "Criando sessão…" : `Entrar como ${selected.label}`} <span aria-hidden="true">→</span></button>
+          <button type="button" className="button access-submit" data-testid="access-submit" onClick={onEnter} disabled={busy}>{busy ? "Criando sessão…" : `Entrar como ${selected.label}`} <span aria-hidden="true">→</span></button>
           <p className="access-disclaimer">Ao continuar, o servidor cria uma sessão demonstrativa revogável. Os dados são fictícios e não existe cobrança real.</p>
           <Link className="access-back" href="/">← Voltar para o site</Link>
         </div>
@@ -1255,7 +1274,7 @@ function Shell({ role, section, setSection, changeRole, onSignOut, authBusy, chi
 }) {
   const user = roleDetails[role];
   return (
-    <main className="demo-shell">
+    <main className="demo-shell" data-testid="demo-shell">
       <a className="skip-link" href="#painel">Pular para o painel</a>
       <aside className="demo-sidebar">
         <Link className="brand-lockup compact" href="/" aria-label="Voltar ao início da Max Service">
@@ -1265,7 +1284,7 @@ function Shell({ role, section, setSection, changeRole, onSignOut, authBusy, chi
         <div className="workspace-chip"><span>{user.short}</span><div><small>ESPAÇO DE TRABALHO</small><strong>{user.label}</strong></div></div>
         <nav className="app-nav" aria-label="Navegação da plataforma">
           {(Object.keys(sectionLabels[role]) as Section[]).map((item, index) => (
-            <button key={item} onClick={() => setSection(item)} className={section === item ? "active" : ""} aria-current={section === item ? "page" : undefined}>
+            <button type="button" key={item} data-testid={`desktop-section-${item}`} onClick={() => setSection(item)} className={section === item ? "active" : ""} aria-current={section === item ? "page" : undefined}>
               <span aria-hidden="true">{["⌂", "▤", "◉", "⚙"][index]}</span>{sectionLabels[role][item]}
               {item === "mensagens" && (role === "cliente" || role === "prestador") && <UnreadMessageBadge role={role} />}
             </button>
@@ -1273,14 +1292,14 @@ function Shell({ role, section, setSection, changeRole, onSignOut, authBusy, chi
         </nav>
         <div className="demo-profile-switcher">
           <small>PERFIL DA DEMONSTRAÇÃO</small>
-          <select value={role} disabled={authBusy} onChange={(event) => void changeRole(event.target.value as Role)} aria-label="Trocar perfil da demonstração">
+          <select data-testid="role-switcher" value={role} disabled={authBusy} onChange={(event) => void changeRole(event.target.value as Role)} aria-label="Trocar perfil da demonstração">
             {(Object.keys(roleDetails) as Role[]).map((item) => <option key={item} value={item}>{roleDetails[item].label}</option>)}
           </select>
           <p>Dados fictícios · sem pagamento real</p>
         </div>
-        <button className="signout-button" disabled={authBusy} onClick={() => void onSignOut()}>← Encerrar sessão</button>
+        <button type="button" className="signout-button" disabled={authBusy} onClick={() => void onSignOut()}>← Encerrar sessão</button>
       </aside>
-      <div className="demo-main" id="painel">{children}</div>
+      <div className="demo-main" id="painel" data-testid="main-panel" tabIndex={-1}>{children}</div>
     </main>
   );
 }
@@ -5151,7 +5170,7 @@ function OperationSystemHealthPanel({ notify }: { notify: (message: string) => v
         <article><small>CRÍTICOS</small><strong>{data.summary.criticalCount}</strong><span>bloqueiam tráfego</span></article>
         <article><small>GATES DE PRODUÇÃO</small><strong>{data.summary.productionBlockers}</strong><span>ainda pendentes</span></article>
       </div>
-      <section className={`system-storage-reconciliation ${data.privateStorageReconciliation?.status ?? "pending"}`}>
+      <section data-testid="storage-reconciliation" className={`system-storage-reconciliation ${data.privateStorageReconciliation?.status ?? "pending"}`}>
         <header>
           <div>
             <small>COFRE PRIVADO · {data.privateStorageReconciliation?.policyVersion ?? "AGUARDANDO PRIMEIRA EXECUÇÃO"}</small>
@@ -5525,5 +5544,5 @@ function Metric({ label, value, detail, tone }: { label: string; value: string; 
 }
 
 function MobileNav({ role, section, setSection }: { role: Role; section: Section; setSection: (section: Section) => void }) {
-  return <nav className="mobile-role-bar" aria-label="Navegação móvel">{(Object.keys(sectionLabels[role]) as Section[]).map((item, index) => <button key={item} onClick={() => setSection(item)} className={section === item ? "active" : ""}><span>{["⌂", "▤", "◉", "⚙"][index]}</span>{sectionLabels[role][item].replace("Meus ", "")}</button>)}</nav>;
+  return <nav className="mobile-role-bar" aria-label="Navegação móvel">{(Object.keys(sectionLabels[role]) as Section[]).map((item, index) => <button type="button" key={item} data-testid={`mobile-section-${item}`} onClick={() => setSection(item)} className={section === item ? "active" : ""} aria-current={section === item ? "page" : undefined}><span aria-hidden="true">{["⌂", "▤", "◉", "⚙"][index]}</span>{sectionLabels[role][item].replace("Meus ", "")}</button>)}</nav>;
 }

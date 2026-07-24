@@ -41,6 +41,7 @@ export function configuredIntegrationChecks(environment: NodeJS.ProcessEnv): Sys
     && environment.VAPID_PUBLIC_KEY
     && environment.VAPID_PRIVATE_KEY,
   );
+  const transportConfigured = environment.TRANSPORT_SECURITY_CONFIGURED === "true";
   return [
     {
       id: "identity",
@@ -55,6 +56,18 @@ export function configuredIntegrationChecks(environment: NodeJS.ProcessEnv): Sys
       latencyMs: null,
       trafficBlocking: false,
       productionBlocking: !identityConfigured,
+    },
+    {
+      id: "transport-security",
+      area: "security",
+      label: "Transporte HTTPS",
+      status: transportConfigured ? "healthy" : "attention",
+      detail: transportConfigured
+        ? "HTTPS e HSTS informados como homologados neste ambiente."
+        : "Headers defensivos ativos; terminação HTTPS e HSTS ainda não homologados.",
+      latencyMs: null,
+      trafficBlocking: false,
+      productionBlocking: !transportConfigured,
     },
     {
       id: "payments",

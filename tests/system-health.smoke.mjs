@@ -30,6 +30,15 @@ assert.match(
   livenessResponse.headers.get("x-request-id") ?? "",
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
 );
+assert.equal(livenessResponse.headers.get("x-frame-options"), "DENY");
+assert.equal(livenessResponse.headers.get("x-content-type-options"), "nosniff");
+assert.equal(livenessResponse.headers.get("cache-control"), "no-store");
+assert.match(
+  livenessResponse.headers.get("content-security-policy") ?? "",
+  /default-src 'none'/,
+);
+assert.equal(livenessResponse.headers.has("x-powered-by"), false);
+assert.equal(livenessResponse.headers.has("strict-transport-security"), false);
 const liveness = await json(livenessResponse);
 assert.equal(liveness.status, "ok");
 assert.equal(liveness.service, "max-service-api");
@@ -43,6 +52,40 @@ assert.deepEqual(
 );
 assert.equal(readiness.checks.every((check) => check.status === "healthy"), true);
 assert.equal(readiness.telemetry, undefined);
+
+const preflight = await fetch(`${apiBaseUrl}/health/live`, {
+  method: "OPTIONS",
+  headers: {
+    origin: webBaseUrl,
+    "access-control-request-method": "PATCH",
+    "access-control-request-headers": "content-type,x-demo-role",
+  },
+});
+assert.equal(preflight.status, 204);
+assert.equal(preflight.headers.get("access-control-allow-origin"), webBaseUrl);
+assert.match(preflight.headers.get("access-control-allow-methods") ?? "", /PATCH/);
+assert.match(preflight.headers.get("access-control-allow-headers") ?? "", /x-demo-role/i);
+assert.equal(preflight.headers.has("access-control-allow-credentials"), false);
+
+const webLanding = await fetch(webBaseUrl);
+assert.equal(webLanding.status, 200);
+assert.equal(webLanding.headers.get("x-frame-options"), "DENY");
+assert.match(
+  webLanding.headers.get("content-security-policy") ?? "",
+  /frame-ancestors 'none'/,
+);
+const webDemo = await fetch(`${webBaseUrl}/demo`);
+assert.equal(webDemo.status, 200);
+assert.match(webDemo.headers.get("cache-control") ?? "", /no-store/);
+
+const oversized = await fetch(`${apiBaseUrl}/api/v1/campaigns/validate`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ code: "X".repeat(70 * 1_024) }),
+});
+assert.equal(oversized.status, 413);
+assert.equal(oversized.headers.get("x-content-type-options"), "nosniff");
+assert.match(oversized.headers.get("x-request-id") ?? "", /^[0-9a-f-]{36}$/i);
 
 const customerCookie = await sessionCookie("cliente");
 const forbidden = await fetch(`${webBaseUrl}/api/v1/operation/system-health`, {
@@ -99,6 +142,7 @@ assert.equal(operationHealth.summary.localTrafficReady, true);
 assert.equal(operationHealth.summary.productionAuthorized, false);
 assert.equal(operationHealth.summary.criticalCount, 0);
 assert.equal(operationHealth.checks.some((check) => check.id === "payments"), true);
+assert.equal(operationHealth.checks.some((check) => check.id === "transport-security"), true);
 assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01");
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
@@ -121,7 +165,7 @@ assert.equal(
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

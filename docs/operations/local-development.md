@@ -21,7 +21,7 @@ Esse modo não inicia o banco nem a API e serve somente para trabalhar na interf
 
 O Docker Compose inicia PostgreSQL 16, API NestJS e frontend. A migration versionada é aplicada na inicialização da API e cria apenas dados fictícios. A aplicação conecta com a role `max_service_app`, sem `BYPASSRLS`; a role administrativa local é usada somente pelo executor de migrations.
 
-A demonstração cria sessões revogáveis no PostgreSQL. `BFF_INTERNAL_SECRET` assina o contexto entre web e API e `COOKIE_SECURE=false` permite o cookie no HTTP local. Em HTTPS, o cookie deve ser seguro e ambas as chaves precisam vir de um cofre, nunca do Compose.
+A demonstração cria sessões revogáveis no PostgreSQL. `BFF_INTERNAL_SECRET` assina o contexto entre web e API, `COOKIE_SECURE=false` permite o cookie no HTTP local e `TRANSPORT_SECURITY_CONFIGURED=false` mantém HSTS e o gate HTTPS honestamente desativados. Em HTTPS, o cookie deve ser seguro, o transporte precisa ser homologado e ambas as chaves devem vir de um cofre, nunca do Compose.
 
 Fluxo recomendado:
 

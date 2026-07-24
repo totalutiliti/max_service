@@ -19,7 +19,7 @@ O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria
 
 Frontend e API independentes, PostgreSQL gerenciado com backup/PITR, Redis gerenciado, object storage privado, cofre de segredos, identidade gerenciada, filas, logs estruturados, métricas, traces e alertas.
 
-O ambiente local já separa liveness de readiness, oferece cockpit operacional autenticado, gera `x-request-id`, escreve logs JSON sem PII, agrega uma janela limitada de métricas e aplica proteção contra abuso por réplica. Store distribuído para rate limit, coleta e retenção central de logs, exportação de métricas, traces, alertas externos e SLOs ainda dependem da infraestrutura escolhida.
+O ambiente local já separa liveness de readiness, oferece cockpit operacional autenticado, gera `x-request-id`, escreve logs JSON sem PII, agrega uma janela limitada de métricas, aplica proteção contra abuso por réplica e envia headers defensivos com CORS e limites de corpo fechados. HTTPS/HSTS, CSP por nonce/hash, store distribuído para rate limit, coleta e retenção central de logs, exportação de métricas, traces, alertas externos e SLOs ainda dependem da infraestrutura escolhida.
 
 ## Gate de produção
 

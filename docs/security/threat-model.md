@@ -14,6 +14,8 @@ Browser/PWA, BFF, API, PostgreSQL, Redis/worker, object storage, PSP, e-mail/SMS
 |---|---|
 | tomada de conta | Argon2id+pepper, MFA administrativo, rate limit, lockout, sessão revogável e detecção de reuso |
 | enumeração | mensagens e tempo de resposta equivalentes; rate limit por IP/conta |
+| XSS e clickjacking | CSP de origens fechadas, bloqueio de frames/objetos, `nosniff` e políticas de capacidades; nonce/hashes ainda são gate |
+| abuso de payload | limites globais de JSON/form e limites menores durante streaming de cada tipo de anexo |
 | IDOR/acesso cruzado | autorização por recurso + RLS + testes negativos |
 | vazamento no pool | contexto somente com `SET LOCAL` em transação; teste de reutilização |
 | CSRF/XSS | SameSite, token CSRF quando aplicável, CSP sem scripts arbitrários e encoding |
@@ -67,5 +69,7 @@ Os probes públicos retornam somente estado, latência e identificadores fechado
 Cada requisição recebe um identificador aleatório criado pela API, sem aceitar correlação fornecida pelo cliente. O log estruturado usa somente família de rota normalizada, método, status, duração e papel; descarta query string, payload, cookie, assinatura e identidade do ator. O buffer de métricas guarda no máximo mil amostras no processo e o painel expõe apenas agregados à Operação. Centralização, retenção, proteção contra alteração dos logs e agregação entre réplicas continuam gates de infraestrutura antes de produção.
 
 A criação de sessão demonstrativa, a indicação pública e a validação de cupom passam por rate limit depois da assinatura interna. Assuntos são transformados por HMAC com salt por processo, os buffers possuem capacidade fixa e somente contagens por política chegam à Operação. O controle local reduz abuso acidental e comprova o contrato `429`, mas não substitui rate limit distribuído por IP/conta na borda de produção.
+
+Frontend e API enviam headers contra framing, sniffing, recursos externos e capacidades desnecessárias; páginas autenticadas e convites não podem ser armazenados. A API remove a identificação do framework, restringe CORS e rejeita JSON acima de 64 KB antes do controller. A CSP ainda permite scripts e estilos inline pela arquitetura atual, e o Compose não simula HTTPS/HSTS; nonce, TLS e validação na borda permanecem gates de produção.
 
 As preferências de Web Push não apagam a notificação da central: elas controlam somente a entrega ao aparelho. O destinatário escolhe marketplace, mensagens, atendimento e plataforma em registro próprio protegido por RLS. A janela silenciosa usa uma lista fechada de fusos brasileiros e suporta períodos que cruzam a meia-noite. O enqueue não cria entrega para assunto desativado, o claim repete a verificação para evitar corrida com mudanças recentes e a reconciliação finaliza como `suppressed` qualquer pendência incompatível. Eventos guardam somente flags, fuso e versão; endpoints e chaves nunca entram no payload de auditoria.

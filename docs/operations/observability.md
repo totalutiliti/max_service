@@ -48,9 +48,11 @@ Essas métricas são deliberadamente locais à réplica e zeram quando o process
 
 O mesmo cockpit apresenta exclusivamente agregados da proteção contra abuso: políticas ativas, buckets locais e bloqueios por política nos últimos cinco minutos. Chaves, códigos, atores e endereços não fazem parte da resposta.
 
+O check **Transporte HTTPS** diferencia os headers defensivos já aplicados no código da terminação TLS/HSTS que depende da borda. No Docker local ele permanece em atenção e bloqueia produção, sem bloquear o tráfego de demonstração.
+
 ## Evidência automatizada
 
-`npm run test:smoke` valida liveness, readiness, `x-request-id`, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente e rejeição do canal interno não assinado. Testes unitários também comprovam normalização sem PII, cálculo da janela, expiração do limite e retenção limitada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
+`npm run test:smoke` valida liveness, readiness, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente e rejeição do canal interno não assinado. Testes unitários também comprovam normalização sem PII, cálculo da janela, expiração do limite e retenção limitada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
 
 ## Próximos requisitos de produção
 

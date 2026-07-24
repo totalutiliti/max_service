@@ -24,6 +24,7 @@ import { RequestTelemetryService } from "./observability/request-telemetry.servi
 import { SystemHealthService } from "./observability/system-health.service.js";
 import { RateLimitMiddleware } from "./security/rate-limit.middleware.js";
 import { RateLimitService } from "./security/rate-limit.service.js";
+import { HttpSecurityMiddleware } from "./security/http-security.middleware.js";
 import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
 import { PartnersController, PublicReferralsController } from "./partners/partners.controller.js";
@@ -36,10 +37,10 @@ import { VerificationsService } from "./verifications/verifications.service.js";
 
 @Module({
   controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestTelemetryMiddleware, InternalAuthMiddleware, RateLimitMiddleware).forRoutes("*");
+    consumer.apply(InternalAuthMiddleware, RateLimitMiddleware).forRoutes("*");
   }
 }

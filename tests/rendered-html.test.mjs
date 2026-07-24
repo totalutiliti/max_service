@@ -13,9 +13,23 @@ async function render(path = "/") {
   );
 }
 
+function assertSecurityHeaders(response, { privateCache = false } = {}) {
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("cross-origin-opener-policy"), "same-origin");
+  assert.match(response.headers.get("permissions-policy") ?? "", /camera=\(\)/);
+  const policy = response.headers.get("content-security-policy") ?? "";
+  assert.match(policy, /default-src 'self'/);
+  assert.match(policy, /frame-ancestors 'none'/);
+  assert.match(policy, /object-src 'none'/);
+  assert.doesNotMatch(policy, /https?:\/\//);
+  if (privateCache) assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+}
+
 test("renderiza a landing própria da Max Service", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
+  assertSecurityHeaders(response);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /Max Service/);
@@ -28,6 +42,7 @@ test("renderiza a landing própria da Max Service", async () => {
 test("renderiza o carregamento seguro antes de resolver a sessão", async () => {
   const response = await render("/demo");
   assert.equal(response.status, 200);
+  assertSecurityHeaders(response, { privateCache: true });
   const html = await response.text();
   assert.match(html, /Preparando seu espaço Max Service/);
   assert.match(html, /Plataforma SaaS \| Max Service/);
@@ -37,6 +52,7 @@ test("renderiza o carregamento seguro antes de resolver a sessão", async () => 
 test("renderiza a landing pública de indicação sem expor dados da rede", async () => {
   const response = await render("/convite?codigo=PC-7K2M&origem=link");
   assert.equal(response.status, 200);
+  assertSecurityHeaders(response, { privateCache: true });
   const html = await response.text();
   assert.match(html, /Transforme sua experiência/);
   assert.match(html, /PC-7K2M/);

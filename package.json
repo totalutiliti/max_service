@@ -11,7 +11,7 @@
     "api:dev": "tsx watch api/main.ts",
     "api:build": "tsc -p tsconfig.api.json",
     "api:start": "node api-dist/api/main.js",
-    "api:test": "tsx --test api/tests/demo-actor.test.ts api/tests/rate-limit.test.ts api/tests/request-telemetry.test.ts api/tests/system-health.test.ts",
+    "api:test": "tsx --test api/tests/demo-actor.test.ts api/tests/http-security.test.ts api/tests/rate-limit.test.ts api/tests/request-telemetry.test.ts api/tests/system-health.test.ts",
     "build": "vinext build",
     "start": "vinext start",
     "test:integration": "node --test tests/postgres-schedule.integration.test.mjs",

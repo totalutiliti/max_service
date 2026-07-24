@@ -50,7 +50,8 @@ test("modo demonstrativo e sandbox permanecem bloqueadores de produção", () =>
   assert.equal(checks.find((check) => check.id === "payments")?.productionBlocking, true);
   assert.equal(summary.localTrafficReady, true);
   assert.equal(summary.productionAuthorized, false);
-  assert.equal(summary.productionBlockers, 2);
+  assert.equal(summary.productionBlockers, 3);
+  assert.equal(checks.find((check) => check.id === "transport-security")?.status, "attention");
 
   const noDemoWithoutProvider = configuredIntegrationChecks({ DEMO_MODE: "false" });
   assert.equal(noDemoWithoutProvider.find((check) => check.id === "identity")?.status, "attention");

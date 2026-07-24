@@ -30,14 +30,25 @@ export class ProviderVerificationController {
   async upload(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-file-name") encodedFileName: string | undefined,
     @Headers("content-type") contentType: string | undefined,
     @Param("documentId") documentId: string,
     @Req() request: IncomingMessage,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
     const fileName = decodeFileName(encodedFileName);
     const bytes = await readLimitedBody(request, maximumProviderDocumentBytes, "O arquivo excede o limite de 2 MB.");
-    return { verification: await this.verifications.uploadDocument(actorFromHeaders(role, id), documentId, fileName, contentType ?? "", bytes) };
+    const result = await this.verifications.uploadDocument(
+      actorFromHeaders(role, id),
+      documentId,
+      fileName,
+      contentType ?? "",
+      bytes,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { verification: result.value };
   }
 
   @Get("files/:fileId")

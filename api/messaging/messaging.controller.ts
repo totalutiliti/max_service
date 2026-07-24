@@ -75,23 +75,26 @@ export class MessagingController {
   async sendAttachment(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-file-name") encodedFileName: string | undefined,
     @Headers("x-message-body") encodedBody: string | undefined,
     @Headers("content-type") contentType: string | undefined,
     @Param("conversationId") conversationId: string,
     @Req() request: IncomingMessage,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
     const bytes = await readLimitedBody(request, maximumPrivateImageBytes, "A imagem excede o limite de 512 KB.");
-    return {
-      message: await this.messaging.sendWithAttachment(
-        actorFromHeaders(role, id),
-        conversationId,
-        decodeFileName(encodedBody),
-        decodeFileName(encodedFileName),
-        contentType ?? "",
-        bytes,
-      ),
-    };
+    const result = await this.messaging.sendWithAttachment(
+      actorFromHeaders(role, id),
+      conversationId,
+      decodeFileName(encodedBody),
+      decodeFileName(encodedFileName),
+      contentType ?? "",
+      bytes,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { message: result.value };
   }
 
   @Get("message-attachments/:attachmentId")

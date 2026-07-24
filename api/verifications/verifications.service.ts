@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { idempotencyDerivedUuid } from "../idempotency/idempotency.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import { validateProviderDocumentFile } from "./document-file-validation.js";
@@ -267,47 +268,73 @@ export class VerificationsService {
     });
   }
 
-  async uploadDocument(actor: Actor, documentId: string, originalName: string, contentType: string, bytes: Buffer) {
+  async uploadDocument(
+    actor: Actor,
+    documentId: string,
+    originalName: string,
+    contentType: string,
+    bytes: Buffer,
+    idempotencyKey: string | undefined,
+  ) {
     this.ensureProvider(actor);
     const fileName = validateProviderDocumentFile(originalName, contentType, bytes);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const fileId = randomUUID();
-    const document = await this.database.withActor(actor, async (client) => {
-      const result = await client.query<{ verificationId: string; providerId: string; label: string }>(`
-        SELECT verification.id AS "verificationId", verification.provider_id AS "providerId", document.label
-        FROM provider_document_checks document
-        JOIN provider_verifications verification ON verification.id = document.verification_id
-        WHERE document.id = $1 AND verification.provider_id = $2
-      `, [documentId, actor.id]);
-      return result.rows[0];
-    });
-    if (!document) throw new NotFoundException("Item documental não encontrado.");
-
-    const objectKey = `provider-verifications/${document.verificationId}/${documentId}/${fileId}`;
-    await this.storage.put(objectKey, bytes, contentType, sha256);
+    const route = `/api/v1/provider/verification/documents/${documentId}/files`;
+    let objectKey: string | null = null;
     try {
-      await this.database.withActor(actor, async (client) => {
+      return await this.database.withActor(actor, async (client) => {
+        return this.idempotency.execute(client, actor, {
+          key: idempotencyKey,
+          method: "POST",
+          route,
+          payload: { fileName, contentType, sizeBytes: bytes.length, sha256 },
+        }, async () => {
+        const document = await client.query<{ verificationId: string; providerId: string; label: string }>(`
+          SELECT verification.id AS "verificationId", verification.provider_id AS "providerId", document.label
+          FROM provider_document_checks document
+          JOIN provider_verifications verification ON verification.id = document.verification_id
+          WHERE document.id = $1 AND verification.provider_id = $2
+        `, [documentId, actor.id]);
+        if (!document.rows[0]) throw new NotFoundException("Item documental não encontrado.");
+
+        const fileId = idempotencyDerivedUuid([
+          actor.role,
+          actor.id,
+          route,
+          idempotencyKey ?? "",
+          "file",
+        ]);
+        objectKey = `provider-verifications/${document.rows[0].verificationId}/${documentId}/${fileId}`;
+        await this.storage.put(objectKey, bytes, contentType, sha256);
         await client.query(`
           INSERT INTO provider_document_files (
             id, verification_id, document_check_id, provider_id, object_key,
             original_name, content_type, size_bytes, sha256, uploaded_by
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $4)
-        `, [fileId, document.verificationId, documentId, actor.id, objectKey, fileName, contentType, bytes.length, sha256]);
+        `, [fileId, document.rows[0].verificationId, documentId, actor.id, objectKey, fileName, contentType, bytes.length, sha256]);
         const eventId = randomUUID();
         await client.query(`
           INSERT INTO provider_verification_events (id, verification_id, actor_id, event_type, note)
           VALUES ($1, $2, $3, 'document_uploaded', $4)
-        `, [eventId, document.verificationId, actor.id, `${document.label}: novo arquivo sintético privado enviado para conferência.`]);
+        `, [eventId, document.rows[0].verificationId, actor.id, `${document.rows[0].label}: novo arquivo sintético privado enviado para conferência.`]);
         await client.query(
           "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'provider_document.uploaded', 'provider_document_file', $3, $4::jsonb)",
-          [actor.id, actor.role, fileId, JSON.stringify({ documentId, verificationId: document.verificationId, contentType, sizeBytes: bytes.length, sha256, eventId })],
+          [actor.id, actor.role, fileId, JSON.stringify({
+            documentId,
+            verificationId: document.rows[0].verificationId,
+            contentType,
+            sizeBytes: bytes.length,
+            sha256,
+            eventId,
+          })],
         );
+        return this.detailWithClient(client, document.rows[0].verificationId);
+        });
       });
     } catch (error) {
-      await this.storage.remove(objectKey);
+      if (objectKey) await this.storage.remove(objectKey);
       throw error;
     }
-    return this.providerStatus(actor);
   }
 
   async downloadDocument(actor: Actor, fileId: string) {

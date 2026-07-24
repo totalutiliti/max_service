@@ -70,21 +70,24 @@ export class MarketplaceController {
   async uploadRequestAttachment(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-file-name") encodedFileName: string | undefined,
     @Headers("content-type") contentType: string | undefined,
     @Param("requestId") requestId: string,
     @Req() request: IncomingMessage,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
     const bytes = await readLimitedBody(request, maximumRequestAttachmentBytes, "A imagem excede o limite de 512 KB.");
-    return {
-      attachment: await this.marketplace.uploadRequestAttachment(
-        actorFromHeaders(role, id),
-        requestId,
-        decodeFileName(encodedFileName),
-        contentType ?? "",
-        bytes,
-      ),
-    };
+    const result = await this.marketplace.uploadRequestAttachment(
+      actorFromHeaders(role, id),
+      requestId,
+      decodeFileName(encodedFileName),
+      contentType ?? "",
+      bytes,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { attachment: result.value };
   }
 
   @Get("service-request-attachments/:attachmentId")

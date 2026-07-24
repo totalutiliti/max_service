@@ -1712,6 +1712,7 @@ function RequestDialog({
   const [saving, setSaving] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const requestIdempotencyKey = useRef(crypto.randomUUID());
+  const pendingPhotoKeys = useRef(new WeakMap<File, string>());
   const selectedCategory = categories.find((category) => category.slug === categorySlug) ?? categories[0];
   const selectedRegion = regions.find((region) => region.id === regionId) ?? regions[0];
   const selectedNeighborhood = selectedRegion?.neighborhoods.find((neighborhood) => neighborhood.id === neighborhoodId)
@@ -1795,13 +1796,20 @@ function RequestDialog({
         const form = new FormData();
         form.set("requestId", payload.request.id);
         form.set("file", photo);
-        const uploadResponse = await fetch("/api/v1/customer/request-attachments", { method: "POST", body: form });
+        const photoKey = pendingPhotoKeys.current.get(photo) ?? crypto.randomUUID();
+        pendingPhotoKeys.current.set(photo, photoKey);
+        const uploadResponse = await fetch("/api/v1/customer/request-attachments", {
+          method: "POST",
+          headers: { "idempotency-key": photoKey },
+          body: form,
+        });
         const uploadPayload = await uploadResponse.json() as { error?: string; message?: string };
         if (uploadResponse.ok) uploaded += 1;
         else uploadFailure = uploadPayload.error ?? uploadPayload.message ?? "Uma imagem não pôde ser guardada.";
       }
       if (uploadFailure) {
         notify(`Pedido ${payload.request.publicCode ?? ""} criado; ${uploaded} de ${photos.length} imagem(ns) guardada(s). ${uploadFailure}`);
+        return;
       } else {
         notify(`Pedido ${payload.request.publicCode ?? ""} criado${uploaded ? ` com ${uploaded} imagem(ns) privada(s)` : ""}${payload.request.campaign ? ` · cupom ${payload.request.campaign.code} reservado` : ""}.`);
       }
@@ -1965,6 +1973,7 @@ function ProviderView({ notify }: { notify: (message: string) => void }) {
   const [verificationLoading, setVerificationLoading] = useState(true);
   const [uploadingDocumentId, setUploadingDocumentId] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const pendingDocumentUploadKeys = useRef(new Map<string, string>());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2006,14 +2015,31 @@ function ProviderView({ notify }: { notify: (message: string) => void }) {
 
   const uploadDocument = async (documentId: string, file: File | undefined) => {
     if (!file) return;
+    const mutationFingerprint = JSON.stringify({
+      documentId,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      lastModified: file.lastModified,
+    });
     setUploadingDocumentId(documentId);
     try {
       const form = new FormData();
       form.set("documentId", documentId);
       form.set("file", file);
-      const response = await fetch("/api/v1/provider/verification", { method: "POST", body: form });
+      const response = await fetch("/api/v1/provider/verification", {
+        method: "POST",
+        headers: {
+          "idempotency-key": pendingIdempotencyKey(
+            pendingDocumentUploadKeys.current,
+            mutationFingerprint,
+          ),
+        },
+        body: form,
+      });
       const payload = await response.json() as { verification?: ProviderVerification; error?: string; message?: string };
       if (!response.ok || !payload.verification) throw new Error(payload.error ?? payload.message ?? "Não foi possível guardar o arquivo.");
+      pendingDocumentUploadKeys.current.delete(mutationFingerprint);
       setVerification(payload.verification);
       notify("Arquivo sintético guardado no cofre privado.");
     } catch (error) {
@@ -3646,13 +3672,20 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
     if ((!body && !attachmentFile) || !selectedId) return;
     setSending(true);
     try {
-      const messageFingerprint = `${selectedId}\u0000${body}`;
+      const messageFingerprint = attachmentFile
+        ? JSON.stringify({
+            conversationId: selectedId,
+            body,
+            name: attachmentFile.name,
+            type: attachmentFile.type,
+            size: attachmentFile.size,
+            lastModified: attachmentFile.lastModified,
+          })
+        : `${selectedId}\u0000${body}`;
       const textIdempotencyKey = pendingMessageKey.current?.fingerprint === messageFingerprint
         ? pendingMessageKey.current.key
         : crypto.randomUUID();
-      if (!attachmentFile) {
-        pendingMessageKey.current = { fingerprint: messageFingerprint, key: textIdempotencyKey };
-      }
+      pendingMessageKey.current = { fingerprint: messageFingerprint, key: textIdempotencyKey };
       const requestBody = attachmentFile ? new FormData() : null;
       if (requestBody && attachmentFile) {
         requestBody.set("role", role);
@@ -3662,6 +3695,7 @@ function PersistentMessages({ role, notify }: { role: "cliente" | "prestador"; n
       }
       const response = await fetch("/api/v1/messaging", attachmentFile ? {
         method: "POST",
+        headers: { "idempotency-key": textIdempotencyKey },
         body: requestBody,
       } : {
         method: "POST",
@@ -3915,11 +3949,24 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
     try {
       let response: Response;
       if (attachmentFile) {
+        mutationFingerprint = JSON.stringify({
+          endpoint,
+          caseId: selectedId,
+          body,
+          name: attachmentFile.name,
+          type: attachmentFile.type,
+          size: attachmentFile.size,
+          lastModified: attachmentFile.lastModified,
+        });
         const form = new FormData();
         form.set("caseId", selectedId);
         form.set("body", body);
         form.set("file", attachmentFile);
-        response = await fetch(endpoint, { method: "POST", body: form });
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "idempotency-key": idempotencyKeyFor(mutationFingerprint) },
+          body: form,
+        });
       } else {
         mutationFingerprint = `message:${endpoint}:${selectedId}:${body}`;
         response = await fetch(endpoint, {
@@ -3933,7 +3980,7 @@ function PartnerSupportCenter({ role, notify }: { role: "parceiro" | "operacao";
       }
       const payload = await response.json() as { event?: PartnerSupportEvent; error?: string; message?: string };
       if (!response.ok || !payload.event) throw new Error(payload.error ?? payload.message ?? "Não foi possível enviar a mensagem.");
-      if (mutationFingerprint) pendingSupportKeys.current.delete(mutationFingerprint);
+      pendingSupportKeys.current.delete(mutationFingerprint);
       setDraft("");
       setAttachmentFile(null);
       refreshCenter();

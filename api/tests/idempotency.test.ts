@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canonicalJson,
+  idempotencyDerivedUuid,
   idempotencyRequestHash,
   validateIdempotencyKey,
 } from "../idempotency/idempotency.js";
@@ -29,4 +30,14 @@ test("aceita chaves opacas seguras e rejeita formatos ambíguos", () => {
   assert.throws(() => validateIdempotencyKey("curta"), /16 a 80/);
   assert.throws(() => validateIdempotencyKey(" 550e8400-e29b-41d4-a716-446655440000"), /16 a 80/);
   assert.throws(() => validateIdempotencyKey("repeticao.com.pontos.nao.permitidos"), /16 a 80/);
+});
+
+test("deriva identificadores UUID estáveis e isolados para efeitos binários", () => {
+  const first = idempotencyDerivedUuid(["customer", "actor-1", "/upload", "opaque-key-123456", "file"]);
+  const replay = idempotencyDerivedUuid(["customer", "actor-1", "/upload", "opaque-key-123456", "file"]);
+  const other = idempotencyDerivedUuid(["customer", "actor-1", "/upload", "opaque-key-123456", "event"]);
+
+  assert.equal(first, replay);
+  assert.notEqual(first, other);
+  assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });

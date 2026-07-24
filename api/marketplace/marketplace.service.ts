@@ -4,13 +4,14 @@ import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { CampaignsService } from "../campaigns/campaigns.service.js";
 import { DatabaseService } from "../database/database.service.js";
+import { idempotencyDerivedUuid } from "../idempotency/idempotency.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import type { CreateProposalDto, CreateServiceRequestDto, UpdateProviderMatchingDto } from "./marketplace.dto.js";
 import { maximumRequestAttachmentCount, validateRequestAttachment } from "./request-attachment-validation.js";
 
-interface RequestAttachmentRow {
+interface RequestAttachmentRow extends Record<string, unknown> {
   id: string;
   fileName: string;
   contentType: string;
@@ -399,34 +400,51 @@ export class MarketplaceService {
     });
   }
 
-  async uploadRequestAttachment(actor: Actor, requestId: string, originalName: string, contentType: string, bytes: Buffer) {
+  async uploadRequestAttachment(
+    actor: Actor,
+    requestId: string,
+    originalName: string,
+    contentType: string,
+    bytes: Buffer,
+    idempotencyKey: string | undefined,
+  ) {
     if (actor.role !== "customer") throw new ForbiddenException("Somente clientes podem anexar imagens ao pedido.");
     const fileName = validateRequestAttachment(originalName, contentType, bytes);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const attachmentId = randomUUID();
-    const request = await this.database.withActor(actor, async (client) => {
-      const result = await client.query<{ id: string; publicCode: string }>(`
-        SELECT id, public_code AS "publicCode"
-        FROM service_requests
-        WHERE id = $1 AND customer_id = $2 AND status IN ('open', 'proposals_received')
-      `, [requestId, actor.id]);
-      if (!result.rows[0]) return null;
-      const count = await client.query<{ total: number }>(
-        "SELECT count(*)::int AS total FROM service_request_attachments WHERE request_id = $1",
-        [requestId],
-      );
-      return { ...result.rows[0], attachmentCount: count.rows[0]?.total ?? 0 };
-    });
-    if (!request) throw new NotFoundException("Pedido não encontrado ou indisponível para anexos.");
-    if (request.attachmentCount >= maximumRequestAttachmentCount) {
-      throw new ConflictException("O pedido já possui o limite de 3 imagens.");
-    }
-
-    const objectKey = `service-requests/${requestId}/attachments/${attachmentId}`;
-    await this.storage.put(objectKey, bytes, contentType, sha256);
+    const route = `/api/v1/service-requests/${requestId}/attachments`;
+    let objectKey: string | null = null;
     try {
       return await this.database.withActor(actor, async (client) => {
-        const result = await client.query<RequestAttachmentRow>(`
+        return this.idempotency.execute(client, actor, {
+          key: idempotencyKey,
+          method: "POST",
+          route,
+          payload: { fileName, contentType, sizeBytes: bytes.length, sha256 },
+        }, async () => {
+          const request = await client.query<{ id: string; publicCode: string }>(`
+            SELECT id, public_code AS "publicCode"
+            FROM service_requests
+            WHERE id = $1 AND customer_id = $2 AND status IN ('open', 'proposals_received')
+          `, [requestId, actor.id]);
+          if (!request.rows[0]) throw new NotFoundException("Pedido não encontrado ou indisponível para anexos.");
+          const count = await client.query<{ total: number }>(
+            "SELECT count(*)::int AS total FROM service_request_attachments WHERE request_id = $1",
+            [requestId],
+          );
+          if ((count.rows[0]?.total ?? 0) >= maximumRequestAttachmentCount) {
+            throw new ConflictException("O pedido já possui o limite de 3 imagens.");
+          }
+
+          const attachmentId = idempotencyDerivedUuid([
+            actor.role,
+            actor.id,
+            route,
+            idempotencyKey ?? "",
+            "attachment",
+          ]);
+          objectKey = `service-requests/${requestId}/attachments/${attachmentId}`;
+          await this.storage.put(objectKey, bytes, contentType, sha256);
+          const result = await client.query<RequestAttachmentRow>(`
           INSERT INTO service_request_attachments (
             id, request_id, customer_id, object_key, original_name,
             content_type, size_bytes, sha256, uploaded_by
@@ -438,15 +456,22 @@ export class MarketplaceService {
             size_bytes AS "sizeBytes",
             sha256,
             created_at AS "createdAt"
-        `, [attachmentId, requestId, actor.id, objectKey, fileName, contentType, bytes.length, sha256]);
-        await client.query(
-          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_request.attachment_uploaded', 'service_request_attachment', $3, $4::jsonb)",
-          [actor.id, actor.role, attachmentId, JSON.stringify({ requestId, publicCode: request.publicCode, contentType, sizeBytes: bytes.length, sha256 })],
-        );
-        return result.rows[0];
+          `, [attachmentId, requestId, actor.id, objectKey, fileName, contentType, bytes.length, sha256]);
+          await client.query(
+            "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'service_request.attachment_uploaded', 'service_request_attachment', $3, $4::jsonb)",
+            [actor.id, actor.role, attachmentId, JSON.stringify({
+              requestId,
+              publicCode: request.rows[0].publicCode,
+              contentType,
+              sizeBytes: bytes.length,
+              sha256,
+            })],
+          );
+          return result.rows[0];
+        });
       });
     } catch (error) {
-      await this.storage.remove(objectKey);
+      if (objectKey) await this.storage.remove(objectKey);
       if (error instanceof Error && error.message.includes("service_request_attachment_limit")) {
         throw new ConflictException("O pedido já possui o limite de 3 imagens.");
       }

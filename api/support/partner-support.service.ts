@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { createHash, randomUUID } from "node:crypto";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { idempotencyDerivedUuid } from "../idempotency/idempotency.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
@@ -393,6 +394,7 @@ export class PartnerSupportService {
     contentType: string,
     bytes: Buffer,
     scope: "partner" | "operation",
+    idempotencyKey: string | undefined,
   ) {
     this.ensureScope(actor, scope);
     const caption = rawBody.trim();
@@ -405,28 +407,16 @@ export class PartnerSupportService {
     const fileName = validatePartnerSupportAttachment(originalName, contentType, bytes);
     const body = caption || `Arquivo anexado: ${fileName}`;
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const eventId = randomUUID();
-    const attachmentId = randomUUID();
-
-    const preflight = await this.database.withActor(actor, async (client) => {
-      const result = await client.query<{
-        status: "open" | "in_review" | "resolved";
-      }>(`
-        SELECT status
-        FROM partner_support_cases
-        WHERE id = $1
-      `, [caseId]);
-      return result.rows[0];
-    });
-    if (!preflight) throw new NotFoundException("Solicitação de atendimento não encontrada.");
-    if (preflight.status === "resolved") {
-      throw new ConflictException("Solicitações resolvidas não recebem novos anexos.");
-    }
-
-    const objectKey = `partner-support/${caseId}/events/${eventId}/attachments/${attachmentId}`;
-    await this.storage.put(objectKey, bytes, contentType, sha256);
+    const route = `/api/v1/${scope}/support/cases/${caseId}/attachments`;
+    let objectKey: string | null = null;
     try {
       return await this.database.withActor(actor, async (client) => {
+        return this.idempotency.execute(client, actor, {
+          key: idempotencyKey,
+          method: "POST",
+          route,
+          payload: { body: caption, fileName, contentType, sizeBytes: bytes.length, sha256 },
+        }, async () => {
         const current = await client.query<{
           partnerId: string;
           status: "open" | "in_review" | "resolved";
@@ -444,6 +434,22 @@ export class PartnerSupportService {
           throw new ConflictException("Solicitações resolvidas não recebem novos anexos.");
         }
 
+        const eventId = idempotencyDerivedUuid([
+          actor.role,
+          actor.id,
+          route,
+          idempotencyKey ?? "",
+          "event",
+        ]);
+        const attachmentId = idempotencyDerivedUuid([
+          actor.role,
+          actor.id,
+          route,
+          idempotencyKey ?? "",
+          "attachment",
+        ]);
+        objectKey = `partner-support/${caseId}/events/${eventId}/attachments/${attachmentId}`;
+        await this.storage.put(objectKey, bytes, contentType, sha256);
         const event = await client.query(`
           INSERT INTO partner_support_events (id, case_id, actor_id, event_type, body)
           VALUES ($1, $2, $3, 'message', $4)
@@ -505,9 +511,10 @@ export class PartnerSupportService {
           entityId: caseId,
         });
         return { ...event.rows[0], attachment: attachment.rows[0] };
+        });
       });
     } catch (error) {
-      await this.storage.remove(objectKey);
+      if (objectKey) await this.storage.remove(objectKey);
       throw error;
     }
   }

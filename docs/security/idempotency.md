@@ -17,9 +17,11 @@ Reenvios por timeout, perda de conexão ou clique repetido não podem criar pedi
 - triagem de indicações e verificação de profissionais, inclusive revisão documental;
 - ativação, desativação e ordenação de categorias, regiões e bairros;
 - criação e ativação/pausa de campanhas;
-- atualização versionada das metas e dos gates de prontidão.
-
-Uploads binários ainda não usam esse executor: neles, a confirmação precisa coordenar PostgreSQL e armazenamento de objetos sem deixar arquivo órfão ou resposta persistida antes do upload definitivo.
+- atualização versionada das metas e dos gates de prontidão;
+- imagens de solicitações de serviço;
+- imagens anexadas às mensagens;
+- arquivos da verificação de profissionais;
+- anexos do atendimento de parceiros e da Operação.
 
 ## Contrato HTTP
 
@@ -53,6 +55,14 @@ Reutilizar a chave com outro conteúdo retorna `409`. O hash é calculado sobre 
 
 Isso evita a janela de falha existente em caches ou registros gravados fora da transação do negócio.
 
+## Coordenação dos uploads privados
+
+Nos quatro fluxos binários, o hash idempotente considera nome normalizado, MIME, tamanho, SHA-256 do conteúdo e legenda, quando aplicável. O identificador do registro e a chave do objeto são derivados deterministicamente do ator, rota, chave idempotente e tipo de efeito.
+
+O objeto é enviado durante a mesma unidade transacional que reserva a chave e persiste seus metadados. Uma requisição concorrente aguarda o primeiro commit e reproduz a resposta sem executar um segundo envio. Se o banco ou a persistência da resposta falhar de forma observável, a compensação remove o objeto antes de devolver o erro.
+
+Se o processo for interrompido depois do envio e antes do commit, uma nova tentativa equivalente deriva exatamente a mesma chave e sobrescreve o mesmo objeto, em vez de acumular cópias. Um expurgo por idade ainda é necessário para remover o objeto único que pode permanecer se essa tentativa nunca for refeita.
+
 ## Isolamento e dados
 
 - RLS permite ler e alterar somente registros do próprio ator e papel;
@@ -67,10 +77,10 @@ Uma rotina de expurgo/particionamento para registros expirados ainda deve ser de
 
 - testes unitários validam formato, JSON canônico, hash e vínculo da chave à assinatura interna;
 - teste integrado comprova RLS de leitura e conclusão;
-- smoke test dispara pares realmente concorrentes em 23 ações de marketplace, comunicação, atendimento, agenda, ciclo do serviço e operação, confirma um único identificador e observa um replay em cada par;
-- o mesmo smoke reutiliza a chave com conteúdo diferente e exige `409`;
+- smoke test dispara pares realmente concorrentes em 27 ações de marketplace, comunicação, atendimento, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados, confirma um único identificador e observa um replay em cada par;
+- o mesmo smoke reutiliza chaves JSON e binárias com conteúdo diferente e exige `409`;
 - o cockpit soma `idempotencyReplayCount` sem reter chave, corpo ou identidade.
 
 ## Próxima expansão
 
-Antes do piloto externo, a próxima expansão deve definir o protocolo idempotente dos uploads binários, incluindo compensação/expurgo de objetos. Os comandos operacionais JSON atualmente expostos já usam o executor transacional.
+Antes do piloto externo, a próxima expansão deve automatizar a reconciliação entre metadados confirmados e objetos privados e o expurgo por idade. O protocolo idempotente, a compensação de falhas observáveis e as chaves determinísticas dos uploads já estão materializados.

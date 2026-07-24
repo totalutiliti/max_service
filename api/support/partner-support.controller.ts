@@ -94,28 +94,31 @@ export class PartnerSupportController {
   async addAttachment(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-file-name") encodedFileName: string | undefined,
     @Headers("x-message-body") encodedBody: string | undefined,
     @Headers("content-type") contentType: string | undefined,
     @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
     @Req() request: IncomingMessage,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
     const bytes = await readLimitedBody(
       request,
       maximumPartnerSupportAttachmentBytes,
       "O arquivo excede o limite de 2 MB.",
     );
-    return {
-      event: await this.support.addMessageWithAttachment(
-        actorFromHeaders(role, id),
-        caseId,
-        decodeFileName(encodedBody),
-        decodeFileName(encodedFileName),
-        contentType ?? "",
-        bytes,
-        "partner",
-      ),
-    };
+    const result = await this.support.addMessageWithAttachment(
+      actorFromHeaders(role, id),
+      caseId,
+      decodeFileName(encodedBody),
+      decodeFileName(encodedFileName),
+      contentType ?? "",
+      bytes,
+      "partner",
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { event: result.value };
   }
 
   @Get("attachments/:attachmentId")
@@ -180,28 +183,31 @@ export class OperationSupportController {
   async addAttachment(
     @Headers("x-demo-role") role: string | undefined,
     @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Headers("x-file-name") encodedFileName: string | undefined,
     @Headers("x-message-body") encodedBody: string | undefined,
     @Headers("content-type") contentType: string | undefined,
     @Param("caseId", new ParseUUIDPipe({ version: "4" })) caseId: string,
     @Req() request: IncomingMessage,
+    @Res({ passthrough: true }) response: HeaderResponse,
   ) {
     const bytes = await readLimitedBody(
       request,
       maximumPartnerSupportAttachmentBytes,
       "O arquivo excede o limite de 2 MB.",
     );
-    return {
-      event: await this.support.addMessageWithAttachment(
-        actorFromHeaders(role, id),
-        caseId,
-        decodeFileName(encodedBody),
-        decodeFileName(encodedFileName),
-        contentType ?? "",
-        bytes,
-        "operation",
-      ),
-    };
+    const result = await this.support.addMessageWithAttachment(
+      actorFromHeaders(role, id),
+      caseId,
+      decodeFileName(encodedBody),
+      decodeFileName(encodedFileName),
+      contentType ?? "",
+      bytes,
+      "operation",
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { event: result.value };
   }
 
   @Get("attachments/:attachmentId")

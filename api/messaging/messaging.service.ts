@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import { idempotencyDerivedUuid } from "../idempotency/idempotency.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
@@ -245,6 +246,7 @@ export class MessagingService {
     originalName: string,
     contentType: string,
     bytes: Buffer,
+    idempotencyKey: string | undefined,
   ) {
     if (actor.role !== "customer" && actor.role !== "provider") {
       throw new ForbiddenException("Este perfil não pode enviar anexos nesta conversa.");
@@ -254,23 +256,16 @@ export class MessagingService {
     const messageBody = caption || "Imagem anexada";
     const fileName = validatePrivateImage(originalName, contentType, bytes);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const messageId = randomUUID();
-    const attachmentId = randomUUID();
-
-    const preflight = await this.database.withActor(actor, async (client) => {
-      const result = await client.query(`
-        SELECT c.id
-        FROM conversations c
-        WHERE c.id = $1
-      `, [conversationId]);
-      return result.rows[0];
-    });
-    if (!preflight) throw new NotFoundException("Conversa não encontrada.");
-
-    const objectKey = `conversations/${conversationId}/messages/${messageId}/attachments/${attachmentId}`;
-    await this.storage.put(objectKey, bytes, contentType, sha256);
+    const route = `/api/v1/conversations/${conversationId}/message-attachments`;
+    let objectKey: string | null = null;
     try {
       return await this.database.withActor(actor, async (client) => {
+        return this.idempotency.execute(client, actor, {
+          key: idempotencyKey,
+          method: "POST",
+          route,
+          payload: { body: caption, fileName, contentType, sizeBytes: bytes.length, sha256 },
+        }, async () => {
         const conversation = await client.query<{ otherUserId: string; requestCode: string }>(`
           SELECT
             CASE WHEN b.customer_id = $2 THEN b.provider_id ELSE b.customer_id END AS "otherUserId",
@@ -282,6 +277,22 @@ export class MessagingService {
         `, [conversationId, actor.id]);
         if (!conversation.rows[0]) throw new NotFoundException("Conversa não encontrada.");
 
+        const messageId = idempotencyDerivedUuid([
+          actor.role,
+          actor.id,
+          route,
+          idempotencyKey ?? "",
+          "message",
+        ]);
+        const attachmentId = idempotencyDerivedUuid([
+          actor.role,
+          actor.id,
+          route,
+          idempotencyKey ?? "",
+          "attachment",
+        ]);
+        objectKey = `conversations/${conversationId}/messages/${messageId}/attachments/${attachmentId}`;
+        await this.storage.put(objectKey, bytes, contentType, sha256);
         const message = await client.query(`
           INSERT INTO messages (id, conversation_id, sender_id, body)
           VALUES ($1, $2, $3, $4)
@@ -314,9 +325,10 @@ export class MessagingService {
           entityId: conversationId,
         });
         return { ...message.rows[0], attachment: attachment.rows[0] };
+        });
       });
     } catch (error) {
-      await this.storage.remove(objectKey);
+      if (objectKey) await this.storage.remove(objectKey);
       throw error;
     }
   }

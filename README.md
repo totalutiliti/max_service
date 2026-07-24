@@ -11,7 +11,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - A entrada agora cria uma sessão opaca, temporária e revogável em cookie `HttpOnly`; troca de perfil invalida a sessão anterior e o logout revoga a atual.
 - O BFF deriva o ator exclusivamente da sessão e assina o contexto enviado à API; parâmetros de perfil adulterados e cabeçalhos diretos são bloqueados.
 - API NestJS versionada e PostgreSQL 16 já sustentam categorias, solicitações, propostas e aceite.
-- Criação de pedido, envio de proposta, aceite, mensagens de texto, comandos JSON do atendimento, agenda, ciclo do serviço e operação usam `Idempotency-Key` vinculada à assinatura BFF→API; chave, efeito e resposta são confirmados na mesma transação, com replay observável e bloqueio de reutilização com outro conteúdo.
+- Criação de pedido, envio de proposta, aceite, mensagens, comandos JSON do atendimento, agenda, ciclo do serviço, operação e os quatro fluxos de upload privado usam `Idempotency-Key` vinculada à assinatura BFF→API; chave, efeito e resposta são confirmados na mesma transação, com replay observável, bloqueio de reutilização com outro conteúdo e compensação do objeto em falhas ordinárias.
 - Solicitações criadas pelo painel do cliente são persistidas e reaparecem após recarregar a aplicação.
 - O cliente pode anexar até três imagens sintéticas JPEG/PNG de 512 KB ao pedido; os profissionais elegíveis ou contratados visualizam pelo BFF autenticado, sem URL pública.
 - O profissional recebe oportunidades do banco, envia ou atualiza sua proposta e o cliente compara valores, prazos e horários realmente disponíveis antes de aceitar.
@@ -57,7 +57,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
 - O CI reproduz lint, builds, testes funcionais, auditoria de dependências, scanner de segredos e uma instalação Docker limpa para testar migrations, RLS e conflitos de agenda no PostgreSQL.
 - O mesmo pipeline gera um backup lógico, restaura em banco isolado, compara dados e proteções, prova o RLS com a role de runtime e remove todos os artefatos temporários.
-- Smoke tests exercitam liveness, readiness, cockpit operacional, bloqueio entre perfis, rejeição de cabeçalhos internos não assinados e pares concorrentes de 23 ações idempotentes cobertas.
+- Smoke tests exercitam liveness, readiness, cockpit operacional, bloqueio entre perfis, rejeição de cabeçalhos internos não assinados e pares concorrentes de 27 ações idempotentes cobertas, incluindo os quatro uploads privados.
 - Nenhum pagamento real, carteira, crédito, biometria ou consulta de antecedentes está ativo; o processador financeiro é exclusivamente sandbox.
 - O nome **Max Service** e a regra comercial **12% + 2% + 2%** são hipóteses pendentes de aprovação.
 

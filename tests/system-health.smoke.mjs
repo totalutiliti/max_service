@@ -46,6 +46,27 @@ async function concurrentJsonMutation(path, cookie, payload) {
   return results;
 }
 
+async function concurrentBinaryMutation(path, cookie, fields, fileName, contentType, bytes) {
+  const idempotencyKey = randomUUID();
+  const mutate = () => {
+    const form = new FormData();
+    for (const [name, value] of Object.entries(fields)) form.set(name, value);
+    form.set("file", new Blob([bytes], { type: contentType }), fileName);
+    return fetch(`${webBaseUrl}${path}`, {
+      method: "POST",
+      headers: { cookie, "idempotency-key": idempotencyKey },
+      body: form,
+    });
+  };
+  const responses = await Promise.all([mutate(), mutate()]);
+  const results = await Promise.all(responses.map((response) => json(response)));
+  assert.deepEqual(
+    responses.map((response) => response.headers.get("idempotency-replayed")).sort(),
+    ["false", "true"],
+  );
+  return { idempotencyKey, responses, results };
+}
+
 async function completeSyntheticBookings(cookie, requestTitle) {
   const payload = await json(await fetch(
     `${webBaseUrl}/api/v1/bookings?role=prestador`,
@@ -229,7 +250,60 @@ const requestKeyReuse = await fetch(`${webBaseUrl}/api/v1/service-requests`, {
 assert.equal(requestKeyReuse.status, 409);
 assert.match(JSON.stringify(await requestKeyReuse.json()), /outro conteÃºdo|outro conteúdo/i);
 
+const syntheticPng = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+const requestAttachmentRun = await concurrentBinaryMutation(
+  "/api/v1/customer/request-attachments",
+  customerCookie,
+  { requestId: requestResults[0].request.id },
+  "pedido-sintetico.png",
+  "image/png",
+  syntheticPng,
+);
+assert.equal(
+  requestAttachmentRun.results[0].attachment.id,
+  requestAttachmentRun.results[1].attachment.id,
+);
+const changedSyntheticPng = Uint8Array.from([...syntheticPng.slice(0, -1), 0x01]);
+const changedAttachmentForm = new FormData();
+changedAttachmentForm.set("requestId", requestResults[0].request.id);
+changedAttachmentForm.set(
+  "file",
+  new Blob([changedSyntheticPng], { type: "image/png" }),
+  "pedido-sintetico.png",
+);
+const changedAttachmentResponse = await fetch(`${webBaseUrl}/api/v1/customer/request-attachments`, {
+  method: "POST",
+  headers: {
+    cookie: customerCookie,
+    "idempotency-key": requestAttachmentRun.idempotencyKey,
+  },
+  body: changedAttachmentForm,
+});
+assert.equal(changedAttachmentResponse.status, 409);
+assert.match(JSON.stringify(await changedAttachmentResponse.json()), /outro conteÃºdo|outro conteúdo/i);
+
 const providerCookie = await sessionCookie("prestador");
+const providerVerification = await json(await fetch(
+  `${webBaseUrl}/api/v1/provider/verification`,
+  { headers: { cookie: providerCookie } },
+));
+const syntheticDocument = providerVerification.verification.documents[0];
+assert.ok(syntheticDocument?.id, "A verificação sintética precisa conter um item documental.");
+const providerDocumentRun = await concurrentBinaryMutation(
+  "/api/v1/provider/verification",
+  providerCookie,
+  { documentId: syntheticDocument.id },
+  "documento-sintetico.pdf",
+  "application/pdf",
+  new TextEncoder().encode("%PDF-1.4 synthetic"),
+);
+const firstUploadedDocument = providerDocumentRun.results[0].verification.documents
+  .find((document) => document.id === syntheticDocument.id);
+const replayedUploadedDocument = providerDocumentRun.results[1].verification.documents
+  .find((document) => document.id === syntheticDocument.id);
+assert.ok(firstUploadedDocument?.fileId, "O upload documental precisa retornar o arquivo persistido.");
+assert.equal(firstUploadedDocument.fileId, replayedUploadedDocument?.fileId);
+
 await completeSyntheticBookings(providerCookie, syntheticRequestTitle);
 const originalSchedule = await json(await fetch(
   `${webBaseUrl}/api/v1/provider/schedule`,
@@ -353,6 +427,27 @@ const messageResults = await concurrentJsonMutation(
 );
 assert.equal(messageResults[0].message.id, messageResults[1].message.id);
 
+const messageAttachmentRun = await concurrentBinaryMutation(
+  "/api/v1/messaging",
+  customerCookie,
+  {
+    role: "cliente",
+    conversationId: acceptanceResults[0].booking.conversationId,
+    body: "Imagem sintética idempotente da conversa.",
+  },
+  "conversa-sintetica.png",
+  "image/png",
+  syntheticPng,
+);
+assert.equal(
+  messageAttachmentRun.results[0].message.id,
+  messageAttachmentRun.results[1].message.id,
+);
+assert.equal(
+  messageAttachmentRun.results[0].message.attachment.id,
+  messageAttachmentRun.results[1].message.attachment.id,
+);
+
 const partnerCookie = await sessionCookie("parceiro");
 const supportCreateResults = await concurrentJsonMutation(
   "/api/v1/partner/support",
@@ -376,6 +471,26 @@ const partnerMessageResults = await concurrentJsonMutation(
   },
 );
 assert.equal(partnerMessageResults[0].event.id, partnerMessageResults[1].event.id);
+
+const supportAttachmentRun = await concurrentBinaryMutation(
+  "/api/v1/partner/support",
+  partnerCookie,
+  {
+    caseId: supportCaseId,
+    body: "Anexo sintético idempotente do atendimento.",
+  },
+  "atendimento-sintetico.pdf",
+  "application/pdf",
+  new TextEncoder().encode("%PDF-1.4 synthetic support"),
+);
+assert.equal(
+  supportAttachmentRun.results[0].event.id,
+  supportAttachmentRun.results[1].event.id,
+);
+assert.equal(
+  supportAttachmentRun.results[0].event.attachment.id,
+  supportAttachmentRun.results[1].event.attachment.id,
+);
 
 const forbidden = await fetch(`${webBaseUrl}/api/v1/operation/system-health`, {
   headers: { cookie: customerCookie },
@@ -619,7 +734,7 @@ assert.equal(operationHealth.telemetry.policyVersion, "REQUEST-TELEMETRY-2026-01
 assert.equal(operationHealth.telemetry.probeCount >= 2, true);
 assert.equal(operationHealth.telemetry.rejected4xxCount >= 1, true);
 assert.equal(operationHealth.telemetry.rateLimitedCount >= 1, true);
-assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 23, true);
+assert.equal(operationHealth.telemetry.idempotencyReplayCount >= 27, true);
 assert.equal(Array.isArray(operationHealth.telemetry.topRoutes), true);
 assert.equal(
   operationHealth.telemetry.topRoutes.every(
@@ -638,7 +753,7 @@ assert.equal(
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "idempotent_operation_commands", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "idempotent_operation_commands", "idempotent_binary_uploads", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

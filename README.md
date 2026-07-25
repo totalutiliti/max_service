@@ -115,6 +115,18 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - serviços: `database`, `redis`, `storage`, `api`, `storage-maintenance`, `metrics` e `web`;
 - volumes `max-service-postgres`, `max-service-objects` e `max-service-prometheus` mantêm registros, arquivos e a janela local de métricas entre reinícios.
 
+## Azure dev
+
+O ambiente compartilhado de desenvolvimento usa somente identidades e dados sintéticos:
+
+- plataforma: <https://ca-max-service-web-dev.braveforest-c1671597.brazilsouth.azurecontainerapps.io/demo>;
+- API/readiness: <https://ca-max-service-api-dev.braveforest-c1671597.brazilsouth.azurecontainerapps.io/health/ready>;
+- região: `Brazil South`;
+- infraestrutura reproduzível: [`infra/azure`](infra/azure);
+- evidência da implantação: [`docs/operations/azure-dev-evidence.md`](docs/operations/azure-dev-evidence.md).
+
+Esse ambiente não autoriza produção, dados pessoais, documentos reais ou pagamentos reais.
+
 ## Princípios
 
 - código e identidade próprios; concorrentes são apenas benchmark;

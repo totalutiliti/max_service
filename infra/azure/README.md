@@ -47,6 +47,13 @@ Implantação do commit atual:
 
 `-SkipBuild -ImageTag <commit>` só deve ser usado quando as duas imagens imutáveis já existirem no ACR.
 
+Endpoints estáveis do ambiente:
+
+- web: <https://ca-max-service-web-dev.braveforest-c1671597.brazilsouth.azurecontainerapps.io/demo>;
+- readiness da API: <https://ca-max-service-api-dev.braveforest-c1671597.brazilsouth.azurecontainerapps.io/health/ready>.
+
+O script tolera a propagação transitória da identidade do Container Apps, mas repete somente deployments que falham explicitamente com `IdentityDoesNotExist`. Outros erros continuam fail-closed.
+
 ## Limites
 
 Este ambiente não autoriza dados pessoais ou documentos reais, pagamentos reais, e-mail/SMS, integrações externas, domínio final ou produção. Alertmanager/plantão, observabilidade gerenciada, restore periódico, orçamento e alertas de custo permanecem requisitos de operação.

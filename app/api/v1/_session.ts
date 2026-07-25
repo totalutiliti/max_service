@@ -13,28 +13,52 @@ export interface DemoSession {
   id: string;
   actorId: string;
   role: DemoRole;
+  identityMode: "demo" | "production";
   name: string;
   email: string;
+  assuranceLevel?: "contact_verified" | "mfa";
+  mfaCompletedAt?: string | null;
   expiresAt: string;
+  idleExpiresAt?: string;
   createdAt: string;
+  rotationRequired?: boolean;
 }
 
 export const demoSessionCookie = "ms_demo_session";
+export const productionSessionCookieName = "__Host-ms_session";
 
 export async function resolveDemoSession(request: Request): Promise<DemoSession | null> {
-  const token = sessionToken(request);
-  if (!token) return null;
-  const path = "/api/v1/auth/demo-sessions/current";
-  const headers = await signedInternalHeaders("GET", path);
-  headers.set("authorization", `Bearer ${token}`);
-  try {
-    const response = await fetch(`${apiUrl()}${path}`, { headers, cache: "no-store" });
-    if (!response.ok) return null;
-    const payload = await response.json() as { session?: DemoSession };
-    return payload.session ?? null;
-  } catch {
-    return null;
+  const candidates = [
+    {
+      token: productionSessionToken(request),
+      path: "/api/v1/auth/production-sessions/current",
+      identityMode: "production" as const,
+    },
+    {
+      token: sessionToken(request),
+      path: "/api/v1/auth/demo-sessions/current",
+      identityMode: "demo" as const,
+    },
+  ];
+  for (const candidate of candidates) {
+    if (!candidate.token) continue;
+    const headers = await signedInternalHeaders("GET", candidate.path);
+    headers.set("authorization", `Bearer ${candidate.token}`);
+    try {
+      const response = await fetch(
+        `${apiUrl()}${candidate.path}`,
+        { headers, cache: "no-store" },
+      );
+      if (!response.ok) continue;
+      const payload = await response.json() as { session?: DemoSession };
+      if (payload.session) {
+        return { ...payload.session, identityMode: candidate.identityMode };
+      }
+    } catch {
+      // Tenta a próxima modalidade sem transformar indisponibilidade em autenticação.
+    }
   }
+  return null;
 }
 
 export async function signedInternalHeaders(
@@ -66,10 +90,18 @@ export async function signedInternalHeaders(
 }
 
 export function sessionToken(request: Request) {
+  return tokenForCookie(request, demoSessionCookie);
+}
+
+export function productionSessionToken(request: Request) {
+  return tokenForCookie(request, productionSessionCookieName);
+}
+
+function tokenForCookie(request: Request, cookieName: string) {
   const cookies = request.headers.get("cookie") ?? "";
   for (const part of cookies.split(";")) {
     const [name, ...value] = part.trim().split("=");
-    if (name === demoSessionCookie) return decodeURIComponent(value.join("="));
+    if (name === cookieName) return decodeURIComponent(value.join("="));
   }
   return null;
 }
@@ -82,6 +114,14 @@ export function sessionCookie(token: string, maxAgeSeconds: number) {
 
 export function clearedSessionCookie() {
   return sessionCookie("", 0);
+}
+
+export function productionSessionCookie(token: string, maxAgeSeconds: number) {
+  return `${productionSessionCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${maxAgeSeconds}`;
+}
+
+export function clearedProductionSessionCookie() {
+  return productionSessionCookie("", 0);
 }
 
 export function crossOriginMutation(request: Request) {

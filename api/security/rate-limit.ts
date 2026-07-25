@@ -15,6 +15,12 @@ export const rateLimitPolicies = [
     windowSeconds: 60,
   },
   {
+    id: "production-session-rotate",
+    label: "Rotação de sessão de produção",
+    limit: 30,
+    windowSeconds: 60,
+  },
+  {
     id: "public-referral-read-global",
     label: "Consulta pública global",
     limit: 300,
@@ -67,6 +73,9 @@ export function requestRateLimitRules(request: RateLimitRequest): RateLimitRule[
 
   if (method === "POST" && path === "/api/v1/auth/demo-sessions") {
     return [rule("demo-session-create", "global")];
+  }
+  if (method === "POST" && path === "/api/v1/auth/production-sessions/current/rotate") {
+    return [rule("production-session-rotate", "global")];
   }
 
   const publicReferral = path.match(/^\/api\/v1\/public\/referrals\/([A-Za-z0-9-]+)$/);

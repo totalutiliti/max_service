@@ -2,7 +2,7 @@ targetScope = 'resourceGroup'
 
 param location string = resourceGroup().location
 param identityName string = 'id-max-service-github-dev'
-param githubRepository string = 'totalutiliti/max_service'
+param githubSubjectPrefix string = 'repo:totalutiliti@258505084/max_service@1309016061'
 param githubEnvironment string = 'azure-dev'
 
 var tags = {
@@ -27,7 +27,7 @@ resource githubCredential 'Microsoft.ManagedIdentity/userAssignedIdentities/fede
       'api://AzureADTokenExchange'
     ]
     issuer: 'https://token.actions.githubusercontent.com'
-    subject: 'repo:${githubRepository}:environment:${githubEnvironment}'
+    subject: '${githubSubjectPrefix}:environment:${githubEnvironment}'
   }
 }
 

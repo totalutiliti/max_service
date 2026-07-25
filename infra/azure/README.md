@@ -67,7 +67,7 @@ az deployment group create `
   --template-file infra/azure/github-oidc.bicep
 ```
 
-O environment GitHub `azure-dev` deve manter `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` e `AZURE_SUBSCRIPTION_ID`. Esses identificadores não concedem acesso sem o token OIDC cujo subject exato é `repo:totalutiliti/max_service:environment:azure-dev`.
+O environment GitHub `azure-dev` deve manter `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` e `AZURE_SUBSCRIPTION_ID`. Esses identificadores não concedem acesso sem o token OIDC. Este repositório usa o prefixo imutável informado pela API do GitHub, portanto o subject exato é `repo:totalutiliti@258505084/max_service@1309016061:environment:azure-dev`; a política do environment também aceita somente `main`.
 
 ## Limites
 

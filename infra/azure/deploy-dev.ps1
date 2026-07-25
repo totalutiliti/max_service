@@ -25,9 +25,16 @@ function Assert-LastExitCode([string]$Message) {
 }
 
 function New-StrongSecret {
-  return 'Aa1!' + [Convert]::ToHexString(
-    [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
-  ).ToLowerInvariant()
+  $bytes = New-Object byte[] 32
+  $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try {
+    $generator.GetBytes($bytes)
+  }
+  finally {
+    $generator.Dispose()
+  }
+  $hex = [BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+  return "Aa1!$hex"
 }
 
 function Invoke-AcrImageBuild([string]$ImageName, [string]$Dockerfile) {

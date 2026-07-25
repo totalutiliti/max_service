@@ -63,6 +63,8 @@ services:
       DATABASE_URL: postgresql://max_service_app:max_service_runtime_local@database:5432/max_service
       MIGRATION_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@database:5432/max_service
       BFF_INTERNAL_SECRET: max-service-bff-local-only
+      METRICS_ENABLED: "true"
+      METRICS_BEARER_TOKEN: max-service-metrics-local-only-2026
       RATE_LIMIT_STORE_MODE: redis
       RATE_LIMIT_KEY_SECRET: max-service-rate-limit-key-local-only
       REDIS_URL: redis://:max-service-redis-local-only@redis:6379/0

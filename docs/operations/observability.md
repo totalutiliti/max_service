@@ -43,7 +43,7 @@ Ao término de cada requisição, a API escreve uma linha JSON em `stdout` com:
 
 Query strings são descartadas, UUIDs viram `:id`, códigos públicos viram `:code` e segmentos fora da lista fechada viram `:value`. Payload, contato, descrição, endereço, cookie, assinatura, token e ID do ator não entram no evento.
 
-## Métricas locais
+## Métricas locais e exportação OpenMetrics
 
 O mesmo middleware mantém no máximo mil amostras em memória. O cockpit mostra uma janela móvel de cinco minutos com requisições de aplicação, probes separados, replays idempotentes, rejeições `4xx`, bloqueios `429`, erros `5xx`, chamadas acima de um segundo, latência média, p95 e até cinco famílias de rota mais acessadas.
 
@@ -53,13 +53,43 @@ O mesmo cockpit apresenta exclusivamente agregados da proteção contra abuso: p
 
 O check **Transporte HTTPS** diferencia os headers defensivos já aplicados no código da terminação TLS/HSTS que depende da borda. No Docker local ele permanece em atenção e bloqueia produção, sem bloquear o tráfego de demonstração.
 
+`GET /internal/metrics` exporta o contrato OpenMetrics 1.0 para coleta por Prometheus ou serviço compatível. O endpoint é opt-in (`METRICS_ENABLED=true`), exige `Authorization: Bearer` com `METRICS_BEARER_TOKEN` de ao menos 32 caracteres, responde `404` quando desativado, `503` quando habilitado sem credencial válida e `401` para uma credencial ausente ou incorreta. O token não deve ser enviado ao navegador; em produção, o coletor deve alcançar a API por rede privada e obter a credencial de um cofre.
+
+Catálogo exportado:
+
+- `max_service_http_requests_total`, agregado somente por método fechado, classe HTTP e tipo de tráfego;
+- `max_service_http_request_duration_seconds`, histograma cumulativo em segundos;
+- `max_service_http_idempotency_replays_total`;
+- `max_service_dependency_status` e duração dos checks conhecidos;
+- prontidão local, autorização de produção, quantidade de bloqueadores, início e uptime da réplica.
+
+Não existem labels de rota, ator, ID, código público, IP, e-mail, query string ou conteúdo. Métodos desconhecidos viram `OTHER`; dependências vêm da lista fechada do código. Contadores zeram no reinício da réplica, comportamento esperado para séries identificadas pelo coletor por `instance`.
+
+### Coleta e rotação
+
+Configuração mínima do coletor:
+
+```yaml
+scrape_configs:
+  - job_name: max-service-api
+    metrics_path: /internal/metrics
+    scheme: https
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/max-service-metrics-token
+    static_configs:
+      - targets: ["api.internal.example:443"]
+```
+
+Para rotacionar, gere um token aleatório com no mínimo 32 caracteres no cofre, atualize o segredo do workload e depois o `credentials_file` do coletor dentro de uma janela coordenada. Confirme `200`, o `Content-Type` OpenMetrics e `# EOF`; revogue o token anterior e registre a mudança sem copiar seu valor para ticket ou log. A credencial local do Compose é pública por definição e nunca pode ser promovida.
+
 ## Evidência automatizada
 
-`npm run test:smoke` valida liveness, readiness incluindo Redis, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 33 ações de marketplace, comunicação, atendimento, disputa formal, análise preventiva de indicações, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. O teste de integração usa dois clientes independentes e comprova que ambos consomem o mesmo contador Redis. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
+`npm run test:smoke` valida liveness, readiness incluindo Redis, autenticação e formato do OpenMetrics, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 33 ações de marketplace, comunicação, atendimento, disputa formal, análise preventiva de indicações, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. O teste de integração usa dois clientes independentes e comprova que ambos consomem o mesmo contador Redis. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
 
 ## Próximos requisitos de produção
 
-- exportação OpenTelemetry/Prometheus das métricas já definidas;
+- coletor Prometheus/OpenTelemetry gerenciado, retenção e agregação entre réplicas para o endpoint OpenMetrics já definido;
 - coleta, busca e política de retenção para os logs JSON já correlacionados;
 - traces entre borda, BFF, API, banco, filas e storage;
 - alertas externos e plantão;

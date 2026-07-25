@@ -22,6 +22,7 @@ import { PushDeliveryService } from "./notifications/push-delivery.service.js";
 import { OnboardingController } from "./onboarding/onboarding.controller.js";
 import { OnboardingService } from "./onboarding/onboarding.service.js";
 import { ObservabilityController } from "./observability/observability.controller.js";
+import { OpenMetricsService } from "./observability/open-metrics.service.js";
 import { RequestTelemetryMiddleware } from "./observability/request-telemetry.middleware.js";
 import { RequestTelemetryService } from "./observability/request-telemetry.service.js";
 import { SystemHealthService } from "./observability/system-health.service.js";
@@ -42,7 +43,7 @@ import { VerificationsService } from "./verifications/verifications.service.js";
 
 @Module({
   controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, AdvertisingController, MessagingController, BookingsController, OperationsController, PrivacyController, OperationPrivacyController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, AdvertisingService, MessagingService, BookingsService, OperationsService, PrivacyService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService, IdempotencyService],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, OpenMetricsService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, AdvertisingService, MessagingService, BookingsService, OperationsService, PrivacyService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService, IdempotencyService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

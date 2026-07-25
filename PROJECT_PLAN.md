@@ -45,6 +45,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - O pipeline também ensaia backup e restauração em banco temporário, comparando migrations, dados críticos, grants, policies, RLS e constraints; backup gerenciado, PITR, RPO e RTO continuam como gate de infraestrutura.
 - Liveness e readiness são separados; o readiness valida banco, migrations e cofre, enquanto o cockpit exclusivo da Operação expõe somente diagnósticos seguros e preserva a proibição de produção.
 - A API gera correlação própria por requisição, registra eventos JSON sem query, payload ou identidade individual e agrega uma janela móvel limitada de tráfego por réplica no cockpit da Operação.
+- A API exporta contadores monotônicos, histograma de latência e estados das dependências em OpenMetrics 1.0, com endpoint opt-in, Bearer exclusivo, comparação em tempo constante e labels de baixa cardinalidade sem identidade, rota ou conteúdo.
 - Sessão demonstrativa, indicação pública e validação de cupom possuem janela móvel atômica coordenada no Redis, chaves HMAC opacas, contrato `429`, falha fechada `503`, readiness e bloqueios agregados no cockpit; produção ainda exige Redis gerenciado, proteção de borda e homologação dos limites por carga.
 - Frontend e API possuem CSP, proteção contra framing/sniffing, Permissions Policy, cache privado, CORS fechado e limites explícitos de corpo; HTTPS/HSTS e CSP sem `unsafe-inline` permanecem gates externos.
 - Smoke tests em Docker comprovam probes, visão operacional, bloqueio do cliente e assinatura obrigatória do canal BFF→API.

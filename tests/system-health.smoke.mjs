@@ -156,6 +156,34 @@ assert.deepEqual(
 assert.equal(readiness.checks.every((check) => check.status === "healthy"), true);
 assert.equal(readiness.telemetry, undefined);
 
+const unauthorizedMetrics = await fetch(`${apiBaseUrl}/internal/metrics`);
+assert.equal(unauthorizedMetrics.status, 401);
+assert.match(
+  unauthorizedMetrics.headers.get("www-authenticate") ?? "",
+  /Bearer realm="max-service-metrics"/,
+);
+const metricsResponse = await fetch(`${apiBaseUrl}/internal/metrics`, {
+  headers: { authorization: "Bearer max-service-metrics-local-only-2026" },
+});
+assert.equal(metricsResponse.status, 200);
+assert.match(
+  metricsResponse.headers.get("content-type") ?? "",
+  /^application\/openmetrics-text;/,
+);
+assert.match(metricsResponse.headers.get("content-type") ?? "", /version=1\.0\.0/);
+assert.equal(metricsResponse.headers.get("cache-control"), "no-store");
+const metrics = await metricsResponse.text();
+assert.match(metrics, /max_service_http_requests_total/);
+assert.match(metrics, /max_service_http_request_duration_seconds_bucket/);
+assert.match(
+  metrics,
+  /max_service_dependency_status\{dependency="database",status="healthy"\} 1/,
+);
+assert.match(metrics, /max_service_local_traffic_ready 1/);
+assert.match(metrics, /max_service_production_authorized 0/);
+assert.equal(metrics.includes("max-service-metrics-local-only-2026"), false);
+assert.equal(metrics.endsWith("# EOF\n"), true);
+
 const preflight = await fetch(`${apiBaseUrl}/health/live`, {
   method: "OPTIONS",
   headers: {
@@ -1143,7 +1171,7 @@ assert.equal(operationHealth.privateStorageReconciliation?.sizeMismatches, 0);
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_report_delivery", "idempotent_booking_lifecycle", "idempotent_operation_commands", "idempotent_binary_uploads", "private_storage_reconciliation", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "openmetrics", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_report_delivery", "idempotent_booking_lifecycle", "idempotent_operation_commands", "idempotent_binary_uploads", "private_storage_reconciliation", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

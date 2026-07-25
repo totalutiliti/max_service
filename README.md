@@ -105,6 +105,7 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 
 - API viva: `http://127.0.0.1:3001/health/live`
 - API pronta para tráfego local: `http://127.0.0.1:3001/health/ready`
+- OpenMetrics protegido: `http://127.0.0.1:3001/internal/metrics` (Bearer exclusivo do Compose; não abrir no navegador nem promover a produção);
 - cockpit autenticado em **Operação → Conta**, com dependências, reconciliação do cofre e telemetria local dos últimos cinco minutos;
 - PostgreSQL local: `127.0.0.1:54329`
 - Redis autenticado do rate limit: `127.0.0.1:56379`;

@@ -59,6 +59,10 @@ export class SystemHealthService {
     };
   }
 
+  dependencySnapshot() {
+    return this.inspectDependencies();
+  }
+
   private inspectDependencies() {
     if (this.cached && this.cached.expiresAt > Date.now()) {
       return Promise.resolve(this.cached.report);

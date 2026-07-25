@@ -12,7 +12,9 @@ import {
 import { HttpSecurityMiddleware } from "./security/http-security.middleware.js";
 
 async function bootstrap() {
-  await runMigrations();
+  if (process.env.RUN_MIGRATIONS_ON_STARTUP !== "false") {
+    await runMigrations();
+  }
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
     cors: false,

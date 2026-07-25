@@ -1,6 +1,6 @@
 # Plano de implantação
 
-Nenhum deploy está autorizado nesta etapa.
+O ambiente compartilhado `dev` na Azure foi autorizado exclusivamente para dados sintéticos. Staging e produção continuam sem autorização.
 
 ## Ambientes futuros
 
@@ -13,7 +13,7 @@ Nenhum deploy está autorizado nesta etapa.
 
 Lint → typecheck → unitários → integração PostgreSQL → RLS/IDOR → E2E/a11y → build → gitleaks → dependências → imagem/Trivy → migration dry-run → aprovação → deploy → smoke test → observabilidade.
 
-O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os sete serviços em Docker limpo, incluindo Redis efêmero autenticado e Prometheus LTS recompilado a partir de origem fixada com a correção do gRPC, escaneia as imagens de API, web, Redis e Prometheus com Trivy fixado por digest, recusa vulnerabilidades corrigíveis altas ou críticas, recria as migrations em banco descartável, detecta drift por checksum e então executa E2E/a11y WCAG 2.2 AA no Chrome, smoke tests de saúde/autorização, exportador OpenMetrics, target autenticado e 13 regras de SLO/alerta, coordenação do rate limit entre clientes independentes, RLS, conflitos de agenda, reenvios concorrentes idempotentes e restauração de backup lógico em banco isolado. O restore compara migrations e checksums, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. Dry-run no ambiente real de staging, deploy e integração com observabilidade gerenciada continuam pendentes.
+O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências, validação do Bicep e gitleaks. Um segundo job sobe os sete serviços em Docker limpo, incluindo Redis efêmero autenticado e Prometheus LTS recompilado a partir de origem fixada com a correção do gRPC, escaneia as imagens de API, web, Redis e Prometheus com Trivy fixado por digest, recusa vulnerabilidades corrigíveis altas ou críticas, recria as migrations em banco descartável, detecta drift por checksum e então executa E2E/a11y WCAG 2.2 AA no Chrome, smoke tests de saúde/autorização, exportador OpenMetrics, target autenticado e 13 regras de SLO/alerta, coordenação do rate limit entre clientes independentes, RLS, conflitos de agenda, reenvios concorrentes idempotentes e restauração de backup lógico em banco isolado. O restore compara migrations e checksums, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. O ambiente Azure `dev` usa imagens imutáveis por commit, migration separada do runtime e smoke test pós-deploy; dry-run em staging e integração com observabilidade gerenciada continuam pendentes.
 
 As imagens finais recebem somente as dependências necessárias a cada processo, iniciam diretamente pelo Node.js sem o npm CLI e removem ferramentas de build. O scanner avalia o sistema operacional e os pacotes JavaScript dessas imagens finais, não apenas o código-fonte.
 
@@ -21,7 +21,7 @@ As imagens finais recebem somente as dependências necessárias a cada processo,
 
 Frontend e API independentes, PostgreSQL gerenciado com backup/PITR, Redis gerenciado, object storage privado, cofre de segredos, identidade gerenciada, filas, logs estruturados, métricas, traces e alertas.
 
-O ambiente local já separa liveness de readiness, oferece cockpit operacional autenticado, gera `x-request-id`, escreve logs JSON sem PII, coleta OpenMetrics com retenção limitada, SLI e regras testadas, coordena a proteção contra abuso no Redis com falha fechada e envia headers defensivos com CORS e limites de corpo fechados. HTTPS/HSTS, CSP por nonce/hash, Redis e Prometheus gerenciados, TLS/ACL, proteção de borda, coleta e retenção central de logs, traces, Alertmanager, alertas externos e SLOs aprovados ainda dependem da infraestrutura escolhida.
+O ambiente local já separa liveness de readiness, oferece cockpit operacional autenticado, gera `x-request-id`, escreve logs JSON sem PII, coleta OpenMetrics com retenção limitada, SLI e regras testadas, coordena a proteção contra abuso no Redis com falha fechada e envia headers defensivos com CORS e limites de corpo fechados. O `dev` Azure acrescenta HTTPS do Container Apps, PostgreSQL e Redis gerenciados com TLS, Key Vault, identidade gerenciada, Log Analytics e armazenamento privado. CSP por nonce/hash, proteção de borda, traces distribuídos, Alertmanager/plantão, alertas externos e SLOs aprovados ainda dependem da evolução operacional.
 
 ## Gate de produção
 

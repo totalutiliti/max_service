@@ -6,6 +6,7 @@ import {
   validateMigrationNames,
   type MigrationDescriptor,
 } from "../database/migrations.js";
+import { validateRuntimeDatabasePassword } from "../database/runtime-role.js";
 
 const migration = (name: string, sql = "SELECT 1;"): MigrationDescriptor => ({
   name,
@@ -75,4 +76,13 @@ test("recusa histórico desconhecido ou aplicado fora de ordem", () => {
     ),
     /fora de ordem/,
   );
+});
+
+test("exige credencial forte para a role de runtime gerenciada", () => {
+  assert.throws(
+    () => validateRuntimeDatabasePassword("curta"),
+    /ao menos 32 caracteres/,
+  );
+  const password = "runtime-password-with-32-characters!";
+  assert.equal(validateRuntimeDatabasePassword(password), password);
 });

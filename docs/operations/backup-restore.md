@@ -32,6 +32,7 @@ O banco de origem nunca é apagado, renomeado ou usado como destino.
 - mesmo número de tabelas com RLS e `FORCE ROW LEVEL SECURITY`;
 - mesmo número de policies;
 - duas constraints de exclusão da agenda preservadas;
+- solicitações, eventos e recibos de privacidade incluídos nas contagens críticas, com RLS fail-closed restaurado;
 - role `max_service_app` conecta ao banco restaurado;
 - sem ator, dados protegidos retornam zero linhas;
 - cliente recebe zero gates e Operação recebe os oito;

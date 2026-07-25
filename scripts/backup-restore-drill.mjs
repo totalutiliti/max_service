@@ -72,6 +72,12 @@ async function snapshot(pool) {
       SELECT 'operation_report_deliveries', count(*)::int FROM operation_report_deliveries
       UNION ALL
       SELECT 'operation_report_delivery_events', count(*)::int FROM operation_report_delivery_events
+      UNION ALL
+      SELECT 'data_subject_requests', count(*)::int FROM data_subject_requests
+      UNION ALL
+      SELECT 'data_subject_request_events', count(*)::int FROM data_subject_request_events
+      UNION ALL
+      SELECT 'data_subject_export_receipts', count(*)::int FROM data_subject_export_receipts
       ORDER BY resource
     `),
     pool.query(`
@@ -101,7 +107,7 @@ async function snapshot(pool) {
   };
 }
 
-async function verifyRuntimeIsolation(restoredUrl) {
+async function verifyRuntimeIsolation(restoredUrl, expectedPrivacyCount) {
   const pool = new Pool({ connectionString: restoredUrl, max: 1 });
   const client = await pool.connect();
   try {
@@ -114,6 +120,10 @@ async function verifyRuntimeIsolation(restoredUrl) {
       "SELECT count(*)::int AS count FROM operation_report_delivery_schedules",
     );
     assert.equal(reportSchedulesWithoutContext.rows[0].count, 0, "Agendamentos devem falhar fechados sem contexto.");
+    const privacyWithoutContext = await client.query(
+      "SELECT count(*)::int AS count FROM data_subject_requests",
+    );
+    assert.equal(privacyWithoutContext.rows[0].count, 0, "Solicitações de privacidade devem falhar fechadas sem contexto.");
 
     await client.query(
       "SELECT set_config('app.actor_id', $1, true), set_config('app.actor_role', 'customer', true)",
@@ -127,6 +137,11 @@ async function verifyRuntimeIsolation(restoredUrl) {
       "SELECT count(*)::int AS count FROM operation_report_delivery_schedules",
     );
     assert.equal(customerReportSchedules.rows[0].count, 0, "Cliente não pode enxergar agendamentos restaurados.");
+    const customerPrivacy = await client.query(
+      "SELECT count(*)::int AS count FROM data_subject_requests WHERE subject_id <> $1",
+      ["00000000-0000-4000-8000-000000000101"],
+    );
+    assert.equal(customerPrivacy.rows[0].count, 0, "Cliente não pode enxergar solicitações de outros titulares.");
 
     await client.query(
       "SELECT set_config('app.actor_id', $1, true), set_config('app.actor_role', 'operation', true)",
@@ -140,6 +155,10 @@ async function verifyRuntimeIsolation(restoredUrl) {
       "SELECT count(*)::int AS count FROM operation_report_delivery_schedules",
     );
     assert.equal(operationReportSchedules.rows[0].count >= 1, true, "Operação deve enxergar agendamentos restaurados.");
+    const operationPrivacy = await client.query(
+      "SELECT count(*)::int AS count FROM data_subject_requests",
+    );
+    assert.equal(operationPrivacy.rows[0].count, expectedPrivacyCount, "Operação deve enxergar toda a fila de privacidade restaurada.");
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();
@@ -206,7 +225,10 @@ try {
 
   await restoredAdminPool.end();
   restoredAdminPool = undefined;
-  await verifyRuntimeIsolation(databaseUrlFor(runtimeDatabaseUrl, drillDatabase));
+  await verifyRuntimeIsolation(
+    databaseUrlFor(runtimeDatabaseUrl, drillDatabase),
+    sourceSnapshot.counts.data_subject_requests,
+  );
 
   console.log(JSON.stringify({
     status: "passed",

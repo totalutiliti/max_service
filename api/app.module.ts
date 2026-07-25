@@ -32,6 +32,8 @@ import { OperationsController } from "./operations/operations.controller.js";
 import { OperationsService } from "./operations/operations.service.js";
 import { PartnersController, PublicReferralsController } from "./partners/partners.controller.js";
 import { PartnersService } from "./partners/partners.service.js";
+import { OperationPrivacyController, PrivacyController } from "./privacy/privacy.controller.js";
+import { PrivacyService } from "./privacy/privacy.service.js";
 import { PrivateObjectStorageService } from "./storage/private-object-storage.service.js";
 import { OperationSupportController, PartnerSupportController } from "./support/partner-support.controller.js";
 import { PartnerSupportService } from "./support/partner-support.service.js";
@@ -39,8 +41,8 @@ import { OperationVerificationsController, ProviderVerificationController } from
 import { VerificationsService } from "./verifications/verifications.service.js";
 
 @Module({
-  controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, AdvertisingController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, AdvertisingService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService, IdempotencyService],
+  controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, AdvertisingController, MessagingController, BookingsController, OperationsController, PrivacyController, OperationPrivacyController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, AdvertisingService, MessagingService, BookingsService, OperationsService, PrivacyService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService, IdempotencyService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

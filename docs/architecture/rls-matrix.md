@@ -41,6 +41,8 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | relatórios agregados | nenhum | nenhum | nenhum | períodos fechados e exportação sem PII | auditado |
 | metas e alertas do relatório | nenhum | nenhum | nenhum | leitura e atualização versionada | justificativa e evento append-only |
 | agendamentos/entregas de relatório | nenhum | nenhum | nenhum | leitura, inclusão, pausa/reativação e simulação local | consentimento explícito; snapshot agregado; evento append-only |
+| solicitações de privacidade | próprias; inclusão própria | próprias; inclusão própria | próprias; inclusão própria | fila completa e transição justificada | anunciante também lê/inclui somente as próprias |
+| eventos e recibos de privacidade | somente os próprios | somente os próprios | somente os próprios | visão completa | evento append-only; recibo sem payload; RLS também para anunciante |
 | gates de prontidão/eventos | nenhum | nenhum | nenhum | leitura e atualização versionada com evidência | eventos append-only; sem autorização automática |
 | documentos legais | somente audiência cliente | somente audiência profissional | nenhum | visão completa | conteúdo versionado e hash |
 | perfil de onboarding | próprio | próprio | nenhum | visão completa | versão e evento append-only |
@@ -100,6 +102,8 @@ O quinto papel, **Anunciante**, não participa dos agregados transacionais acima
 - prestador vê somente pedidos de sua categoria em cobertura ativa quando está aprovado e disponível; pausa, categoria incompatível ou ausência de cobertura retornam zero oportunidades;
 - tentativa direta de inserir proposta incompatível, sem aprovação ou acima da capacidade é rejeitada pelo gatilho, mesmo que a interface seja contornada;
 - prestador altera somente o próprio perfil de matching; eventos preservam as versões e são visíveis apenas ao titular e à Operação;
+- nenhum perfil cria solicitação para outro titular; cliente, prestador, parceiro e anunciante veem somente os próprios pedidos, eventos e recibos, enquanto a função de identidade recusa a Operação;
+- exportação de acesso exige pedido próprio aberto, conclui a mesma versão transacionalmente e não inclui mensagens ou contatos de terceiros;
 - cliente recebe slots somente para proposta enviada ao próprio pedido; não lê jornada, bloqueios ou compromissos brutos do prestador;
 - booking ou bloqueio sobreposto é rejeitado no PostgreSQL; duas confirmações concorrentes não ocupam o mesmo intervalo;
 - prestador consulta e altera apenas a própria jornada, e enxerga dados mínimos do cliente somente quando ambos participam do mesmo booking;

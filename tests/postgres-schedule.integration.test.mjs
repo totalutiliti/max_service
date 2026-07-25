@@ -54,7 +54,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0052_advertiser_idempotency.sql',
         '0053_advertiser_delivery_visibility.sql',
         '0054_contextual_ad_click.sql',
-        '0055_operation_report_delivery_schedules.sql'
+        '0055_operation_report_delivery_schedules.sql',
+        '0056_data_subject_rights.sql'
       )
       ORDER BY name
     `);
@@ -73,6 +74,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0053_advertiser_delivery_visibility.sql",
       "0054_contextual_ad_click.sql",
       "0055_operation_report_delivery_schedules.sql",
+      "0056_data_subject_rights.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name

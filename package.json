@@ -14,7 +14,7 @@
     "api:test": "tsx --test api/tests/demo-actor.test.ts api/tests/http-security.test.ts api/tests/idempotency.test.ts api/tests/rate-limit.test.ts api/tests/request-telemetry.test.ts api/tests/system-health.test.ts",
     "build": "vinext build",
     "start": "vinext start",
-    "test:integration": "node --test tests/postgres-schedule.integration.test.mjs",
+    "test:integration": "node --test --test-concurrency=1 tests/postgres-schedule.integration.test.mjs tests/privacy-rights.integration.test.mjs",
     "test:storage": "node --test tests/private-storage-reconciliation.integration.test.mjs",
     "test:restore": "node scripts/backup-restore-drill.mjs",
     "test:e2e": "playwright test",

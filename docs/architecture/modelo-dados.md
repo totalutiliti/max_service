@@ -75,6 +75,9 @@
 - `evidence_ready` exige evidência descritiva, mas não representa aprovação nem altera automaticamente a autorização global de produção;
 - cada agendamento de relatório possui janela fechada, recorrência, finalidade, destinatário sintético, consentimento explícito, estado e versão monotônica;
 - pausar ou reativar o agendamento exige decisão auditável; uma simulação cria snapshot agregado com checksum, máscara/hash do contato e evento append-only, avança a recorrência na mesma transação e nunca altera `provider_mode = disabled_local`;
+- cada `data_subject_request` pertence ao titular derivado da sessão, possui tipo, estado, meta operacional, responsável, versão e eventual decisão; estados finais exigem justificativa e instante de conclusão;
+- `data_subject_request_events` preserva criação, transições e geração de pacote em ordem append-only; `data_subject_export_receipts` guarda somente versão do manifesto, contagens, checksum e instante, nunca o pacote completo;
+- pedido de acesso aberto pode avançar diretamente para `fulfilled` pelo próprio titular ao gerar o JSON; demais decisões seguem `open → in_review → awaiting_subject | fulfilled | denied`, sem executar exclusão física;
 - o anexo de atendimento é visível somente ao parceiro titular e à Operação; o object storage guarda os bytes e `partner_support_attachments` preserva chave aleatória, nome normalizado, tipo, tamanho, hash e autoria;
 - a ordem das categorias é positiva e única; somente a operação altera `active` ou `sort_order`, sempre com justificativa, `service_category_events` append-only e auditoria;
 - o catálogo mantém ao menos uma categoria ativa; uma categoria inativa é rejeitada em novos pedidos e indicações, mas continua visível nos relacionamentos históricos;

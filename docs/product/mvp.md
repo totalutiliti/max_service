@@ -19,6 +19,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - relatório operacional agregado por período, com funil, categorias, crescimento, suporte, reconciliação e exportação CSV sem dados pessoais;
 - metas operacionais versionadas, comparação com o período anterior e monitor de desvios com limites ajustáveis e justificativa;
 - entregas recorrentes de relatório com destinatário consentido, pausa, execução local simulada, snapshot agregado verificável e provedor externo bloqueado;
+- central de direitos dos titulares com acesso, correção, restrição, revogação e exclusão, exportação JSON minimizada, recibo/checksum e fila humana versionada; sem exclusão física automática;
 - gestão operacional do catálogo compartilhado por cliente, parceiro e captura pública, sem apagar histórico ao desativar uma categoria;
 - campanhas e cupons persistentes, com criação e pausa pela Operação, público por categoria/região, consentimento promocional opcional, monitoramento agregado de abuso, reserva transacional no pedido e desconto congelado no aceite;
 - publicidade contextual moderada, com envio pelo anunciante, decisão humana, identificação patrocinada, explicação da exibição e métricas agregadas sem perfil comportamental;

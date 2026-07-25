@@ -832,6 +832,100 @@ interface OperationReportDeliveryData {
   }>;
 }
 
+type PrivacyRequestType = "access" | "correction" | "deletion" | "restriction" | "consent_withdrawal";
+type PrivacyRequestStatus = "open" | "in_review" | "awaiting_subject" | "fulfilled" | "denied";
+
+interface PrivacyRequestRecord {
+  id: string;
+  publicCode: string;
+  requestType: PrivacyRequestType;
+  status: PrivacyRequestStatus;
+  description: string;
+  dueAt: string;
+  version: number;
+  resolutionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  subjectCode: string;
+  subjectRole: "customer" | "provider" | "partner" | "advertiser";
+  subjectName: string;
+  assignedToName: string | null;
+  exportCode: string | null;
+  exportChecksum: string | null;
+  exportGeneratedAt: string | null;
+}
+
+interface SubjectPrivacyData {
+  policy: {
+    version: string;
+    operationalTargetDays: number;
+    physicalDeletionAutomatic: false;
+    exportFormat: "application/json";
+    notice: string;
+  };
+  subject: {
+    publicCode: string;
+    role: "customer" | "provider" | "partner" | "advertiser";
+    displayName: string;
+    email: string;
+    createdAt: string;
+  };
+  metrics: {
+    totalCount: number;
+    activeCount: number;
+    fulfilledCount: number;
+    exportCount: number;
+  };
+  requests: PrivacyRequestRecord[];
+  history: Array<{
+    id: string;
+    requestId: string;
+    requestCode: string;
+    eventType: "created" | "status_changed" | "export_generated";
+    fromStatus: PrivacyRequestStatus | null;
+    toStatus: PrivacyRequestStatus;
+    requestVersion: number;
+    note: string;
+    createdAt: string;
+    actorRole: string;
+  }>;
+}
+
+interface OperationPrivacyData {
+  policy: {
+    version: string;
+    operationalTargetDays: number;
+    productionRetentionApproved: false;
+    automaticDeletionEnabled: false;
+    rule: string;
+  };
+  metrics: {
+    totalCount: number;
+    activeCount: number;
+    openCount: number;
+    inReviewCount: number;
+    awaitingSubjectCount: number;
+    fulfilledCount: number;
+    deniedCount: number;
+    overdueCount: number;
+    exportCount: number;
+  };
+  requests: PrivacyRequestRecord[];
+  history: Array<{
+    id: string;
+    requestCode: string;
+    subjectCode: string;
+    eventType: "created" | "status_changed" | "export_generated";
+    fromStatus: PrivacyRequestStatus | null;
+    toStatus: PrivacyRequestStatus;
+    requestVersion: number;
+    note: string;
+    actorName: string;
+    createdAt: string;
+  }>;
+}
+
 interface OnboardingData {
   status: "pending" | "completed";
   profile: {
@@ -6650,6 +6744,316 @@ function OperationReadinessPanel({ notify }: { notify: (message: string) => void
   );
 }
 
+const privacyTypeLabel: Record<PrivacyRequestType, string> = {
+  access: "Acesso e portabilidade",
+  correction: "Correção de dados",
+  deletion: "Exclusão ou anonimização",
+  restriction: "Restrição de tratamento",
+  consent_withdrawal: "Revogação de consentimento",
+};
+
+const privacyStatusLabel: Record<PrivacyRequestStatus, string> = {
+  open: "Recebida",
+  in_review: "Em análise",
+  awaiting_subject: "Aguardando titular",
+  fulfilled: "Atendida",
+  denied: "Não atendida",
+};
+
+function PrivacyCenterPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<SubjectPrivacyData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [exportingId, setExportingId] = useState("");
+  const [requestType, setRequestType] = useState<PrivacyRequestType>("access");
+  const [description, setDescription] = useState("");
+  const [acknowledgement, setAcknowledgement] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const pendingKeys = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/privacy", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as SubjectPrivacyData & { error?: string; message?: string };
+        if (!response.ok || !payload.policy) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a central de privacidade.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a central de privacidade.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const createRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const requestPayload = {
+      action: "create" as const,
+      requestType,
+      description: description.trim(),
+      acknowledgement,
+    };
+    const fingerprint = JSON.stringify(requestPayload);
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/privacy", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, fingerprint),
+        },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as { request?: PrivacyRequestRecord; error?: string; message?: string };
+      if (!response.ok || !payload.request) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível registrar a solicitação.");
+      }
+      pendingKeys.current.delete(fingerprint);
+      setDescription("");
+      setAcknowledgement(false);
+      setLoading(true);
+      setRefresh((value) => value + 1);
+      notify(`Solicitação ${payload.request.publicCode} registrada com prazo operacional visível.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível registrar a solicitação.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const generateExport = async (request: PrivacyRequestRecord) => {
+    const requestPayload = { action: "export" as const, requestId: request.id };
+    const fingerprint = JSON.stringify(requestPayload);
+    setExportingId(request.id);
+    try {
+      const response = await fetch("/api/v1/privacy", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, fingerprint),
+        },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as {
+        request?: PrivacyRequestRecord;
+        receipt?: { publicCode: string; checksum: string };
+        export?: Record<string, unknown>;
+        error?: string;
+        message?: string;
+      };
+      if (!response.ok || !payload.export || !payload.receipt) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível gerar o pacote estruturado.");
+      }
+      pendingKeys.current.delete(fingerprint);
+      const file = new Blob([JSON.stringify(payload.export, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(file);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `max-service-privacidade-${request.publicCode}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setLoading(true);
+      setRefresh((value) => value + 1);
+      notify(`Pacote ${payload.receipt.publicCode} gerado com checksum verificável.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível gerar o pacote estruturado.");
+    } finally {
+      setExportingId("");
+    }
+  };
+
+  if (loading && !data) {
+    return <section id="privacy-center" className="dashboard-section privacy-center"><div className="data-state">Carregando seus controles de privacidade...</div></section>;
+  }
+  if (!data) {
+    return <section id="privacy-center" className="dashboard-section privacy-center"><div className="data-state"><strong>Central de privacidade indisponível.</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Tentar novamente</button></div></section>;
+  }
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+
+  return (
+    <section id="privacy-center" className="dashboard-section privacy-center" data-testid="privacy-center">
+      <header className="privacy-header">
+        <div><small>PRIVACIDADE POR PADRÃO · {data.policy.version}</small><h2>Seus dados, seus direitos.</h2><p>Peça acesso, correção, restrição, revogação ou análise de exclusão em um fluxo rastreável.</p></div>
+        <span className="privacy-shield" aria-hidden="true">⌾</span>
+      </header>
+      <div className="privacy-metrics">
+        <article><strong>{data.metrics.activeCount}</strong><span>pedido(s) ativo(s)</span></article>
+        <article><strong>{data.metrics.fulfilledCount}</strong><span>pedido(s) atendido(s)</span></article>
+        <article><strong>{data.metrics.exportCount}</strong><span>pacote(s) gerado(s)</span></article>
+        <article><strong>{data.policy.operationalTargetDays} dias</strong><span>meta operacional</span></article>
+      </div>
+      <div className="privacy-policy-note"><span>i</span><p><strong>Sem exclusão automática.</strong> {data.policy.notice}</p></div>
+      <div className="privacy-layout">
+        <form className="privacy-request-form" data-testid="privacy-request-form" onSubmit={createRequest}>
+          <header><small>NOVA SOLICITAÇÃO</small><h3>O que você precisa?</h3></header>
+          <label className="field"><span>Direito solicitado</span><select value={requestType} onChange={(event) => setRequestType(event.target.value as PrivacyRequestType)}><option value="access">Acesso e portabilidade</option><option value="correction">Correção de dados</option><option value="deletion">Exclusão ou anonimização</option><option value="restriction">Restrição de tratamento</option><option value="consent_withdrawal">Revogação de consentimento</option></select></label>
+          <label className="field"><span>Detalhes da solicitação</span><textarea minLength={20} maxLength={1000} rows={4} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explique com clareza quais dados ou tratamentos deseja revisar." required /><small>{description.trim().length}/1000</small></label>
+          <label className="privacy-acknowledgement"><input type="checkbox" checked={acknowledgement} onChange={(event) => setAcknowledgement(event.target.checked)} /><span>Confirmo que esta solicitação é sobre meus próprios dados e entendo que obrigações legais podem impedir a exclusão física imediata.</span></label>
+          <button className="primary-action" disabled={saving || description.trim().length < 20 || !acknowledgement}>{saving ? "Registrando..." : "Registrar solicitação →"}</button>
+        </form>
+        <div className="privacy-request-list">
+          <header><div><small>HISTÓRICO DO TITULAR</small><h3>Solicitações registradas</h3></div><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar ↻</button></header>
+          {data.requests.length === 0 && <div className="data-state"><strong>Nenhuma solicitação ainda.</strong><span>Use o formulário para iniciar um fluxo rastreável.</span></div>}
+          {data.requests.map((request) => (
+            <article key={request.id} className={`privacy-request ${request.status}`}>
+              <header><div><small>{request.publicCode} · V{request.version}</small><strong>{privacyTypeLabel[request.requestType]}</strong></div><span className={`privacy-status ${request.status}`}>{privacyStatusLabel[request.status]}</span></header>
+              <p>{request.description}</p>
+              <footer>
+                <span>Aberta em {formatted(request.createdAt)} · meta {formatted(request.dueAt)}</span>
+                {request.requestType === "access" && request.status === "open" && <button data-testid="privacy-export" disabled={exportingId === request.id} onClick={() => void generateExport(request)}>{exportingId === request.id ? "Gerando..." : "Gerar meu pacote JSON ↓"}</button>}
+                {request.exportCode && <span className="privacy-receipt">✓ {request.exportCode} · {request.exportChecksum?.slice(0, 12)}…</span>}
+              </footer>
+              {request.resolutionNote && <blockquote>{request.resolutionNote}</blockquote>}
+            </article>
+          ))}
+        </div>
+      </div>
+      {data.history.length > 0 && <div className="privacy-history"><header><small>TRILHA APPEND-ONLY</small><span>{data.history.length} evento(s)</span></header>{data.history.slice(0, 8).map((event) => <article key={event.id}><span>V{event.requestVersion}</span><div><strong>{event.requestCode} · {privacyStatusLabel[event.toStatus]}</strong><p>{event.note}</p></div><time>{formatted(event.createdAt)}</time></article>)}</div>}
+    </section>
+  );
+}
+
+function OperationPrivacyPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationPrivacyData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [selectedId, setSelectedId] = useState("");
+  const [status, setStatus] = useState<Exclude<PrivacyRequestStatus, "open">>("in_review");
+  const [note, setNote] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const pendingKeys = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/privacy", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationPrivacyData & { error?: string; message?: string };
+        if (!response.ok || !payload.policy) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a fila de privacidade.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a fila de privacidade.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const selected = data?.requests.find((request) => request.id === selectedId) ?? null;
+  const statusOptions = selected?.status === "open"
+    ? (["in_review"] as const)
+    : selected?.status === "in_review" || selected?.status === "awaiting_subject"
+      ? (["in_review", "awaiting_subject", "fulfilled", "denied"] as const).filter((item) => item !== selected.status)
+      : [];
+  const options = selected?.requestType === "access"
+    ? statusOptions.filter((item) => item !== "fulfilled")
+    : statusOptions;
+  const selectRequest = (request: PrivacyRequestRecord) => {
+    setSelectedId(request.id);
+    const next = request.status === "open" ? "in_review" : request.status === "awaiting_subject" ? "in_review" : "awaiting_subject";
+    setStatus(next);
+    setNote("");
+  };
+  const transition = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selected) return;
+    const requestPayload = {
+      requestId: selected.id,
+      status,
+      expectedVersion: selected.version,
+      note: note.trim(),
+    };
+    const fingerprint = JSON.stringify(requestPayload);
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/privacy", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, fingerprint),
+        },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as { request?: PrivacyRequestRecord; error?: string; message?: string };
+      if (!response.ok || !payload.request) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível atualizar a solicitação.");
+      }
+      pendingKeys.current.delete(fingerprint);
+      setSelectedId("");
+      setNote("");
+      setLoading(true);
+      setRefresh((value) => value + 1);
+      notify(`${payload.request.publicCode} atualizada para “${privacyStatusLabel[payload.request.status]}”.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível atualizar a solicitação.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !data) {
+    return <section className="dashboard-section operation-privacy"><div className="data-state">Consolidando solicitações dos titulares...</div></section>;
+  }
+  if (!data) {
+    return <section className="dashboard-section operation-privacy"><div className="data-state"><strong>Fila de privacidade indisponível.</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Tentar novamente</button></div></section>;
+  }
+  const formatted = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+
+  return (
+    <section className="dashboard-section operation-privacy" data-testid="operation-privacy-queue">
+      <header className="privacy-header"><div><small>GOVERNANÇA LGPD · {data.policy.version}</small><h2>Fila de direitos dos titulares.</h2><p>Priorize prazos, registre a análise humana e preserve a separação entre decisão e exclusão física.</p></div><span className="privacy-shield" aria-hidden="true">⌾</span></header>
+      <div className="privacy-metrics operation">
+        <article><strong>{data.metrics.activeCount}</strong><span>pedido(s) ativo(s)</span></article>
+        <article><strong>{data.metrics.overdueCount}</strong><span>fora da meta</span></article>
+        <article><strong>{data.metrics.awaitingSubjectCount}</strong><span>aguardando titular</span></article>
+        <article><strong>{data.metrics.exportCount}</strong><span>acessos entregues</span></article>
+      </div>
+      <div className="privacy-policy-note warning"><span>!</span><p><strong>Retenção ainda bloqueia produção.</strong> {data.policy.rule}</p></div>
+      <div className="operation-privacy-grid">
+        <div className="operation-privacy-list">
+          <header><strong>Solicitações</strong><button className="secondary-action" onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar ↻</button></header>
+          {data.requests.length === 0 && <div className="data-state"><strong>Fila vazia.</strong><span>Novas solicitações aparecerão aqui.</span></div>}
+          {data.requests.map((request) => (
+            <button type="button" key={request.id} className={`${selectedId === request.id ? "selected" : ""} ${request.status}`} onClick={() => selectRequest(request)}>
+              <span><small>{request.publicCode} · {request.subjectCode}</small><strong>{privacyTypeLabel[request.requestType]}</strong><em>{request.subjectName} · {request.subjectRole}</em></span>
+              <span><i className={`privacy-status ${request.status}`}>{privacyStatusLabel[request.status]}</i><small>Meta {formatted(request.dueAt)}</small></span>
+            </button>
+          ))}
+        </div>
+        <div className="operation-privacy-detail">
+          {!selected && <div className="data-state"><strong>Selecione uma solicitação.</strong><span>O contexto mínimo e as transições permitidas aparecerão aqui.</span></div>}
+          {selected && <>
+            <header><div><small>{selected.publicCode} · V{selected.version}</small><h3>{privacyTypeLabel[selected.requestType]}</h3></div><span className={`privacy-status ${selected.status}`}>{privacyStatusLabel[selected.status]}</span></header>
+            <dl><div><dt>Titular</dt><dd>{selected.subjectName} · {selected.subjectCode}</dd></div><div><dt>Recebida</dt><dd>{formatted(selected.createdAt)}</dd></div><div><dt>Meta operacional</dt><dd>{formatted(selected.dueAt)}</dd></div><div><dt>Responsável</dt><dd>{selected.assignedToName ?? "Ainda não atribuído"}</dd></div></dl>
+            <blockquote>{selected.description}</blockquote>
+            {selected.resolutionNote && <div className="privacy-resolution"><strong>Decisão registrada</strong><p>{selected.resolutionNote}</p></div>}
+            {options.length > 0 && <form onSubmit={transition}>
+              <label className="field"><span>Próxima etapa</span><select value={status} onChange={(event) => setStatus(event.target.value as Exclude<PrivacyRequestStatus, "open">)}>{options.map((option) => <option key={option} value={option}>{privacyStatusLabel[option]}</option>)}</select></label>
+              <label className="field"><span>Justificativa da versão</span><textarea minLength={20} maxLength={1000} rows={4} value={note} onChange={(event) => setNote(event.target.value)} placeholder={selected.requestType === "deletion" || selected.requestType === "restriction" ? "Registre a análise de retenção ou anonimização e a resposta ao titular." : "Registre evidência, contexto e orientação dada ao titular."} required /><small>{note.trim().length}/1000</small></label>
+              <button className="primary-action" disabled={saving || note.trim().length < 20}>{saving ? "Registrando..." : "Salvar decisão versionada →"}</button>
+            </form>}
+          </>}
+        </div>
+      </div>
+      {data.history.length > 0 && <div className="privacy-history"><header><small>ATIVIDADE RECENTE</small><span>{data.history.length} evento(s)</span></header>{data.history.slice(0, 8).map((event) => <article key={event.id}><span>V{event.requestVersion}</span><div><strong>{event.requestCode} · {privacyStatusLabel[event.toStatus]}</strong><p>{event.note}</p><small>{event.actorName}</small></div><time>{formatted(event.createdAt)}</time></article>)}</div>}
+    </section>
+  );
+}
+
 function AccountView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   const user = roleDetails[role];
   const isOperational = role === "operacao";
@@ -6666,13 +7070,15 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
         </section>
         {(role === "cliente" || role === "prestador") && <OnboardingPanel role={role} notify={notify} />}
         <NotificationPreferencesPanel key={role} role={role} notify={notify} />
+        {!isOperational && <PrivacyCenterPanel key={`privacy-${role}`} notify={notify} />}
         <section className="dashboard-section account-options">
           <div className="dashboard-section-title"><div><small>PREFERÊNCIAS</small><h2>Configurações da conta</h2></div></div>
           <button onClick={() => document.getElementById("notification-preferences")?.scrollIntoView({ behavior: "smooth", block: "start" })}><span>Notificações</span><small>Central, Web Push e horário de silêncio</small><i>→</i></button>
-          <button onClick={() => notify("Central de privacidade aberta.")}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
+          <button onClick={() => document.getElementById("privacy-center")?.scrollIntoView({ behavior: "smooth", block: "start" })}><span>Privacidade e segurança</span><small>Dados pessoais, acesso e consentimentos</small><i>→</i></button>
           <button onClick={() => notify("Termos do piloto carregados.")}><span>Termos do piloto</span><small>Versão demonstrativa e regras aplicáveis</small><i>→</i></button>
         </section>
         {isOperational && <OperationSystemHealthPanel notify={notify} />}
+        {isOperational && <OperationPrivacyPanel notify={notify} />}
         {isOperational && <OperationReadinessPanel notify={notify} />}
         {isOperational && <MatchingOperationsPanel notify={notify} />}
         {isOperational && <RegionManagementPanel notify={notify} />}

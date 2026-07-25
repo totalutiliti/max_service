@@ -26,6 +26,10 @@ Finalidade explícita, minimização, transparência, acesso restrito, retençã
 - revogação de consentimento sem apagar bases legais independentes;
 - registro de cada solicitação e decisão.
 
+A Central de Privacidade materializa esses direitos para cliente, profissional, parceiro e anunciante. Cada solicitação recebe referência opaca, tipo, meta operacional de 15 dias — uma meta interna do piloto, não interpretação de prazo legal —, versão e histórico append-only. A Operação pode assumir a análise, pedir complemento, atender ou não atender, sempre com justificativa. Pedidos de acesso podem ser atendidos diretamente pelo próprio titular com um pacote JSON que inclui identidade, perfil, consentimentos, aceites e referências da própria atividade; conteúdo de terceiros é excluído. O servidor registra somente recibo, versão do manifesto, contagens e checksum, além da resposta idempotente temporária exigida pelo piloto sintético.
+
+Exclusão e restrição não disparam `DELETE` nem anonimização automática. Uma conclusão deve registrar expressamente o tratamento da retenção ou anonimização, e a trilha não afirma que uma base legal independente deixou de existir. Dados reais continuam proibidos até aprovação jurídica da política de retenção, do prazo de defesa, do processo de confirmação da identidade e do armazenamento temporário de exportações.
+
 No piloto, a captura pública de indicação guarda `consent_at` e `privacy_notice_version` junto ao interesse. O formulário informa a finalidade de contato, não cria conta definitiva, não coleta IP para atribuição e não autoriza score, crédito ou consulta automatizada de antecedentes.
 
 O onboarding guarda cada aceite com usuário, versão, horário e SHA-256 do conteúdo vigente. Comunicação promocional e pesquisa de produto são finalidades opcionais e independentes: a recusa também gera evidência, e mudanças posteriores entram em histórico append-only sem reescrever o evento anterior. Os documentos `pilot-0.1` são minutas e não autorizam coleta de dados reais antes da aprovação jurídica.

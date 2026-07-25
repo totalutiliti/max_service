@@ -37,6 +37,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - Campanhas e cupons do P1 já são persistentes: a Operação controla janela, tipo de desconto, pedido mínimo e limites de uso; a reserva ocorre no pedido e o desconto é congelado no aceite.
 - Relatórios operacionais do P1 já consolidam coortes de 7, 30 e 90 dias, funil do marketplace, categorias, crescimento, suporte e saúde financeira em projeção exclusiva da Operação e exportação agregada; metas versionadas, comparação com a janela anterior e alertas de desvio já estão materializados.
 - A entrega recorrente desses relatórios já possui destinatário sintético consentido, agenda semanal/mensal, pausa, snapshot agregado, checksum, idempotência, RLS e histórico append-only; envio externo permanece bloqueado até homologação do provedor.
+- A Central de Privacidade já registra solicitações de acesso, correção, restrição, revogação e exclusão para os quatro perfis externos; o titular acompanha estados e gera exportação JSON minimizada com recibo/checksum, enquanto a Operação conduz decisões versionadas e a exclusão física permanece bloqueada até a política de retenção.
 - A Fase 5 possui a fundação sandbox: regra 12/2/2 versionada, snapshot por booking, eventos assinados, idempotência, split, ledger e reconciliação sem PSP real.
 - A Fase 6 possui um cockpit persistente com oito gates de prontidão, responsável, evidência, versão e eventos append-only; o sistema mantém a autorização de produção explicitamente falsa até aprovações externas.
 - O CI executa lint, builds, testes funcionais, auditoria de dependências e scanner de segredos; em ambiente Docker limpo, também aplica todas as migrations e prova RLS e proteção contra conflitos de agenda.
@@ -59,7 +60,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - Mensagens, lista de conversas e contadores possuem sincronização adaptativa; o backend entrega apenas mensagens posteriores ao cursor validado na própria conversa e mantém um cursor de leitura monotônico por membro para calcular não lidas.
 - A experiência web já é instalável como PWA, com identidade visual própria e fallback offline seguro; o cache usa allowlist pública e exclui integralmente APIs, sessões e superfícies autenticadas.
 - As notificações transacionais podem chegar por Web Push mediante consentimento por aparelho, com assinatura persistente isolada por RLS, fila no mesmo commit da notificação, retentativa limitada e revogação de endpoints inválidos.
-- Os quatro perfis controlam assuntos de Web Push e horário silencioso por fuso brasileiro na Conta; cada mudança incrementa versão, preserva evento append-only, gera auditoria segura e suprime ou adia entregas ainda pendentes.
+- Os cinco perfis controlam assuntos de Web Push e horário silencioso por fuso brasileiro na Conta; cada mudança incrementa versão, preserva evento append-only, gera auditoria segura e suprime ou adia entregas ainda pendentes.
 - Autenticação real, confirmação de contato, processamento antimalware e integrações reguladas continuam condicionados aos gates das fases seguintes.
 
 ## Não objetivos do MVP

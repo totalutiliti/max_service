@@ -23,7 +23,7 @@
 16. Histórico e cancelamento
 17. Avaliação
 18. Indicação/cashback promocional
-19. Perfil e privacidade
+19. Perfil e Central de Privacidade: pedidos, estados, exportação JSON e recibos
 
 ## Prestador
 
@@ -54,8 +54,9 @@
 38. Regras comerciais versionadas
 39. Termos, consentimentos e preferências persistentes de notificações por assunto/horário
 40. Auditoria pesquisável por área e responsável
+41. Fila de direitos dos titulares, detalhe mínimo, meta operacional e decisão versionada
 
-No piloto, a tela 37 está materializada em **Configurações** da Operação com métricas, demanda por categoria, disponibilidade, reordenação e justificativa obrigatória. As telas 8, 10, 28 e 34 consomem o mesmo catálogo persistente e respeitam imediatamente as categorias ativas.
+No piloto, a tela 37 está materializada em **Configurações** da Operação com métricas, demanda por categoria, disponibilidade, reordenação e justificativa obrigatória. As telas 8, 10, 28 e 34 consomem o mesmo catálogo persistente e respeitam imediatamente as categorias ativas. A tela 41 separa o autoatendimento do titular da decisão operacional e mantém a exclusão física bloqueada até a política de retenção.
 
 ## Validação visual mínima
 

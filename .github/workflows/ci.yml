@@ -44,6 +44,7 @@ jobs:
           az bicep build --file infra/azure/bootstrap.bicep --stdout >/dev/null
           az bicep build --file infra/azure/runtime.bicep --stdout >/dev/null
           az bicep build --file infra/azure/github-oidc.bicep --stdout >/dev/null
+          az bicep build --file infra/azure/staging/main.bicep --stdout >/dev/null
 
       - name: Procurar segredos versionados
         run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 git /repo --no-banner --redact --exit-code=1

@@ -4,9 +4,10 @@ param location string = resourceGroup().location
 param identityName string = 'id-max-service-github-dev'
 param githubSubjectPrefix string = 'repo:totalutiliti@258505084/max_service@1309016061'
 param githubEnvironment string = 'azure-dev'
+param environmentTag string = 'dev'
 
 var tags = {
-  environment: 'dev'
+  environment: environmentTag
   project: 'max-service'
   'managed-by': 'bicep'
   purpose: 'github-deployment'

@@ -36,12 +36,96 @@ param storageAccountName string = 'stmaxservicedev26'
 param storageShareName string = 'max-service-objects'
 param identityName string = 'id-max-service-dev'
 param environmentName string = 'cae-max-service-dev'
+param environmentTag string = 'dev'
+param dataClassification string = 'synthetic-only'
+param deployerPrincipalType string = 'User'
+
+@allowed([
+  'Standard_B1ms'
+  'Standard_B2ms'
+  'Standard_D2ds_v5'
+])
+param postgresSkuName string = 'Standard_B1ms'
+
+@allowed([
+  'Burstable'
+  'GeneralPurpose'
+])
+param postgresSkuTier string = 'Burstable'
+
+@minValue(7)
+@maxValue(35)
+param postgresBackupRetentionDays int = 7
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param postgresGeoRedundantBackup string = 'Disabled'
+
+@allowed([
+  'Disabled'
+  'SameZone'
+  'ZoneRedundant'
+])
+param postgresHighAvailabilityMode string = 'Disabled'
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param postgresPublicNetworkAccess string = 'Enabled'
+
+param postgresDelegatedSubnetId string = ''
+param postgresPrivateDnsZoneId string = ''
+
+@minValue(32)
+param postgresStorageSizeGB int = 32
+
+@allowed([
+  'Balanced_B0'
+])
+param redisSkuName string = 'Balanced_B0'
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param redisHighAvailability string = 'Disabled'
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param redisPublicNetworkAccess string = 'Enabled'
+
+@allowed([
+  'Standard_LRS'
+  'Standard_ZRS'
+])
+param storageSkuName string = 'Standard_LRS'
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param storagePublicNetworkAccess string = 'Enabled'
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param keyVaultPublicNetworkAccess string = 'Enabled'
+
+@minValue(7)
+@maxValue(90)
+param keyVaultSoftDeleteRetentionInDays int = 7
 
 var tags = {
-  environment: 'dev'
+  environment: environmentTag
   project: 'max-service'
   'managed-by': 'bicep'
-  data: 'synthetic-only'
+  data: dataClassification
 }
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6' // gitleaks:allow public Azure role ID
 var keyVaultSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7' // gitleaks:allow public Azure role ID
@@ -63,8 +147,8 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
   location: location
   tags: tags
   sku: {
-    name: 'Standard_B1ms'
-    tier: 'Burstable'
+    name: postgresSkuName
+    tier: postgresSkuTier
   }
   properties: {
     administratorLogin: postgresAdministratorLogin
@@ -74,18 +158,24 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2025-08-01' = {
       passwordAuth: 'Enabled'
     }
     backup: {
-      backupRetentionDays: 7
-      geoRedundantBackup: 'Disabled'
+      backupRetentionDays: postgresBackupRetentionDays
+      geoRedundantBackup: postgresGeoRedundantBackup
     }
     highAvailability: {
-      mode: 'Disabled'
+      mode: postgresHighAvailabilityMode
     }
-    network: {
-      publicNetworkAccess: 'Enabled'
-    }
+    network: empty(postgresDelegatedSubnetId)
+      ? {
+          publicNetworkAccess: postgresPublicNetworkAccess
+        }
+      : {
+          delegatedSubnetResourceId: postgresDelegatedSubnetId
+          privateDnsZoneArmResourceId: postgresPrivateDnsZoneId
+          publicNetworkAccess: 'Disabled'
+        }
     storage: {
       autoGrow: 'Enabled'
-      storageSizeGB: 32
+      storageSizeGB: postgresStorageSizeGB
     }
     version: '16'
   }
@@ -109,7 +199,7 @@ resource extensions 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@20
   }
 }
 
-resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = {
+resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (empty(postgresDelegatedSubnetId) && postgresPublicNetworkAccess == 'Enabled') {
   parent: postgres
   name: 'AllowAzureServices'
   properties: {
@@ -123,13 +213,13 @@ resource redis 'Microsoft.Cache/redisEnterprise@2025-07-01' = {
   location: location
   tags: tags
   sku: {
-    name: 'Balanced_B0'
+    name: redisSkuName
   }
   properties: {
     encryption: {}
-    highAvailability: 'Disabled'
+    highAvailability: redisHighAvailability
     minimumTlsVersion: '1.2'
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: redisPublicNetworkAccess
   }
 }
 
@@ -152,7 +242,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2025-06-01' = {
   tags: tags
   kind: 'StorageV2'
   sku: {
-    name: 'Standard_LRS'
+    name: storageSkuName
   }
   properties: {
     accessTier: 'Hot'
@@ -161,7 +251,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2025-06-01' = {
     allowSharedKeyAccess: true
     defaultToOAuthAuthentication: false
     minimumTlsVersion: 'TLS1_2'
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: storagePublicNetworkAccess
     supportsHttpsTrafficOnly: true
   }
 }
@@ -189,12 +279,12 @@ resource vault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     enablePurgeProtection: true
     enableRbacAuthorization: true
     enableSoftDelete: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: keyVaultPublicNetworkAccess
     sku: {
       family: 'A'
       name: 'standard'
     }
-    softDeleteRetentionInDays: 7
+    softDeleteRetentionInDays: keyVaultSoftDeleteRetentionInDays
     tenantId: subscription().tenantId
   }
 }
@@ -217,7 +307,7 @@ resource deployerSecretOfficer 'Microsoft.Authorization/roleAssignments@2022-04-
   scope: vault
   properties: {
     principalId: deployerObjectId
-    principalType: 'User'
+    principalType: deployerPrincipalType
     roleDefinitionId: subscriptionResourceId(
       'Microsoft.Authorization/roleDefinitions',
       keyVaultSecretsOfficerRoleId
@@ -320,6 +410,10 @@ resource environmentStorage 'Microsoft.App/managedEnvironments/storages@2025-07-
 
 output environmentStorageName string = environmentStorage.name
 output keyVaultName string = vault.name
+output keyVaultId string = vault.id
+output postgresId string = postgres.id
 output postgresHost string = postgresHost
+output redisId string = redis.id
 output redisHost string = redisHost
 output storageAccountName string = storage.name
+output storageAccountId string = storage.id

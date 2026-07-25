@@ -13,7 +13,7 @@ Nenhum deploy está autorizado nesta etapa.
 
 Lint → typecheck → unitários → integração PostgreSQL → RLS/IDOR → E2E/a11y → build → gitleaks → dependências → imagem/Trivy → migration dry-run → aprovação → deploy → smoke test → observabilidade.
 
-O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os cinco serviços em Docker limpo, escaneia as imagens de API e web com Trivy fixado por digest, recusa vulnerabilidades corrigíveis altas ou críticas, recria as migrations em banco descartável, detecta drift por checksum e então executa E2E/a11y WCAG 2.2 AA no Chrome, smoke tests de saúde/autorização, RLS, conflitos de agenda, reenvios concorrentes idempotentes e restauração de backup lógico em banco isolado. O restore compara migrations e checksums, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. Dry-run no ambiente real de staging, deploy e observabilidade gerenciada continuam pendentes.
+O workflow `Qualidade` já automatiza lint, builds, testes funcionais, auditoria de dependências e gitleaks. Um segundo job sobe os seis serviços em Docker limpo, incluindo Redis efêmero autenticado, escaneia as imagens de API, web e Redis com Trivy fixado por digest, recusa vulnerabilidades corrigíveis altas ou críticas, recria as migrations em banco descartável, detecta drift por checksum e então executa E2E/a11y WCAG 2.2 AA no Chrome, smoke tests de saúde/autorização, coordenação do rate limit entre clientes independentes, RLS, conflitos de agenda, reenvios concorrentes idempotentes e restauração de backup lógico em banco isolado. O restore compara migrations e checksums, dados críticos, grants, policies, RLS e constraints antes de remover os artefatos temporários. Dry-run no ambiente real de staging, deploy e observabilidade gerenciada continuam pendentes.
 
 As imagens finais recebem somente as dependências necessárias a cada processo, iniciam diretamente pelo Node.js sem o npm CLI e removem ferramentas de build. O scanner avalia o sistema operacional e os pacotes JavaScript dessas imagens finais, não apenas o código-fonte.
 
@@ -21,7 +21,7 @@ As imagens finais recebem somente as dependências necessárias a cada processo,
 
 Frontend e API independentes, PostgreSQL gerenciado com backup/PITR, Redis gerenciado, object storage privado, cofre de segredos, identidade gerenciada, filas, logs estruturados, métricas, traces e alertas.
 
-O ambiente local já separa liveness de readiness, oferece cockpit operacional autenticado, gera `x-request-id`, escreve logs JSON sem PII, agrega uma janela limitada de métricas, aplica proteção contra abuso por réplica e envia headers defensivos com CORS e limites de corpo fechados. HTTPS/HSTS, CSP por nonce/hash, store distribuído para rate limit, coleta e retenção central de logs, exportação de métricas, traces, alertas externos e SLOs ainda dependem da infraestrutura escolhida.
+O ambiente local já separa liveness de readiness, oferece cockpit operacional autenticado, gera `x-request-id`, escreve logs JSON sem PII, agrega uma janela limitada de métricas, coordena a proteção contra abuso no Redis com falha fechada e envia headers defensivos com CORS e limites de corpo fechados. HTTPS/HSTS, CSP por nonce/hash, Redis gerenciado com TLS/ACL, proteção de borda, coleta e retenção central de logs, exportação de métricas, traces, alertas externos e SLOs ainda dependem da infraestrutura escolhida.
 
 ## Gate de produção
 

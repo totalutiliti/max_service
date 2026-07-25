@@ -21,6 +21,33 @@ services:
       retries: 12
       start_period: 10s
 
+  redis:
+    image: redis:8.8.0-alpine
+    container_name: max-service-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --requirepass
+      - max-service-redis-local-only
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - --no-auth-warning
+        - -a
+        - max-service-redis-local-only
+        - ping
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
   api:
     build:
       context: .
@@ -36,6 +63,9 @@ services:
       DATABASE_URL: postgresql://max_service_app:max_service_runtime_local@database:5432/max_service
       MIGRATION_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@database:5432/max_service
       BFF_INTERNAL_SECRET: max-service-bff-local-only
+      RATE_LIMIT_STORE_MODE: redis
+      RATE_LIMIT_KEY_SECRET: max-service-rate-limit-key-local-only
+      REDIS_URL: redis://:max-service-redis-local-only@redis:6379/0
       FINANCIAL_SANDBOX_SECRET: max-service-sandbox-local-only
       OBJECT_STORAGE_ENDPOINT: http://storage:9000
       OBJECT_STORAGE_REGION: us-east-1
@@ -47,6 +77,8 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
     depends_on:
       database:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       storage:
         condition: service_started

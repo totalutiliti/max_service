@@ -32,7 +32,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - A área **Configurações** da Operação controla a ordem e a disponibilidade das categorias; cada mudança exige justificativa, preserva o histórico e gera evento append-only e auditoria.
 - A área **Conta** da Operação mantém oito gates persistentes de prontidão, com responsável, evidência, versão, histórico append-only e conflito otimista; evidência pronta não autoriza produção.
 - A mesma área mantém a fila de direitos dos titulares: cada pedido possui tipo, meta operacional, responsável, estado, versão, justificativa e trilha append-only; exclusão física continua tecnicamente separada e bloqueada pela política de retenção.
-- A mesma área possui um cockpit de saúde que verifica API, PostgreSQL, sincronismo das migrations, cofre privado, última reconciliação de objetos e modos de integração, separando bloqueios de tráfego local dos gates de produção.
+- A mesma área possui um cockpit de saúde que verifica API, PostgreSQL, sincronismo das migrations, cofre privado, Redis do rate limit, última reconciliação de objetos e modos de integração, separando bloqueios de tráfego local dos gates de produção.
 - A Operação cria, agenda, pausa e acompanha campanhas promocionais com validade, limite total e por cliente; cada campanha pode limitar categoria e região e, quando usa segmentação promocional, exige consentimento vigente.
 - A validação do cupom registra somente hash do código e contexto mínimo, contém temporariamente repetição abusiva e entrega à Operação métricas agregadas de 24 horas, sem decisão automatizada sobre clientes.
 - O cupom é recalculado no aceite da proposta, e o financeiro sandbox preserva valor original, desconto, valor final e campanha em um snapshot conciliável.
@@ -93,7 +93,7 @@ npm run test:smoke
 npm run test:e2e
 ```
 
-`test:integration`, `test:migrations`, `test:storage` e `test:restore` exigem o PostgreSQL local do Docker; `test:smoke` e `test:e2e` exigem também API e web. O E2E usa o Google Chrome instalado no sistema. Os ensaios de migrations e restauração criam destinos descartáveis e nunca alteram o banco original.
+`test:integration` exige PostgreSQL e Redis locais do Docker; `test:migrations`, `test:storage` e `test:restore` exigem PostgreSQL; `test:smoke` e `test:e2e` exigem também API e web. O E2E usa o Google Chrome instalado no sistema. Os ensaios de migrations e restauração criam destinos descartáveis e nunca alteram o banco original.
 
 ## Rodar com Docker
 
@@ -107,8 +107,9 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - API pronta para tráfego local: `http://127.0.0.1:3001/health/ready`
 - cockpit autenticado em **Operação → Conta**, com dependências, reconciliação do cofre e telemetria local dos últimos cinco minutos;
 - PostgreSQL local: `127.0.0.1:54329`
+- Redis autenticado do rate limit: `127.0.0.1:56379`;
 - armazenamento privado S3: `127.0.0.1:59000` (API) e `127.0.0.1:59001` (console local);
-- serviços: `database`, `storage`, `api`, `storage-maintenance` e `web`;
+- serviços: `database`, `redis`, `storage`, `api`, `storage-maintenance` e `web`;
 - volumes `max-service-postgres` e `max-service-objects` mantêm registros e arquivos entre reinícios.
 
 ## Princípios

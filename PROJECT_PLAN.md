@@ -45,7 +45,7 @@ Entregar um MVP regional, seguro e demonstrável, capaz de validar a aquisição
 - O pipeline também ensaia backup e restauração em banco temporário, comparando migrations, dados críticos, grants, policies, RLS e constraints; backup gerenciado, PITR, RPO e RTO continuam como gate de infraestrutura.
 - Liveness e readiness são separados; o readiness valida banco, migrations e cofre, enquanto o cockpit exclusivo da Operação expõe somente diagnósticos seguros e preserva a proibição de produção.
 - A API gera correlação própria por requisição, registra eventos JSON sem query, payload ou identidade individual e agrega uma janela móvel limitada de tráfego por réplica no cockpit da Operação.
-- Sessão demonstrativa, indicação pública e validação de cupom possuem limites locais com chaves opacas, buffers limitados, contrato `429` e bloqueios agregados no cockpit; produção ainda exige coordenação distribuída.
+- Sessão demonstrativa, indicação pública e validação de cupom possuem janela móvel atômica coordenada no Redis, chaves HMAC opacas, contrato `429`, falha fechada `503`, readiness e bloqueios agregados no cockpit; produção ainda exige Redis gerenciado, proteção de borda e homologação dos limites por carga.
 - Frontend e API possuem CSP, proteção contra framing/sniffing, Permissions Policy, cache privado, CORS fechado e limites explícitos de corpo; HTTPS/HSTS e CSP sem `unsafe-inline` permanecem gates externos.
 - Smoke tests em Docker comprovam probes, visão operacional, bloqueio do cliente e assinatura obrigatória do canal BFF→API.
 - A prontidão de identidade já possui sessão demonstrativa opaca, expiração de quatro horas, revogação persistente, cookie `HttpOnly`/`SameSite=Strict`, bloqueio entre perfis e contexto BFF→API assinado.

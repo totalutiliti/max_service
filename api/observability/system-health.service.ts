@@ -81,6 +81,7 @@ export class SystemHealthService {
       this.databaseCheck(),
       this.migrationsCheck(),
       this.storageCheck(),
+      this.rateLimitStoreCheck(),
     ]);
     const allChecks = [
       {
@@ -216,6 +217,46 @@ export class SystemHealthService {
         productionBlocking: true,
       };
     }
+  }
+
+  private async rateLimitStoreCheck(): Promise<SystemHealthCheck> {
+    const health = await this.rateLimits.health();
+    if (health.status === "ready") {
+      return {
+        id: "rate-limit-store",
+        area: "security",
+        label: "Rate limit distribuído",
+        status: "healthy",
+        detail: "Redis acessível; contadores compartilhados entre réplicas e falha fechada ativos.",
+        latencyMs: health.latencyMs,
+        trafficBlocking: true,
+        productionBlocking: false,
+      };
+    }
+    if (health.status === "local") {
+      return {
+        id: "rate-limit-store",
+        area: "security",
+        label: "Rate limit local",
+        status: "attention",
+        detail: "Contadores somente em memória; adequado ao desenvolvimento isolado, não à produção.",
+        latencyMs: health.latencyMs,
+        trafficBlocking: false,
+        productionBlocking: true,
+      };
+    }
+    return {
+      id: "rate-limit-store",
+      area: "security",
+      label: "Rate limit distribuído",
+      status: "critical",
+      detail: health.status === "misconfigured"
+        ? "Redis obrigatório sem configuração válida; rotas protegidas permanecem fechadas."
+        : "Redis indisponível; rotas protegidas permanecem fechadas.",
+      latencyMs: health.latencyMs,
+      trafficBlocking: true,
+      productionBlocking: true,
+    };
   }
 
   private latestPrivateStorageReconciliation(actor: Actor) {

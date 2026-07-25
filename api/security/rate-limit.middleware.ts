@@ -1,6 +1,9 @@
 import { Injectable, type NestMiddleware } from "@nestjs/common";
 import { requestRateLimitRules } from "./rate-limit.js";
-import { RateLimitService } from "./rate-limit.service.js";
+import {
+  RateLimitService,
+  RateLimitUnavailableError,
+} from "./rate-limit.service.js";
 
 interface RateLimitRequest {
   method: string;
@@ -18,8 +21,22 @@ interface RateLimitResponse {
 export class RateLimitMiddleware implements NestMiddleware {
   constructor(private readonly rateLimits: RateLimitService) {}
 
-  use(request: RateLimitRequest, response: RateLimitResponse, next: () => void) {
-    const decision = this.rateLimits.consume(requestRateLimitRules(request));
+  async use(request: RateLimitRequest, response: RateLimitResponse, next: () => void) {
+    let decision;
+    try {
+      decision = await this.rateLimits.consume(requestRateLimitRules(request));
+    } catch (error) {
+      if (!(error instanceof RateLimitUnavailableError)) throw error;
+      response.setHeader("retry-after", "1");
+      response.setHeader("cache-control", "no-store");
+      response.status(503).json({
+        statusCode: 503,
+        error: "Service Unavailable",
+        code: "RATE_LIMIT_STORE_UNAVAILABLE",
+        message: "Proteção contra abuso temporariamente indisponível.",
+      });
+      return;
+    }
     if (!decision) {
       next();
       return;

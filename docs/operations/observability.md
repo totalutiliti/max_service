@@ -3,7 +3,7 @@
 ## Probes públicos
 
 - `GET /health/live`: confirma somente que o processo da API está ativo. Não consulta dependências.
-- `GET /health/ready`: confirma PostgreSQL, migrations e cofre privado. Retorna `503` quando uma dependência obrigatória bloqueia tráfego.
+- `GET /health/ready`: confirma PostgreSQL, migrations, cofre privado e Redis do rate limit. Retorna `503` quando uma dependência obrigatória bloqueia tráfego.
 - `GET /health`: alias compatível do readiness.
 
 As respostas públicas usam somente identificadores conhecidos, estado e latência. Não expõem URLs internas, credenciais, nomes de buckets, objetos, migrations ou payloads de negócio.
@@ -20,6 +20,7 @@ O painel em **Operação → Conta** apresenta:
 - conexão do PostgreSQL pela role de runtime;
 - quantidade e sincronismo das migrations;
 - acesso ao cofre privado;
+- coordenação distribuída do rate limit, com modo e disponibilidade sem expor URL ou credenciais;
 - última reconciliação agregada entre objetos e metadados, sem expor chaves ou nomes de arquivo;
 - modo demonstrativo de identidade;
 - financeiro sandbox;
@@ -48,13 +49,13 @@ O mesmo middleware mantém no máximo mil amostras em memória. O cockpit mostra
 
 Essas métricas são deliberadamente locais à réplica e zeram quando o processo reinicia. Elas comprovam o contrato e dão diagnóstico ao piloto, mas não oferecem retenção, consulta histórica, agregação entre réplicas, alertas ou SLO. O bloco aparece somente no endpoint autenticado da Operação; liveness e readiness públicos não expõem tráfego.
 
-O mesmo cockpit apresenta exclusivamente agregados da proteção contra abuso: políticas ativas, buckets locais e bloqueios por política nos últimos cinco minutos. Chaves, códigos, atores e endereços não fazem parte da resposta.
+O mesmo cockpit apresenta exclusivamente agregados da proteção contra abuso: políticas ativas, contadores opacos observados pela réplica e bloqueios locais por política nos últimos cinco minutos. A decisão de bloqueio é coordenada no Redis entre réplicas; chaves, códigos, atores, endereços, URL e credenciais não fazem parte da resposta.
 
 O check **Transporte HTTPS** diferencia os headers defensivos já aplicados no código da terminação TLS/HSTS que depende da borda. No Docker local ele permanece em atenção e bloqueia produção, sem bloquear o tráfego de demonstração.
 
 ## Evidência automatizada
 
-`npm run test:smoke` valida liveness, readiness, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 33 ações de marketplace, comunicação, atendimento, disputa formal, análise preventiva de indicações, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
+`npm run test:smoke` valida liveness, readiness incluindo Redis, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 33 ações de marketplace, comunicação, atendimento, disputa formal, análise preventiva de indicações, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. O teste de integração usa dois clientes independentes e comprova que ambos consomem o mesmo contador Redis. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
 
 ## Próximos requisitos de produção
 

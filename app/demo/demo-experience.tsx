@@ -582,7 +582,8 @@ interface OperationSystemHealthData {
   };
   abuseProtection: {
     policyVersion: string;
-    mode: "single-replica-memory";
+    mode: "single-replica-memory" | "distributed-redis";
+    storeStatus: "local" | "unknown" | "ready" | "unavailable" | "misconfigured";
     windowMinutes: number;
     activeBucketCount: number;
     blockedCount: number;
@@ -6549,7 +6550,7 @@ function OperationSystemHealthPanel({ notify }: { notify: (message: string) => v
               );
             })}
           </div>
-          <footer>{data.abuseProtection.note} Produção exige armazenamento distribuído e limites homologados.</footer>
+          <footer>{data.abuseProtection.note} Produção ainda exige limites homologados por carga e proteção também na borda.</footer>
         </section>
         <footer>{data.telemetry.note} Nenhuma query string, payload ou identidade individual é coletada.</footer>
       </section>

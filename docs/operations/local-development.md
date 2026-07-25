@@ -19,9 +19,9 @@ Esse modo não inicia o banco nem a API e serve somente para trabalhar na interf
 
 ## Plataforma completa local
 
-O Docker Compose inicia PostgreSQL 16, API NestJS e frontend. A migration versionada é aplicada na inicialização da API e cria apenas dados fictícios. A aplicação conecta com a role `max_service_app`, sem `BYPASSRLS`; a role administrativa local é usada somente pelo executor de migrations.
+O Docker Compose inicia PostgreSQL 16, Redis 8 autenticado, API NestJS, cofre S3 e frontend. A migration versionada é aplicada na inicialização da API e cria apenas dados fictícios. A aplicação conecta com a role `max_service_app`, sem `BYPASSRLS`; a role administrativa local é usada somente pelo executor de migrations.
 
-A demonstração cria sessões revogáveis no PostgreSQL. `BFF_INTERNAL_SECRET` assina o contexto entre web e API, `COOKIE_SECURE=false` permite o cookie no HTTP local e `TRANSPORT_SECURITY_CONFIGURED=false` mantém HSTS e o gate HTTPS honestamente desativados. Em HTTPS, o cookie deve ser seguro, o transporte precisa ser homologado e ambas as chaves devem vir de um cofre, nunca do Compose.
+A demonstração cria sessões revogáveis no PostgreSQL. `BFF_INTERNAL_SECRET` assina o contexto entre web e API; `RATE_LIMIT_KEY_SECRET` deriva somente chaves opacas para os contadores compartilhados no Redis. `COOKIE_SECURE=false` permite o cookie no HTTP local e `TRANSPORT_SECURITY_CONFIGURED=false` mantém HSTS e o gate HTTPS honestamente desativados. Em HTTPS, o cookie deve ser seguro, o transporte precisa ser homologado e todas as chaves devem vir de um cofre, nunca do Compose.
 
 Fluxo recomendado:
 
@@ -37,8 +37,9 @@ Endereços locais:
 - site: `http://127.0.0.1:4174`;
 - SaaS: `http://127.0.0.1:4174/demo`;
 - processo da API: `http://127.0.0.1:3001/health/live`;
-- prontidão de banco, migrations e cofre: `http://127.0.0.1:3001/health/ready`;
+- prontidão de banco, migrations, cofre e Redis: `http://127.0.0.1:3001/health/ready`;
 - PostgreSQL: `127.0.0.1:54329`.
+- Redis autenticado: `127.0.0.1:56379`;
 - object storage privado: `127.0.0.1:59000`;
 - console local do object storage: `127.0.0.1:59001`.
 

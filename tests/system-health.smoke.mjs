@@ -151,7 +151,7 @@ const readiness = await json(await fetch(`${apiBaseUrl}/health/ready`));
 assert.equal(readiness.status, "ready");
 assert.deepEqual(
   readiness.checks.map((check) => check.id),
-  ["runtime", "database", "migrations", "storage"],
+  ["runtime", "database", "migrations", "storage", "rate-limit-store"],
 );
 assert.equal(readiness.checks.every((check) => check.status === "healthy"), true);
 assert.equal(readiness.telemetry, undefined);
@@ -1124,6 +1124,8 @@ assert.equal(
   true,
 );
 assert.equal(operationHealth.abuseProtection.policyVersion, "ABUSE-PROTECTION-2026-01");
+assert.equal(operationHealth.abuseProtection.mode, "distributed-redis");
+assert.equal(operationHealth.abuseProtection.storeStatus, "ready");
 assert.equal(operationHealth.abuseProtection.blockedCount >= 1, true);
 assert.equal(
   operationHealth.abuseProtection.blockedByPolicy.some(

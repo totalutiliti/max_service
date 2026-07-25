@@ -15,7 +15,7 @@ RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund \
     && npm remove --omit=dev --ignore-scripts --no-audit --no-fund \
       @vitejs/plugin-react @vitejs/plugin-rsc react-server-dom-webpack vite \
       @aws-sdk/client-s3 @nestjs/common @nestjs/core @nestjs/platform-express \
-      class-transformer class-validator drizzle-orm pg qrcode reflect-metadata rxjs web-push \
+      class-transformer class-validator drizzle-orm pg qrcode redis reflect-metadata rxjs web-push \
     && rm -rf node_modules/@vitejs/plugin-rsc
 
 FROM node:22-bookworm-slim AS runtime

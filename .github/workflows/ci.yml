@@ -81,8 +81,16 @@ jobs:
             ghcr.io/aquasecurity/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
             image --quiet --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
             --format json --list-all-pkgs=false --output /reports/trivy-web.json max-service-web
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/" \
+            -v "$RUNNER_TEMP:/reports" \
+            ghcr.io/aquasecurity/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+            image --quiet --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
+            --format json --list-all-pkgs=false --output /reports/trivy-redis.json redis:8.8.0-alpine
           node scripts/verify-vulnerability-reports.mjs \
-            "$RUNNER_TEMP/trivy-api.json" "$RUNNER_TEMP/trivy-web.json"
+            "$RUNNER_TEMP/trivy-api.json" "$RUNNER_TEMP/trivy-web.json" \
+            "$RUNNER_TEMP/trivy-redis.json"
 
       - name: Testar jornadas e acessibilidade
         run: npm run test:e2e

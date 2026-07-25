@@ -21,7 +21,7 @@ As chaves do Compose são exclusivas do ambiente local. `COOKIE_SECURE=false` ex
 - senha com Argon2id e pepper em cofre, ou provedor OIDC homologado;
 - recuperação de conta resistente a enumeração e tomada de conta;
 - MFA obrigatório para operação/administração;
-- o piloto local já limita globalmente a criação de sessão demonstrativa; produção ainda exige rate limit distribuído por IP/conta, lockout progressivo, detecção de reuso e alertas;
+- o piloto local já coordena no Redis o limite global de criação de sessão demonstrativa e fecha a rota se o store falhar; produção ainda exige proteção por IP/conta na borda, lockout progressivo, detecção de reuso e alertas;
 - rotação de chaves, inventário de sessões/dispositivos e revogação global;
 - política de retenção, consentimentos, termos e revisão de privacidade/LGPD;
 - repetir o E2E já automatizado em HTTPS, proxy real e múltiplas réplicas.

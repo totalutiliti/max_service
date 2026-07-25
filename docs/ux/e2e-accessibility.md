@@ -54,6 +54,11 @@ As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace
   - aprovação humana e auditável pela Operação;
   - criação de pedido em contexto compatível pelo cliente;
   - exibição identificada como patrocinada e explicação de que nenhum histórico pessoal foi usado.
+- jornada de entrega consentida de relatório:
+  - criação pela Operação com destinatário sintético, finalidade e consentimento;
+  - recorrência semanal e janela de relatório escolhidas;
+  - execução local com fotografia agregada e checksum;
+  - histórico visível, pausa revogável e bloqueio do provedor externo.
 
 A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. Os cenários transacionais geram títulos exclusivos a cada execução e não dependem de registros preexistentes.
 
@@ -100,6 +105,12 @@ Para executar somente a jornada de publicidade contextual:
 
 ```bash
 npm run test:e2e -- tests/e2e/contextual-advertising.spec.ts
+```
+
+Para executar somente a jornada de entregas de relatório:
+
+```bash
+npm run test:e2e -- tests/e2e/report-delivery-schedules.spec.ts
 ```
 
 ## Diagnóstico e limite

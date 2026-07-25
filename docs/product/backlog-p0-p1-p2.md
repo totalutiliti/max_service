@@ -20,7 +20,7 @@
 - ampliar a central de suporte, que já possui SLA, atribuição entre múltiplos operadores, anexos privados e fluxo formal de disputa, com escalonamento externo após escolha do provedor;
 - calibrar com evidências reais os limiares e a retenção do monitoramento de campanhas já materializado, preservando agregação, contenção temporária e revisão humana;
 - calibrar inventário, limites, retenção e política editorial dos anúncios contextuais moderados já materializados, sem ampliar os dados usados na seleção;
-- agendamento e entrega externa consentida para os relatórios, cujos alertas e metas comparativas já estão materializados;
+- homologar o provedor e ativar a entrega externa dos relatórios; agendamento semanal/mensal, destinatário sintético consentido, pausa, recorrência, fotografia agregada, checksum, idempotência e histórico append-only já estão materializados em modo local bloqueado;
 - calibrar com evidências reais os limiares do antifraude explicável já materializado, mantendo revisão humana e sem fontes externas;
 - expansão controlada de categorias não reguladas;
 - integração com provedor de e-mail/SMS e PSP homologado em sandbox.

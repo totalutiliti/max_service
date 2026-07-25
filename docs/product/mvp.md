@@ -18,6 +18,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - atividade operacional real, pesquisável por área, referência, ação ou responsável;
 - relatório operacional agregado por período, com funil, categorias, crescimento, suporte, reconciliação e exportação CSV sem dados pessoais;
 - metas operacionais versionadas, comparação com o período anterior e monitor de desvios com limites ajustáveis e justificativa;
+- entregas recorrentes de relatório com destinatário consentido, pausa, execução local simulada, snapshot agregado verificável e provedor externo bloqueado;
 - gestão operacional do catálogo compartilhado por cliente, parceiro e captura pública, sem apagar histórico ao desativar uma categoria;
 - campanhas e cupons persistentes, com criação e pausa pela Operação, público por categoria/região, consentimento promocional opcional, monitoramento agregado de abuso, reserva transacional no pedido e desconto congelado no aceite;
 - publicidade contextual moderada, com envio pelo anunciante, decisão humana, identificação patrocinada, explicação da exibição e métricas agregadas sem perfil comportamental;

@@ -33,7 +33,7 @@
 
 ### Operação
 
-`notifications`, `notification_preferences`, `notification_preference_events`, `push_subscriptions`, `notification_push_deliveries`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `partner_support_attachments`, `operation_readiness_gates`, `operation_readiness_gate_events`, `audit_events`, `outbox_events` e `feature_flags`.
+`notifications`, `notification_preferences`, `notification_preference_events`, `push_subscriptions`, `notification_push_deliveries`, `support_cases`, `support_case_events`, `partner_support_cases`, `partner_support_events`, `partner_support_attachments`, `operation_report_goals`, `operation_report_delivery_schedules`, `operation_report_deliveries`, `operation_report_delivery_events`, `operation_readiness_gates`, `operation_readiness_gate_events`, `audit_events`, `outbox_events` e `feature_flags`.
 
 ## Invariantes
 
@@ -73,6 +73,8 @@
 - cada mensagem de atendimento aceita no máximo um anexo append-only PDF/JPEG/PNG sintético de 2 MB; evento, caso e autor são vinculados por chave estrangeira composta;
 - cada gate de prontidão possui chave estável, responsável, evidência e versão monotônica; somente a Operação altera o registro com a versão esperada, gerando evento append-only e auditoria no mesmo commit;
 - `evidence_ready` exige evidência descritiva, mas não representa aprovação nem altera automaticamente a autorização global de produção;
+- cada agendamento de relatório possui janela fechada, recorrência, finalidade, destinatário sintético, consentimento explícito, estado e versão monotônica;
+- pausar ou reativar o agendamento exige decisão auditável; uma simulação cria snapshot agregado com checksum, máscara/hash do contato e evento append-only, avança a recorrência na mesma transação e nunca altera `provider_mode = disabled_local`;
 - o anexo de atendimento é visível somente ao parceiro titular e à Operação; o object storage guarda os bytes e `partner_support_attachments` preserva chave aleatória, nome normalizado, tipo, tamanho, hash e autoria;
 - a ordem das categorias é positiva e única; somente a operação altera `active` ou `sort_order`, sempre com justificativa, `service_category_events` append-only e auditoria;
 - o catálogo mantém ao menos uma categoria ativa; uma categoria inativa é rejeitada em novos pedidos e indicações, mas continua visível nos relacionamentos históricos;

@@ -3,11 +3,14 @@ import { parseDemoActor } from "../auth/demo-actor.js";
 import type { HeaderResponse } from "../storage/private-file-http.js";
 import {
   AddSupportCaseNoteDto,
+  ChangeOperationReportDeliveryScheduleStatusDto,
   ChangePartnerReferralStatusDto,
   ChangeSupportCaseStatusDto,
+  CreateOperationReportDeliveryScheduleDto,
   ManageServiceCategoryDto,
   ManageServiceRegionDto,
   ReviewPartnerReferralRiskDto,
+  SimulateOperationReportDeliveryDto,
   UpdateOperationReadinessGateDto,
   UpdateOperationReportGoalsDto,
 } from "./operations.dto.js";
@@ -84,6 +87,69 @@ export class OperationsController {
     );
     response.setHeader("idempotency-replayed", String(result.replayed));
     return { goals: result.value };
+  }
+
+  @Get("reports/schedules")
+  async reportDeliverySchedules(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+  ) {
+    return this.operations.reportDeliverySchedules(actorFromHeaders(role, id));
+  }
+
+  @Post("reports/schedules")
+  async createReportDeliverySchedule(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Body() input: CreateOperationReportDeliveryScheduleDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const result = await this.operations.createReportDeliverySchedule(
+      actorFromHeaders(role, id),
+      input,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { schedule: result.value };
+  }
+
+  @Post("reports/schedules/:scheduleId/status")
+  async changeReportDeliveryScheduleStatus(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Param("scheduleId") scheduleId: string,
+    @Body() input: ChangeOperationReportDeliveryScheduleStatusDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const result = await this.operations.changeReportDeliveryScheduleStatus(
+      actorFromHeaders(role, id),
+      scheduleId,
+      input,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return { schedule: result.value };
+  }
+
+  @Post("reports/schedules/:scheduleId/simulate")
+  async simulateReportDelivery(
+    @Headers("x-demo-role") role: string | undefined,
+    @Headers("x-demo-actor-id") id: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Param("scheduleId") scheduleId: string,
+    @Body() input: SimulateOperationReportDeliveryDto,
+    @Res({ passthrough: true }) response: HeaderResponse,
+  ) {
+    const result = await this.operations.simulateReportDelivery(
+      actorFromHeaders(role, id),
+      scheduleId,
+      input,
+      idempotencyKey,
+    );
+    response.setHeader("idempotency-replayed", String(result.replayed));
+    return result.value;
   }
 
   @Get("categories")

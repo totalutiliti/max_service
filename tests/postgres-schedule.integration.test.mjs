@@ -53,7 +53,8 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0051_contextual_advertising.sql',
         '0052_advertiser_idempotency.sql',
         '0053_advertiser_delivery_visibility.sql',
-        '0054_contextual_ad_click.sql'
+        '0054_contextual_ad_click.sql',
+        '0055_operation_report_delivery_schedules.sql'
       )
       ORDER BY name
     `);
@@ -71,6 +72,7 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0052_advertiser_idempotency.sql",
       "0053_advertiser_delivery_visibility.sql",
       "0054_contextual_ad_click.sql",
+      "0055_operation_report_delivery_schedules.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name
@@ -98,18 +100,30 @@ test("RLS isola agenda e gates de prontidão por papel", async () => {
       await setActor(client, "customer", actors.customer);
       const customerSchedule = await client.query("SELECT count(*)::int AS count FROM provider_weekly_availability");
       const customerGates = await client.query("SELECT count(*)::int AS count FROM operation_readiness_gates");
+      const customerReportSchedules = await client.query("SELECT count(*)::int AS count FROM operation_report_delivery_schedules");
+      const customerReportDeliveries = await client.query("SELECT count(*)::int AS count FROM operation_report_deliveries");
+      const customerReportEvents = await client.query("SELECT count(*)::int AS count FROM operation_report_delivery_events");
       assert.equal(customerSchedule.rows[0].count, 0);
       assert.equal(customerGates.rows[0].count, 0);
+      assert.equal(customerReportSchedules.rows[0].count, 0);
+      assert.equal(customerReportDeliveries.rows[0].count, 0);
+      assert.equal(customerReportEvents.rows[0].count, 0);
 
       await setActor(client, "provider", actors.provider);
       const providerSchedule = await client.query("SELECT count(*)::int AS count FROM provider_weekly_availability");
       const providerGates = await client.query("SELECT count(*)::int AS count FROM operation_readiness_gates");
+      const providerReportSchedules = await client.query("SELECT count(*)::int AS count FROM operation_report_delivery_schedules");
       assert.equal(providerSchedule.rows[0].count, 7);
       assert.equal(providerGates.rows[0].count, 0);
+      assert.equal(providerReportSchedules.rows[0].count, 0);
 
       await setActor(client, "operation", actors.operation);
       const operationGates = await client.query("SELECT count(*)::int AS count FROM operation_readiness_gates");
+      const operationReportSchedules = await client.query("SELECT count(*)::int AS count FROM operation_report_delivery_schedules");
+      const operationReportEvents = await client.query("SELECT count(*)::int AS count FROM operation_report_delivery_events");
       assert.equal(operationGates.rows[0].count, 8);
+      assert.equal(operationReportSchedules.rows[0].count >= 1, true);
+      assert.equal(operationReportEvents.rows[0].count >= 1, true);
     });
   } finally {
     await pool.end();

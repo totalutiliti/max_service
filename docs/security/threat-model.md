@@ -31,6 +31,7 @@ Browser/PWA, BFF, API, PostgreSQL, Redis/worker, object storage, PSP, e-mail/SMS
 | cobrança/comissão duplicada | constraints únicas, ledger append-only e reconciliação |
 | abuso interno | least privilege, justificativa, confirmação, antes/depois e alertas |
 | exportação excessiva | endpoint exclusivo da Operação, projeção agregada, períodos fechados e CSV sem PII ou identificadores internos |
+| disparo de relatório sem consentimento | endereço sintético restrito, atestação explícita, pausa revogável, RLS exclusivo da Operação e provedor travado em modo local |
 | aceite ou consentimento forjado | sessão vinculada ao titular, documento limitado à audiência, hash congelado, finalidade separada, RLS e evento append-only |
 | sabotagem do catálogo | RLS exclusivo da operação, justificativa, evento append-only, auditoria e proteção da última categoria ativa |
 | acesso cruzado no suporte da rede | sessão vinculada ao perfil, BFF assinado, caso pertencente ao parceiro, RLS nos casos/eventos e teste negativo entre perfis |
@@ -52,6 +53,8 @@ A atividade administrativa é somente leitura e exclusiva da Operação. O backe
 O relatório administrativo aceita somente períodos fechados de 7, 30 ou 90 dias e agrega os módulos dentro de uma transação com contexto operacional. A resposta não inclui nomes, contatos, descrições, endereços ou payloads de auditoria. A exportação CSV é derivada exclusivamente da tabela agregada por categoria e não contém UUIDs; perfis não operacionais são bloqueados pelo cookie de sessão no BFF, pela assinatura interna e pelo RLS.
 
 Metas de relatório são globais por período, persistidas em pontos-base ou inteiros e protegidas por constraints. O runtime não pode criar ou excluir períodos: atualiza apenas os campos permitidos, incrementa a versão e registra valores anterior/posterior em evento append-only com justificativa. Alertas são derivados no servidor a cada consulta, sem perfilamento individual ou envio externo automático.
+
+Agendamentos de relatório aceitam apenas domínios sintéticos `example.test` e `demo.maxservice`, exigem finalidade, recorrência, próxima execução e atestação explícita de consentimento. As três tabelas são invisíveis a cliente, prestador, parceiro e anunciante por RLS. A simulação congela uma projeção sem UUIDs internos nem dados pessoais, repete o endereço somente como máscara e SHA-256, calcula checksum do snapshot e avança a versão/recorrência na mesma transação idempotente. O campo `provider_mode` possui constraint fixa `disabled_local`: não há cliente SMTP, webhook ou chamada de rede capaz de transformar a simulação em envio. A ativação externa exige provedor homologado, gestão segura de segredos, confirmação de contato, opt-out processável, bounce/complaint handling, retenção aprovada e nova revisão de ameaça.
 
 O onboarding não confia em IDs enviados pelo navegador: o servidor exige o conjunto exato de documentos ativos da audiência do ator, copia o hash persistido para o aceite e valida campos conforme o papel. Preferências opcionais usam registros e eventos separados por finalidade. Parceiro e Operação não podem executar a jornada pelo BFF; a Operação conserva somente leitura por RLS para suporte e auditoria.
 

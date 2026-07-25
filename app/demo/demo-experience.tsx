@@ -773,6 +773,65 @@ interface OperationReportData {
   }>;
 }
 
+interface OperationReportDeliveryData {
+  externalProvider: {
+    status: "disabled";
+    mode: "disabled_local";
+    label: string;
+  };
+  schedules: Array<{
+    id: string;
+    publicCode: string;
+    label: string;
+    periodDays: ReportPeriodDays;
+    cadence: "weekly" | "monthly";
+    recipientName: string;
+    recipientEmail: string;
+    purpose: string;
+    consentConfirmedAt: string;
+    consentMethod: "operation_explicit_attestation";
+    status: "active" | "paused";
+    providerMode: "disabled_local";
+    nextRunAt: string;
+    lastRunAt: string | null;
+    version: number;
+    createdAt: string;
+    updatedAt: string;
+    createdByName: string;
+    updatedByName: string;
+  }>;
+  deliveries: Array<{
+    id: string;
+    publicCode: string;
+    scheduleId: string;
+    scheduleCode: string;
+    scheduleLabel: string;
+    periodDays: ReportPeriodDays;
+    scheduledFor: string;
+    generatedAt: string;
+    status: "simulated";
+    providerMode: "disabled_local";
+    recipientMasked: string;
+    reportChecksum: string;
+    requestCount: number;
+    bookingCount: number;
+    alertCount: number;
+    netVolumeCents: number;
+  }>;
+  history: Array<{
+    id: string;
+    scheduleId: string;
+    scheduleCode: string;
+    eventType: "created" | "paused" | "activated" | "simulated";
+    fromStatus: "active" | "paused" | null;
+    toStatus: "active" | "paused";
+    scheduleVersion: number;
+    note: string;
+    createdAt: string;
+    actorName: string;
+  }>;
+}
+
 interface OnboardingData {
   status: "pending" | "completed";
   profile: {
@@ -2616,6 +2675,7 @@ function OperationReportsPanel({ notify }: { notify: (message: string) => void }
             : data.alerts.map((alert) => <article key={alert.id} className={alert.severity}><i>{alert.severity === "critical" ? "!" : "↗"}</i><div><strong>{alert.title}</strong><p>{alert.detail}</p></div><span>{alert.severity === "critical" ? "Crítico" : "Atenção"}</span></article>)}
           </div>
         </section>
+        <OperationReportDeliveriesPanel defaultPeriod={period} notify={notify} />
         <div className="report-grid">
           <section className="report-funnel">
             <header><div><small>FUNIL DO MARKETPLACE</small><h3>Da necessidade ao serviço concluído</h3></div><span>{date(data.period.from)} — {date(data.period.to)}</span></header>
@@ -2641,6 +2701,332 @@ function OperationReportsPanel({ notify }: { notify: (message: string) => void }
       </>}
       {data && goalsOpen && <OperationReportGoalsDialog goals={data.goals} onClose={() => setGoalsOpen(false)} onSaved={() => { setLoading(true); setRefresh((value) => value + 1); }} notify={notify} />}
     </section>
+  );
+}
+
+function OperationReportDeliveriesPanel({
+  defaultPeriod,
+  notify,
+}: {
+  defaultPeriod: ReportPeriodDays;
+  notify: (message: string) => void;
+}) {
+  const [data, setData] = useState<OperationReportDeliveryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [working, setWorking] = useState<string | null>(null);
+  const pendingKeys = useRef(new Map<string, string>());
+  const dateTime = (value: string) => new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+  const money = (cents: number) => new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(cents / 100);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/reports/schedules", {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json() as OperationReportDeliveryData & {
+          error?: string;
+          message?: string;
+        };
+        if (!response.ok || !payload.externalProvider || !payload.schedules) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar os agendamentos.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar os agendamentos.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const changeStatus = async (schedule: OperationReportDeliveryData["schedules"][number]) => {
+    const nextStatus = schedule.status === "active" ? "paused" : "active";
+    const requestPayload = {
+      action: "status" as const,
+      scheduleId: schedule.id,
+      status: nextStatus,
+      expectedVersion: schedule.version,
+      note: nextStatus === "paused"
+        ? "Agendamento pausado manualmente pela Operação para revisão do destinatário."
+        : "Agendamento reativado manualmente após revisão do destinatário e da finalidade.",
+    };
+    const fingerprint = JSON.stringify(requestPayload);
+    setWorking(`status:${schedule.id}`);
+    try {
+      const response = await fetch("/api/v1/operation/reports/schedules", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, fingerprint),
+        },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as {
+        schedule?: OperationReportDeliveryData["schedules"][number];
+        error?: string;
+        message?: string;
+      };
+      if (!response.ok || !payload.schedule) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível alterar o agendamento.");
+      }
+      pendingKeys.current.delete(fingerprint);
+      notify(`${payload.schedule.publicCode}: agendamento ${payload.schedule.status === "active" ? "reativado" : "pausado"}.`);
+      setRefresh((value) => value + 1);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível alterar o agendamento.");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const simulate = async (schedule: OperationReportDeliveryData["schedules"][number]) => {
+    const requestPayload = {
+      action: "simulate" as const,
+      scheduleId: schedule.id,
+      expectedVersion: schedule.version,
+    };
+    const fingerprint = JSON.stringify(requestPayload);
+    setWorking(`simulate:${schedule.id}`);
+    try {
+      const response = await fetch("/api/v1/operation/reports/schedules", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, fingerprint),
+        },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as {
+        delivery?: OperationReportDeliveryData["deliveries"][number];
+        error?: string;
+        message?: string;
+      };
+      if (!response.ok || !payload.delivery) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível simular a entrega.");
+      }
+      pendingKeys.current.delete(fingerprint);
+      notify(`${payload.delivery.publicCode}: fotografia agregada gerada localmente; nenhum e-mail foi enviado.`);
+      setRefresh((value) => value + 1);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível simular a entrega.");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  return (
+    <section className="report-delivery" data-testid="report-delivery-panel">
+      <header>
+        <div>
+          <small>ENTREGAS CONSENTIDAS</small>
+          <h3>Relatórios recorrentes, sem envio silencioso</h3>
+          <p>Destinatários sintéticos, consentimento explícito e fotografia agregada verificável.</p>
+        </div>
+        <div>
+          <span className="report-provider-lock">● Provedor externo bloqueado</span>
+          <button
+            className="secondary-action"
+            data-testid="report-schedule-create"
+            onClick={() => setCreateOpen(true)}
+          >
+            Novo agendamento
+          </button>
+        </div>
+      </header>
+      {loading && !data && <div className="data-state" aria-live="polite">Carregando entregas...</div>}
+      {data && (
+        <>
+          <div className="report-delivery-notice">
+            <span>i</span>
+            <p><strong>{data.externalProvider.label}</strong> Cada simulação avança a recorrência, guarda somente indicadores agregados e registra checksum, versão e responsável.</p>
+          </div>
+          <div className="report-schedule-grid">
+            {data.schedules.length === 0 && (
+              <div className="data-state"><strong>Nenhum agendamento configurado.</strong><span>Crie o primeiro fluxo consentido para os relatórios do piloto.</span></div>
+            )}
+            {data.schedules.map((schedule) => (
+              <article key={schedule.id} className={schedule.status} data-testid={`report-schedule-${schedule.publicCode}`}>
+                <header>
+                  <div><span>{schedule.publicCode}</span><h4>{schedule.label}</h4></div>
+                  <em>{schedule.status === "active" ? "Ativo" : "Pausado"}</em>
+                </header>
+                <p>{schedule.purpose}</p>
+                <dl>
+                  <div><dt>Destinatário consentido</dt><dd>{schedule.recipientName} · {schedule.recipientEmail}</dd></div>
+                  <div><dt>Recorrência</dt><dd>{schedule.cadence === "weekly" ? "Semanal" : "Mensal"} · janela de {schedule.periodDays} dias</dd></div>
+                  <div><dt>Próximo ciclo</dt><dd>{dateTime(schedule.nextRunAt)} · versão {schedule.version}</dd></div>
+                  <div><dt>Consentimento</dt><dd>Confirmado em {dateTime(schedule.consentConfirmedAt)}</dd></div>
+                </dl>
+                <footer>
+                  <button
+                    className="secondary-action"
+                    onClick={() => changeStatus(schedule)}
+                    disabled={working !== null}
+                  >
+                    {working === `status:${schedule.id}` ? "Salvando..." : schedule.status === "active" ? "Pausar" : "Reativar"}
+                  </button>
+                  <button
+                    className="primary-action"
+                    data-testid={`report-schedule-simulate-${schedule.publicCode}`}
+                    onClick={() => simulate(schedule)}
+                    disabled={working !== null || schedule.status !== "active"}
+                  >
+                    {working === `simulate:${schedule.id}` ? "Gerando..." : "Simular entrega →"}
+                  </button>
+                </footer>
+              </article>
+            ))}
+          </div>
+          <section className="report-delivery-history">
+            <header>
+              <div><small>HISTÓRICO IMUTÁVEL</small><h4>Fotografias geradas</h4></div>
+              <span>{data.deliveries.length} execução(ões) local(is)</span>
+            </header>
+            {data.deliveries.length === 0
+              ? <div className="data-state"><span>Ainda não há entregas simuladas. O primeiro ciclo aparecerá aqui.</span></div>
+              : data.deliveries.slice(0, 6).map((delivery) => (
+                <article key={delivery.id} data-testid={`report-delivery-${delivery.publicCode}`}>
+                  <div><span>{delivery.publicCode}</span><strong>{delivery.scheduleLabel}</strong><small>{dateTime(delivery.generatedAt)} · {delivery.recipientMasked}</small></div>
+                  <div><small>PEDIDOS</small><strong>{delivery.requestCount}</strong></div>
+                  <div><small>AGENDADOS</small><strong>{delivery.bookingCount}</strong></div>
+                  <div><small>VOLUME</small><strong>{money(delivery.netVolumeCents)}</strong></div>
+                  <div><small>ALERTAS</small><strong>{delivery.alertCount}</strong></div>
+                  <code title={delivery.reportChecksum}>sha256:{delivery.reportChecksum.slice(0, 10)}…</code>
+                </article>
+              ))}
+          </section>
+          <details className="report-delivery-audit">
+            <summary>Ver trilha de decisões ({data.history.length})</summary>
+            <div>{data.history.slice(0, 8).map((event) => (
+              <p key={event.id}><strong>{event.scheduleCode} · v{event.scheduleVersion}</strong><span>{event.note}</span><small>{event.actorName} · {dateTime(event.createdAt)}</small></p>
+            ))}</div>
+          </details>
+        </>
+      )}
+      {createOpen && (
+        <OperationReportScheduleDialog
+          defaultPeriod={defaultPeriod}
+          onClose={() => setCreateOpen(false)}
+          onSaved={() => setRefresh((value) => value + 1)}
+          notify={notify}
+        />
+      )}
+    </section>
+  );
+}
+
+function OperationReportScheduleDialog({
+  defaultPeriod,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  defaultPeriod: ReportPeriodDays;
+  onClose: () => void;
+  onSaved: () => void;
+  notify: (message: string) => void;
+}) {
+  const [label, setLabel] = useState("Resumo operacional do piloto");
+  const [periodDays, setPeriodDays] = useState<ReportPeriodDays>(defaultPeriod);
+  const [cadence, setCadence] = useState<"weekly" | "monthly">("weekly");
+  const [recipientName, setRecipientName] = useState("Operação Max Service");
+  const [recipientEmail, setRecipientEmail] = useState("operacao@demo.maxservice");
+  const [purpose, setPurpose] = useState("Acompanhar os indicadores agregados e os desvios operacionais do piloto.");
+  const [nextRunAt, setNextRunAt] = useState("");
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const pendingKeys = useRef(new Map<string, string>());
+  useEffect(() => { closeRef.current?.focus(); }, []);
+  const syntheticEmail = /^[^@\s]+@(?:[a-z0-9-]+\.)*example\.test$/i.test(recipientEmail.trim())
+    || /^[^@\s]+@demo\.maxservice$/i.test(recipientEmail.trim());
+  const valid = label.trim().length >= 3
+    && recipientName.trim().length >= 3
+    && syntheticEmail
+    && purpose.trim().length >= 10
+    && nextRunAt.length > 0
+    && consentConfirmed;
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!valid) return;
+    const requestPayload = {
+      action: "create" as const,
+      label: label.trim(),
+      periodDays,
+      cadence,
+      recipientName: recipientName.trim(),
+      recipientEmail: recipientEmail.trim().toLowerCase(),
+      purpose: purpose.trim(),
+      nextRunAt: new Date(nextRunAt).toISOString(),
+      consentConfirmed,
+    };
+    const fingerprint = JSON.stringify(requestPayload);
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/reports/schedules", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, fingerprint),
+        },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as {
+        schedule?: OperationReportDeliveryData["schedules"][number];
+        error?: string;
+        message?: string;
+      };
+      if (!response.ok || !payload.schedule) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível criar o agendamento.");
+      }
+      pendingKeys.current.delete(fingerprint);
+      notify(`${payload.schedule.publicCode}: agendamento consentido criado em modo local.`);
+      onSaved();
+      onClose();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível criar o agendamento.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog report-schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="report-schedule-title" data-testid="report-schedule-dialog">
+        <button ref={closeRef} className="dialog-close" onClick={onClose} aria-label="Fechar">×</button>
+        <header><span>↻</span><div><p className="dialog-kicker">ENTREGA RECORRENTE</p><h2 id="report-schedule-title">Agende com consentimento.</h2><p>Somente endereços sintéticos são aceitos até a homologação do provedor externo.</p></div></header>
+        <form onSubmit={submit}>
+          <div className="report-schedule-fields">
+            <label className="field"><span>Nome do agendamento</span><input minLength={3} maxLength={80} value={label} onChange={(event) => setLabel(event.target.value)} required /></label>
+            <label className="field"><span>Janela do relatório</span><select value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value) as ReportPeriodDays)}>{([7, 30, 90] as ReportPeriodDays[]).map((days) => <option key={days} value={days}>{days} dias</option>)}</select></label>
+            <label className="field"><span>Recorrência</span><select value={cadence} onChange={(event) => setCadence(event.target.value as "weekly" | "monthly")}><option value="weekly">Semanal</option><option value="monthly">Mensal</option></select></label>
+            <label className="field"><span>Próxima execução</span><input type="datetime-local" value={nextRunAt} onChange={(event) => setNextRunAt(event.target.value)} required /></label>
+            <label className="field"><span>Nome do destinatário</span><input minLength={3} maxLength={120} value={recipientName} onChange={(event) => setRecipientName(event.target.value)} required /></label>
+            <label className="field"><span>E-mail sintético</span><input type="email" maxLength={254} value={recipientEmail} onChange={(event) => setRecipientEmail(event.target.value)} aria-describedby="synthetic-email-help" required /><small id="synthetic-email-help">@example.test ou @demo.maxservice</small></label>
+          </div>
+          <label className="field"><span>Finalidade</span><textarea minLength={10} maxLength={300} value={purpose} onChange={(event) => setPurpose(event.target.value)} required /><small>{purpose.trim().length}/300</small></label>
+          <label className="report-consent-check">
+            <input type="checkbox" checked={consentConfirmed} onChange={(event) => setConsentConfirmed(event.target.checked)} />
+            <span><strong>Confirmo o consentimento do destinatário sintético.</strong> A finalidade, o horário e a recorrência foram informados; a revogação permanece disponível pela pausa.</span>
+          </label>
+          <div className="commercial-preview"><span>!</span><p><strong>Modo seguro obrigatório</strong>Nenhum e-mail será enviado. A execução cria apenas uma fotografia agregada e auditável dentro do ambiente local.</p></div>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" data-testid="report-schedule-submit" disabled={saving || !valid}>{saving ? "Agendando..." : "Criar agendamento →"}</button></footer>
+        </form>
+      </section>
+    </div>
   );
 }
 

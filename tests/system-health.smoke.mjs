@@ -450,6 +450,95 @@ assert.equal(
 
 const partnerCookie = await sessionCookie("parceiro");
 const operationCookie = await sessionCookie("operacao");
+const hiddenReportSchedules = await fetch(
+  `${webBaseUrl}/api/v1/operation/reports/schedules`,
+  { headers: { cookie: customerCookie } },
+);
+assert.equal(hiddenReportSchedules.status, 403);
+
+const reportScheduleState = await json(await fetch(
+  `${webBaseUrl}/api/v1/operation/reports/schedules`,
+  { headers: { cookie: operationCookie } },
+));
+assert.equal(reportScheduleState.externalProvider.mode, "disabled_local");
+assert.equal(reportScheduleState.externalProvider.status, "disabled");
+assert.equal(reportScheduleState.schedules.length >= 1, true);
+
+const unsafeReportRecipient = await fetch(
+  `${webBaseUrl}/api/v1/operation/reports/schedules`,
+  {
+    method: "POST",
+    headers: {
+      cookie: operationCookie,
+      "content-type": "application/json",
+      "idempotency-key": randomUUID(),
+    },
+    body: JSON.stringify({
+      action: "create",
+      label: "Destino externo inválido",
+      periodDays: 7,
+      cadence: "weekly",
+      recipientName: "Destinatário real",
+      recipientEmail: "contato@gmail.com",
+      purpose: "Validar o bloqueio de destinatários externos antes da homologação.",
+      nextRunAt: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+      consentConfirmed: true,
+    }),
+  },
+);
+assert.equal(unsafeReportRecipient.status, 400);
+assert.match(JSON.stringify(await unsafeReportRecipient.json()), /sintético/i);
+
+const reportScheduleCreateResults = await concurrentJsonMutation(
+  "/api/v1/operation/reports/schedules",
+  operationCookie,
+  {
+    action: "create",
+    label: `Resumo smoke ${Date.now().toString(36)}`,
+    periodDays: 7,
+    cadence: "weekly",
+    recipientName: "Operação Smoke",
+    recipientEmail: "relatorios@example.test",
+    purpose: "Validar recorrência, consentimento e idempotência da entrega agregada.",
+    nextRunAt: new Date(Date.now() + 14 * 86_400_000).toISOString(),
+    consentConfirmed: true,
+  },
+);
+assert.equal(
+  reportScheduleCreateResults[0].schedule.id,
+  reportScheduleCreateResults[1].schedule.id,
+);
+assert.equal(reportScheduleCreateResults[0].schedule.providerMode, "disabled_local");
+assert.match(reportScheduleCreateResults[0].schedule.recipientEmail, /\*+@example\.test$/);
+
+const reportDeliveryResults = await concurrentJsonMutation(
+  "/api/v1/operation/reports/schedules",
+  operationCookie,
+  {
+    action: "simulate",
+    scheduleId: reportScheduleCreateResults[0].schedule.id,
+    expectedVersion: reportScheduleCreateResults[0].schedule.version,
+  },
+);
+assert.equal(
+  reportDeliveryResults[0].delivery.id,
+  reportDeliveryResults[1].delivery.id,
+);
+assert.equal(reportDeliveryResults[0].delivery.status, "simulated");
+assert.equal(reportDeliveryResults[0].delivery.providerMode, "disabled_local");
+assert.match(reportDeliveryResults[0].delivery.reportChecksum, /^[a-f0-9]{64}$/);
+
+const reportScheduleAfterSimulation = await json(await fetch(
+  `${webBaseUrl}/api/v1/operation/reports/schedules`,
+  { headers: { cookie: operationCookie } },
+));
+const simulatedReportDelivery = reportScheduleAfterSimulation.deliveries.find(
+  (delivery) => delivery.id === reportDeliveryResults[0].delivery.id,
+);
+assert.ok(simulatedReportDelivery, "A entrega local precisa aparecer no histórico operacional.");
+assert.equal(simulatedReportDelivery.requestCount >= 0, true);
+assert.equal(simulatedReportDelivery.recipientMasked.includes("relatorios"), false);
+
 const staleSupport = await json(await fetch(
   `${webBaseUrl}/api/v1/partner/support`,
   { headers: { cookie: partnerCookie } },
@@ -1052,7 +1141,7 @@ assert.equal(operationHealth.privateStorageReconciliation?.sizeMismatches, 0);
 
 console.log(JSON.stringify({
   status: "passed",
-  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_booking_lifecycle", "idempotent_operation_commands", "idempotent_binary_uploads", "private_storage_reconciliation", "rate_limit", "traffic_metrics"],
+  probes: ["liveness", "readiness", "security_headers", "cors", "body_limit", "request_id", "operation_cockpit", "role_boundary", "signed_channel", "idempotent_mutations", "idempotent_communications", "idempotent_schedule", "idempotent_report_delivery", "idempotent_booking_lifecycle", "idempotent_operation_commands", "idempotent_binary_uploads", "private_storage_reconciliation", "rate_limit", "traffic_metrics"],
   healthyChecks: operationHealth.summary.healthyCount,
   productionBlockers: operationHealth.summary.productionBlockers,
   telemetryRequests: operationHealth.telemetry.requestCount,

@@ -1,17 +1,94 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
 import { IdempotencyService } from "../idempotency/idempotency.service.js";
 import { createNotification } from "../notifications/notification-writer.js";
-import type { UpdateOperationReadinessGateDto, UpdateOperationReportGoalsDto } from "./operations.dto.js";
+import type {
+  ChangeOperationReportDeliveryScheduleStatusDto,
+  CreateOperationReportDeliveryScheduleDto,
+  SimulateOperationReportDeliveryDto,
+  UpdateOperationReadinessGateDto,
+  UpdateOperationReportGoalsDto,
+} from "./operations.dto.js";
 import {
   normalizeReportDays,
   percentage,
   percentagePointChange,
   relativeChange,
 } from "./reporting.js";
+
+interface ReportDeliveryScheduleRow {
+  id: string;
+  publicCode: string;
+  label: string;
+  periodDays: 7 | 30 | 90;
+  cadence: "weekly" | "monthly";
+  recipientName: string;
+  recipientEmail: string;
+  purpose: string;
+  consentConfirmedAt: string;
+  consentMethod: "operation_explicit_attestation";
+  status: "active" | "paused";
+  providerMode: "disabled_local";
+  nextRunAt: string;
+  lastRunAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  createdByName: string;
+  updatedByName: string;
+}
+
+interface ReportDeliverySource {
+  period: { days: 7 | 30 | 90; from: string; to: string; bucket: "day" | "week" };
+  funnel: {
+    requestCount: number;
+    proposedRequestCount: number;
+    bookingCount: number;
+    completedCount: number;
+    proposalCoverageRate: number;
+    bookingConversionRate: number;
+  };
+  financial: {
+    generatedAt: string;
+    netVolumeCents: number;
+    settledAmountCents: number;
+    refundedAmountCents: number;
+    reconciled: boolean;
+  };
+  growth: { referralCount: number };
+  operations: { overduePartnerCaseCount: number };
+  goals: { version: number };
+  alerts: Array<{ id: string; severity: "warning" | "critical"; title: string }>;
+  categories: Array<{
+    slug: string;
+    name: string;
+    requestCount: number;
+    proposedRequestCount: number;
+    bookingCount: number;
+    completedCount: number;
+    proposalCoverageRate: number;
+    bookingConversionRate: number;
+    averageProposalCents: number;
+    netVolumeCents: number;
+  }>;
+  timeline: Array<{
+    bucketStart: string;
+    requestCount: number;
+    bookingCount: number;
+    netVolumeCents: number;
+  }>;
+}
+
+const reportDeliveryProvider = {
+  status: "disabled" as const,
+  mode: "disabled_local" as const,
+  label: "Simulação local — nenhum e-mail enviado",
+};
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const caseSelect = `
   SELECT
@@ -131,6 +208,9 @@ const auditActivityCopy: Record<string, { category: string; title: string; detai
   "marketing_campaign.reserved": { category: "growth", title: "Cupom reservado", detail: "Benefício promocional vinculado a um pedido." },
   "operation_report.generated": { category: "operation", title: "Relatório consolidado", detail: "Indicadores agregados consultados pela Operação." },
   "operation_report_goals.updated": { category: "operation", title: "Metas do relatório atualizadas", detail: "Limites operacionais alterados com justificativa." },
+  "operation_report_delivery_schedule.created": { category: "operation", title: "Entrega de relatório agendada", detail: "Destinatário consentido e recorrência local foram registrados." },
+  "operation_report_delivery_schedule.status_changed": { category: "operation", title: "Agendamento de relatório atualizado", detail: "Estado do agendamento foi alterado com justificativa." },
+  "operation_report_delivery.simulated": { category: "operation", title: "Entrega de relatório simulada", detail: "Fotografia agregada foi gerada sem envio externo." },
   "onboarding.completed": { category: "operation", title: "Onboarding concluído", detail: "Perfil, termos e consentimentos iniciais registrados." },
   "onboarding.updated": { category: "operation", title: "Onboarding atualizado", detail: "Nova versão do perfil e das preferências registrada." },
   "notification.preferences_updated": { category: "operation", title: "Preferências de avisos atualizadas", detail: "Assuntos e janela silenciosa do destinatário foram versionados." },
@@ -164,6 +244,8 @@ const auditEntityPrefix: Record<string, string> = {
   campaign_reservation: "CR",
   operation_report: "RP",
   operation_report_goal: "MG",
+  operation_report_delivery_schedule: "RE",
+  operation_report_delivery: "EN",
   onboarding_profile: "ON",
   notification_preferences: "NP",
   push_subscription: "PS",
@@ -185,6 +267,17 @@ export class OperationsService {
     const normalized = note.trim();
     if (normalized.length < 10) throw new BadRequestException("Registre uma justificativa com pelo menos 10 caracteres.");
     return normalized;
+  }
+
+  private assertUuid(id: string, label: string) {
+    if (!uuidPattern.test(id)) throw new BadRequestException(`${label} inválido.`);
+  }
+
+  private publicReportDeliverySchedule(schedule: ReportDeliveryScheduleRow) {
+    return {
+      ...schedule,
+      recipientEmail: maskEmail(schedule.recipientEmail),
+    };
   }
 
   async readiness(actor: Actor) {
@@ -1707,6 +1800,587 @@ export class OperationsService {
     });
   }
 
+  async reportDeliverySchedules(actor: Actor) {
+    this.ensureOperation(actor);
+    return this.database.withActor(actor, async (client) => {
+      const schedules = await client.query<ReportDeliveryScheduleRow>(`
+        SELECT
+          schedule.id,
+          schedule.public_code AS "publicCode",
+          schedule.label,
+          schedule.period_days AS "periodDays",
+          schedule.cadence,
+          schedule.recipient_name AS "recipientName",
+          schedule.recipient_email AS "recipientEmail",
+          schedule.purpose,
+          schedule.consent_confirmed_at AS "consentConfirmedAt",
+          schedule.consent_method AS "consentMethod",
+          schedule.status,
+          schedule.provider_mode AS "providerMode",
+          schedule.next_run_at AS "nextRunAt",
+          schedule.last_run_at AS "lastRunAt",
+          schedule.version,
+          schedule.created_at AS "createdAt",
+          schedule.updated_at AS "updatedAt",
+          creator.display_name AS "createdByName",
+          updater.display_name AS "updatedByName"
+        FROM operation_report_delivery_schedules schedule
+        JOIN users creator ON creator.id = schedule.created_by
+        JOIN users updater ON updater.id = schedule.updated_by
+        ORDER BY
+          CASE schedule.status WHEN 'active' THEN 0 ELSE 1 END,
+          schedule.next_run_at,
+          schedule.created_at DESC
+      `);
+      const deliveries = await client.query<{
+        id: string;
+        publicCode: string;
+        scheduleId: string;
+        scheduleCode: string;
+        scheduleLabel: string;
+        periodDays: 7 | 30 | 90;
+        scheduledFor: string;
+        generatedAt: string;
+        status: "simulated";
+        providerMode: "disabled_local";
+        recipientMasked: string;
+        reportChecksum: string;
+        requestCount: number;
+        bookingCount: number;
+        alertCount: number;
+        netVolumeCents: number;
+      }>(`
+        SELECT
+          delivery.id,
+          delivery.public_code AS "publicCode",
+          delivery.schedule_id AS "scheduleId",
+          schedule.public_code AS "scheduleCode",
+          schedule.label AS "scheduleLabel",
+          delivery.period_days AS "periodDays",
+          delivery.scheduled_for AS "scheduledFor",
+          delivery.generated_at AS "generatedAt",
+          delivery.status,
+          delivery.provider_mode AS "providerMode",
+          delivery.recipient_masked AS "recipientMasked",
+          delivery.report_checksum AS "reportChecksum",
+          COALESCE((delivery.report_snapshot #>> '{summary,requestCount}')::int, 0) AS "requestCount",
+          COALESCE((delivery.report_snapshot #>> '{summary,bookingCount}')::int, 0) AS "bookingCount",
+          COALESCE((delivery.report_snapshot #>> '{summary,alertCount}')::int, 0) AS "alertCount",
+          COALESCE((delivery.report_snapshot #>> '{summary,netVolumeCents}')::int, 0) AS "netVolumeCents"
+        FROM operation_report_deliveries delivery
+        JOIN operation_report_delivery_schedules schedule ON schedule.id = delivery.schedule_id
+        ORDER BY delivery.generated_at DESC, delivery.id DESC
+        LIMIT 20
+      `);
+      const history = await client.query<{
+        id: string;
+        scheduleId: string;
+        scheduleCode: string;
+        eventType: "created" | "paused" | "activated" | "simulated";
+        fromStatus: "active" | "paused" | null;
+        toStatus: "active" | "paused";
+        scheduleVersion: number;
+        note: string;
+        createdAt: string;
+        actorName: string;
+      }>(`
+        SELECT
+          event.id,
+          event.schedule_id AS "scheduleId",
+          schedule.public_code AS "scheduleCode",
+          event.event_type AS "eventType",
+          event.from_status AS "fromStatus",
+          event.to_status AS "toStatus",
+          event.schedule_version AS "scheduleVersion",
+          event.note,
+          event.created_at AS "createdAt",
+          actor.display_name AS "actorName"
+        FROM operation_report_delivery_events event
+        JOIN operation_report_delivery_schedules schedule ON schedule.id = event.schedule_id
+        JOIN users actor ON actor.id = event.actor_id
+        ORDER BY event.created_at DESC, event.id DESC
+        LIMIT 30
+      `);
+
+      return {
+        externalProvider: reportDeliveryProvider,
+        schedules: schedules.rows.map((schedule) => this.publicReportDeliverySchedule(schedule)),
+        deliveries: deliveries.rows,
+        history: history.rows,
+      };
+    });
+  }
+
+  async createReportDeliverySchedule(
+    actor: Actor,
+    input: CreateOperationReportDeliveryScheduleDto,
+    idempotencyKey: string | undefined,
+  ) {
+    this.ensureOperation(actor);
+    const label = input.label.trim();
+    const recipientName = input.recipientName.trim();
+    const recipientEmail = input.recipientEmail.trim().toLowerCase();
+    const purpose = input.purpose.trim();
+    if (!isSyntheticReportRecipient(recipientEmail)) {
+      throw new BadRequestException("Use um destinatário sintético @example.test ou @demo.maxservice.");
+    }
+    const nextRunAt = new Date(input.nextRunAt);
+    if (
+      !Number.isFinite(nextRunAt.getTime())
+      || nextRunAt.getTime() < Date.now() + 5 * 60_000
+      || nextRunAt.getTime() > Date.now() + 366 * 24 * 60 * 60_000
+    ) {
+      throw new BadRequestException("A próxima execução deve ficar entre cinco minutos e um ano no futuro.");
+    }
+
+    return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: "/api/v1/operation/reports/schedules",
+        payload: {
+          label,
+          periodDays: input.periodDays,
+          cadence: input.cadence,
+          recipientName,
+          recipientEmail,
+          purpose,
+          nextRunAt: nextRunAt.toISOString(),
+          consentConfirmed: input.consentConfirmed,
+        },
+      }, async () => {
+        const scheduleId = randomUUID();
+        const publicCode = `RE-${randomBytes(4).toString("hex").toUpperCase()}`;
+        const scheduleResult = await client.query<ReportDeliveryScheduleRow>(`
+          WITH inserted AS (
+            INSERT INTO operation_report_delivery_schedules (
+              id,
+              public_code,
+              label,
+              period_days,
+              cadence,
+              recipient_name,
+              recipient_email,
+              purpose,
+              consent_confirmed_at,
+              next_run_at,
+              created_by,
+              updated_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9, $10, $10)
+            RETURNING *
+          )
+          SELECT
+            inserted.id,
+            inserted.public_code AS "publicCode",
+            inserted.label,
+            inserted.period_days AS "periodDays",
+            inserted.cadence,
+            inserted.recipient_name AS "recipientName",
+            inserted.recipient_email AS "recipientEmail",
+            inserted.purpose,
+            inserted.consent_confirmed_at AS "consentConfirmedAt",
+            inserted.consent_method AS "consentMethod",
+            inserted.status,
+            inserted.provider_mode AS "providerMode",
+            inserted.next_run_at AS "nextRunAt",
+            inserted.last_run_at AS "lastRunAt",
+            inserted.version,
+            inserted.created_at AS "createdAt",
+            inserted.updated_at AS "updatedAt",
+            creator.display_name AS "createdByName",
+            creator.display_name AS "updatedByName"
+          FROM inserted
+          JOIN users creator ON creator.id = inserted.created_by
+        `, [
+          scheduleId,
+          publicCode,
+          label,
+          input.periodDays,
+          input.cadence,
+          recipientName,
+          recipientEmail,
+          purpose,
+          nextRunAt,
+          actor.id,
+        ]);
+        const schedule = scheduleResult.rows[0];
+        if (!schedule) throw new Error("O agendamento não pôde ser recuperado.");
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO operation_report_delivery_events (
+            id,
+            schedule_id,
+            actor_id,
+            event_type,
+            to_status,
+            schedule_version,
+            note,
+            snapshot
+          ) VALUES ($1, $2, $3, 'created', 'active', 1, $4, $5::jsonb)
+        `, [
+          eventId,
+          scheduleId,
+          actor.id,
+          `Agendamento criado para ${recipientName} com consentimento explícito da Operação.`,
+          JSON.stringify({
+            periodDays: input.periodDays,
+            cadence: input.cadence,
+            providerMode: "disabled_local",
+            recipientFingerprint: fingerprintEmail(recipientEmail),
+          }),
+        ]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'operation_report_delivery_schedule.created', 'operation_report_delivery_schedule', $3, $4::jsonb)",
+          [actor.id, actor.role, scheduleId, JSON.stringify({
+            publicCode,
+            periodDays: input.periodDays,
+            cadence: input.cadence,
+            providerMode: "disabled_local",
+          })],
+        );
+        return this.publicReportDeliverySchedule(schedule);
+      });
+    });
+  }
+
+  async changeReportDeliveryScheduleStatus(
+    actor: Actor,
+    scheduleId: string,
+    input: ChangeOperationReportDeliveryScheduleStatusDto,
+    idempotencyKey: string | undefined,
+  ) {
+    this.ensureOperation(actor);
+    this.assertUuid(scheduleId, "Agendamento");
+    const note = this.normalizeNote(input.note);
+    return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/reports/schedules/${scheduleId}/status`,
+        payload: {
+          status: input.status,
+          expectedVersion: input.expectedVersion,
+          note,
+        },
+      }, async () => {
+        const currentResult = await client.query<ReportDeliveryScheduleRow>(`
+          SELECT
+            schedule.id,
+            schedule.public_code AS "publicCode",
+            schedule.label,
+            schedule.period_days AS "periodDays",
+            schedule.cadence,
+            schedule.recipient_name AS "recipientName",
+            schedule.recipient_email AS "recipientEmail",
+            schedule.purpose,
+            schedule.consent_confirmed_at AS "consentConfirmedAt",
+            schedule.consent_method AS "consentMethod",
+            schedule.status,
+            schedule.provider_mode AS "providerMode",
+            schedule.next_run_at AS "nextRunAt",
+            schedule.last_run_at AS "lastRunAt",
+            schedule.version,
+            schedule.created_at AS "createdAt",
+            schedule.updated_at AS "updatedAt",
+            creator.display_name AS "createdByName",
+            updater.display_name AS "updatedByName"
+          FROM operation_report_delivery_schedules schedule
+          JOIN users creator ON creator.id = schedule.created_by
+          JOIN users updater ON updater.id = schedule.updated_by
+          WHERE schedule.id = $1
+          FOR UPDATE OF schedule
+        `, [scheduleId]);
+        const current = currentResult.rows[0];
+        if (!current) throw new NotFoundException("Agendamento de relatório não encontrado.");
+        if (current.version !== input.expectedVersion) {
+          throw new ConflictException("O agendamento foi atualizado. Recarregue antes de tentar novamente.");
+        }
+        if (current.status === input.status) {
+          throw new ConflictException(`O agendamento já está ${input.status === "active" ? "ativo" : "pausado"}.`);
+        }
+
+        const updatedResult = await client.query<ReportDeliveryScheduleRow>(`
+          WITH updated AS (
+            UPDATE operation_report_delivery_schedules
+            SET
+              status = $2,
+              version = version + 1,
+              updated_by = $3,
+              updated_at = now()
+            WHERE id = $1
+            RETURNING *
+          )
+          SELECT
+            updated.id,
+            updated.public_code AS "publicCode",
+            updated.label,
+            updated.period_days AS "periodDays",
+            updated.cadence,
+            updated.recipient_name AS "recipientName",
+            updated.recipient_email AS "recipientEmail",
+            updated.purpose,
+            updated.consent_confirmed_at AS "consentConfirmedAt",
+            updated.consent_method AS "consentMethod",
+            updated.status,
+            updated.provider_mode AS "providerMode",
+            updated.next_run_at AS "nextRunAt",
+            updated.last_run_at AS "lastRunAt",
+            updated.version,
+            updated.created_at AS "createdAt",
+            updated.updated_at AS "updatedAt",
+            creator.display_name AS "createdByName",
+            updater.display_name AS "updatedByName"
+          FROM updated
+          JOIN users creator ON creator.id = updated.created_by
+          JOIN users updater ON updater.id = updated.updated_by
+        `, [scheduleId, input.status, actor.id]);
+        const updated = updatedResult.rows[0];
+        if (!updated) throw new ConflictException("O agendamento não pôde ser atualizado.");
+        const eventType = input.status === "active" ? "activated" : "paused";
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO operation_report_delivery_events (
+            id,
+            schedule_id,
+            actor_id,
+            event_type,
+            from_status,
+            to_status,
+            schedule_version,
+            note,
+            snapshot
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+        `, [
+          eventId,
+          scheduleId,
+          actor.id,
+          eventType,
+          current.status,
+          input.status,
+          updated.version,
+          note,
+          JSON.stringify({ providerMode: "disabled_local" }),
+        ]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'operation_report_delivery_schedule.status_changed', 'operation_report_delivery_schedule', $3, $4::jsonb)",
+          [actor.id, actor.role, scheduleId, JSON.stringify({
+            publicCode: current.publicCode,
+            fromStatus: current.status,
+            toStatus: input.status,
+            version: updated.version,
+          })],
+        );
+        return this.publicReportDeliverySchedule(updated);
+      });
+    });
+  }
+
+  async simulateReportDelivery(
+    actor: Actor,
+    scheduleId: string,
+    input: SimulateOperationReportDeliveryDto,
+    idempotencyKey: string | undefined,
+  ) {
+    this.ensureOperation(actor);
+    this.assertUuid(scheduleId, "Agendamento");
+    const scheduleForReport = await this.database.withActor(actor, async (client) => {
+      const result = await client.query<{
+        periodDays: 7 | 30 | 90;
+        status: "active" | "paused";
+        version: number;
+      }>(`
+        SELECT
+          period_days AS "periodDays",
+          status,
+          version
+        FROM operation_report_delivery_schedules
+        WHERE id = $1
+      `, [scheduleId]);
+      return result.rows[0];
+    });
+    if (!scheduleForReport) throw new NotFoundException("Agendamento de relatório não encontrado.");
+    if (scheduleForReport.status !== "active") {
+      throw new ConflictException("Reative o agendamento antes de simular uma entrega.");
+    }
+    if (scheduleForReport.version !== input.expectedVersion) {
+      throw new ConflictException("O agendamento foi atualizado. Recarregue antes de simular.");
+    }
+
+    return this.database.withActor(actor, async (client) => {
+      return this.idempotency.execute(client, actor, {
+        key: idempotencyKey,
+        method: "POST",
+        route: `/api/v1/operation/reports/schedules/${scheduleId}/simulate`,
+        payload: { expectedVersion: input.expectedVersion },
+      }, async () => {
+        const report = await this.reports(actor, String(scheduleForReport.periodDays)) as ReportDeliverySource;
+        const snapshot = createReportDeliverySnapshot(report);
+        const reportChecksum = createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+        const currentResult = await client.query<ReportDeliveryScheduleRow>(`
+          SELECT
+            schedule.id,
+            schedule.public_code AS "publicCode",
+            schedule.label,
+            schedule.period_days AS "periodDays",
+            schedule.cadence,
+            schedule.recipient_name AS "recipientName",
+            schedule.recipient_email AS "recipientEmail",
+            schedule.purpose,
+            schedule.consent_confirmed_at AS "consentConfirmedAt",
+            schedule.consent_method AS "consentMethod",
+            schedule.status,
+            schedule.provider_mode AS "providerMode",
+            schedule.next_run_at AS "nextRunAt",
+            schedule.last_run_at AS "lastRunAt",
+            schedule.version,
+            schedule.created_at AS "createdAt",
+            schedule.updated_at AS "updatedAt",
+            creator.display_name AS "createdByName",
+            updater.display_name AS "updatedByName"
+          FROM operation_report_delivery_schedules schedule
+          JOIN users creator ON creator.id = schedule.created_by
+          JOIN users updater ON updater.id = schedule.updated_by
+          WHERE schedule.id = $1
+          FOR UPDATE OF schedule
+        `, [scheduleId]);
+        const current = currentResult.rows[0];
+        if (!current) throw new NotFoundException("Agendamento de relatório não encontrado.");
+        if (current.status !== "active") {
+          throw new ConflictException("Reative o agendamento antes de simular uma entrega.");
+        }
+        if (current.version !== input.expectedVersion) {
+          throw new ConflictException("O agendamento foi atualizado. Recarregue antes de simular.");
+        }
+
+        const deliveryId = randomUUID();
+        const publicCode = `EN-${randomBytes(4).toString("hex").toUpperCase()}`;
+        const recipientMasked = maskEmail(current.recipientEmail);
+        await client.query(`
+          INSERT INTO operation_report_deliveries (
+            id,
+            public_code,
+            schedule_id,
+            period_days,
+            scheduled_for,
+            recipient_fingerprint,
+            recipient_masked,
+            report_checksum,
+            report_snapshot,
+            created_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
+        `, [
+          deliveryId,
+          publicCode,
+          scheduleId,
+          current.periodDays,
+          current.nextRunAt,
+          fingerprintEmail(current.recipientEmail),
+          recipientMasked,
+          reportChecksum,
+          JSON.stringify(snapshot),
+          actor.id,
+        ]);
+        const updatedResult = await client.query<ReportDeliveryScheduleRow>(`
+          WITH updated AS (
+            UPDATE operation_report_delivery_schedules
+            SET
+              last_run_at = now(),
+              next_run_at = CASE cadence
+                WHEN 'weekly' THEN greatest(next_run_at, now()) + interval '7 days'
+                ELSE greatest(next_run_at, now()) + interval '1 month'
+              END,
+              version = version + 1,
+              updated_by = $2,
+              updated_at = now()
+            WHERE id = $1
+            RETURNING *
+          )
+          SELECT
+            updated.id,
+            updated.public_code AS "publicCode",
+            updated.label,
+            updated.period_days AS "periodDays",
+            updated.cadence,
+            updated.recipient_name AS "recipientName",
+            updated.recipient_email AS "recipientEmail",
+            updated.purpose,
+            updated.consent_confirmed_at AS "consentConfirmedAt",
+            updated.consent_method AS "consentMethod",
+            updated.status,
+            updated.provider_mode AS "providerMode",
+            updated.next_run_at AS "nextRunAt",
+            updated.last_run_at AS "lastRunAt",
+            updated.version,
+            updated.created_at AS "createdAt",
+            updated.updated_at AS "updatedAt",
+            creator.display_name AS "createdByName",
+            updater.display_name AS "updatedByName"
+          FROM updated
+          JOIN users creator ON creator.id = updated.created_by
+          JOIN users updater ON updater.id = updated.updated_by
+        `, [scheduleId, actor.id]);
+        const updated = updatedResult.rows[0];
+        if (!updated) throw new ConflictException("O ciclo do agendamento não pôde ser avançado.");
+        const eventId = randomUUID();
+        await client.query(`
+          INSERT INTO operation_report_delivery_events (
+            id,
+            schedule_id,
+            delivery_id,
+            actor_id,
+            event_type,
+            from_status,
+            to_status,
+            schedule_version,
+            note,
+            snapshot
+          ) VALUES ($1, $2, $3, $4, 'simulated', 'active', 'active', $5, $6, $7::jsonb)
+        `, [
+          eventId,
+          scheduleId,
+          deliveryId,
+          actor.id,
+          updated.version,
+          "Entrega local simulada; nenhum provedor externo ou destinatário foi acionado.",
+          JSON.stringify({
+            publicCode,
+            reportChecksum,
+            providerMode: "disabled_local",
+          }),
+        ]);
+        await client.query(
+          "INSERT INTO audit_events (actor_id, actor_role, action, entity_type, entity_id, payload) VALUES ($1, $2, 'operation_report_delivery.simulated', 'operation_report_delivery', $3, $4::jsonb)",
+          [actor.id, actor.role, deliveryId, JSON.stringify({
+            publicCode,
+            scheduleCode: current.publicCode,
+            periodDays: current.periodDays,
+            reportChecksum,
+            providerMode: "disabled_local",
+          })],
+        );
+        return {
+          delivery: {
+            id: deliveryId,
+            publicCode,
+            scheduleId,
+            scheduleCode: current.publicCode,
+            scheduleLabel: current.label,
+            periodDays: current.periodDays,
+            scheduledFor: current.nextRunAt,
+            generatedAt: report.financial.generatedAt,
+            status: "simulated" as const,
+            providerMode: "disabled_local" as const,
+            recipientMasked,
+            reportChecksum,
+            ...snapshot.summary,
+          },
+          schedule: this.publicReportDeliverySchedule(updated),
+          externalProvider: reportDeliveryProvider,
+        };
+      });
+    });
+  }
+
   async updateReportGoals(
     actor: Actor,
     input: UpdateOperationReportGoalsDto,
@@ -1946,4 +2620,68 @@ export class OperationsService {
       };
     });
   }
+}
+
+function isSyntheticReportRecipient(email: string) {
+  return /^[^@\s]+@(?:[a-z0-9-]+\.)*example\.test$/i.test(email)
+    || /^[^@\s]+@demo\.maxservice$/i.test(email);
+}
+
+function fingerprintEmail(email: string) {
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex");
+}
+
+function maskEmail(email: string) {
+  const [local = "", domain = ""] = email.split("@", 2);
+  const visible = local.slice(0, 1);
+  return `${visible}${"*".repeat(Math.max(3, Math.min(8, local.length - 1)))}@${domain}`;
+}
+
+function createReportDeliverySnapshot(report: ReportDeliverySource) {
+  return {
+    schemaVersion: 1,
+    period: report.period,
+    generatedAt: report.financial.generatedAt,
+    summary: {
+      requestCount: report.funnel.requestCount,
+      proposedRequestCount: report.funnel.proposedRequestCount,
+      bookingCount: report.funnel.bookingCount,
+      completedCount: report.funnel.completedCount,
+      proposalCoverageRate: report.funnel.proposalCoverageRate,
+      bookingConversionRate: report.funnel.bookingConversionRate,
+      netVolumeCents: report.financial.netVolumeCents,
+      settledAmountCents: report.financial.settledAmountCents,
+      refundedAmountCents: report.financial.refundedAmountCents,
+      reconciled: report.financial.reconciled,
+      referralCount: report.growth.referralCount,
+      overduePartnerCaseCount: report.operations.overduePartnerCaseCount,
+      alertCount: report.alerts.length,
+    },
+    goals: {
+      version: report.goals.version,
+    },
+    alerts: report.alerts.map((alert) => ({
+      id: alert.id,
+      severity: alert.severity,
+      title: alert.title,
+    })),
+    categories: report.categories.map((category) => ({
+      slug: category.slug,
+      name: category.name,
+      requestCount: category.requestCount,
+      proposedRequestCount: category.proposedRequestCount,
+      bookingCount: category.bookingCount,
+      completedCount: category.completedCount,
+      proposalCoverageRate: category.proposalCoverageRate,
+      bookingConversionRate: category.bookingConversionRate,
+      averageProposalCents: category.averageProposalCents,
+      netVolumeCents: category.netVolumeCents,
+    })),
+    timeline: report.timeline.map((bucket) => ({
+      bucketStart: bucket.bucketStart,
+      requestCount: bucket.requestCount,
+      bookingCount: bucket.bookingCount,
+      netVolumeCents: bucket.netVolumeCents,
+    })),
+  };
 }

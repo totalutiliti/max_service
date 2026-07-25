@@ -1,6 +1,6 @@
 # Evidência do Azure dev
 
-Registro da implantação inicial concluída em `2026-07-25T17:09:29-03:00` e da validação funcional mais recente em `2026-07-25T17:23:57-03:00`.
+Registro da implantação inicial concluída em `2026-07-25T17:09:29-03:00`, da validação funcional em `2026-07-25T17:23:57-03:00` e do primeiro deploy OIDC aprovado em `2026-07-25T17:45:56-03:00`.
 
 ## Escopo
 
@@ -8,8 +8,8 @@ Registro da implantação inicial concluída em `2026-07-25T17:09:29-03:00` e da
 - resource group `rg-max-service-dev`;
 - região `Brazil South`;
 - tags `environment=dev`, `project=max-service` e `data=synthetic-only`;
-- código e infraestrutura versionados no commit `4174b546aedb`;
-- imagens imutáveis `max-service-api:4174b546aedb` e `max-service-web:4174b546aedb`.
+- código e infraestrutura implantados no commit `02676fd51cee`;
+- imagens imutáveis `max-service-api:02676fd51cee` e `max-service-web:02676fd51cee`.
 
 ## Recursos confirmados
 
@@ -22,21 +22,24 @@ Registro da implantação inicial concluída em `2026-07-25T17:09:29-03:00` e da
 - Key Vault `kvmaxservicedev2026`;
 - storage account `stmaxservicedev26`;
 - Container Apps de storage, API e web;
-- job manual de migration e job diário de reconciliação do cofre.
+- job manual de migration e job diário de reconciliação do cofre;
+- identidade de deploy `id-max-service-github-dev`, separada do runtime.
 
 ## Gates executados
 
-- Bicep compilado para os cinco templates;
+- Bicep compilado para os seis templates;
 - lint, build, testes unitários e scanner de segredos aprovados;
 - imagens API e web construídas remotamente no ACR;
-- migration `job-max-service-migrate-dev-d9ikbgn` concluída com `Succeeded`;
+- migration `job-max-service-migrate-dev-molwsdz` concluída com `Succeeded`;
 - camada stateful reaproveitada sem rotação de segredos durante a conclusão;
-- revisões `ca-max-service-api-dev--4174b546aedb` e `ca-max-service-web-dev--4174b546aedb` confirmadas como `Running`;
+- revisões `ca-max-service-api-dev--02676fd51cee` e `ca-max-service-web-dev--02676fd51cee` confirmadas como `Running`;
 - `GET /health/ready` da API respondeu HTTP `200`;
 - `GET /demo` do web respondeu HTTP `200`;
 - a entrada como Cliente criou uma sessão segura atrás do proxy Azure;
 - o painel e a lista persistente **Meus pedidos** foram carregados no navegador;
-- o navegador não registrou warnings ou erros após a jornada.
+- o navegador não registrou warnings ou erros após a jornada;
+- o workflow [Deploy Azure dev #30173969310](https://github.com/totalutiliti/max_service/actions/runs/30173969310) concluiu checkout, OIDC, build, migration, runtime e smoke tests;
+- o environment GitHub `azure-dev` aceita somente `main`, não guarda client secret e executa sem permissão para alterar RBAC.
 
 ## Endpoints
 

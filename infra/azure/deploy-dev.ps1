@@ -77,15 +77,18 @@ function Test-StatefulEnvironment {
     @{ Type = 'Microsoft.Storage/storageAccounts'; Name = 'stmaxservicedev26' },
     @{ Type = 'Microsoft.KeyVault/vaults'; Name = 'kvmaxservicedev2026' }
   )
+  $inventoryJson = az resource list `
+    --resource-group $ResourceGroup `
+    --query '[].{type:type,name:name}' `
+    --output json
+  Assert-LastExitCode 'Não foi possível consultar os recursos stateful.'
+  $inventory = @($inventoryJson | ConvertFrom-Json)
   $existingCount = 0
   foreach ($resource in $required) {
-    $exists = az resource show `
-      --resource-group $ResourceGroup `
-      --resource-type $resource.Type `
-      --name $resource.Name `
-      --query id `
-      --output tsv 2>$null
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$exists)) {
+    $exists = $inventory | Where-Object {
+      $_.type -ieq $resource.Type -and $_.name -ieq $resource.Name
+    }
+    if ($null -ne $exists) {
       $existingCount += 1
     }
   }

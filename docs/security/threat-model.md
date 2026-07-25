@@ -33,6 +33,7 @@ Browser/PWA, BFF, API, PostgreSQL, Redis/worker, object storage, PSP, e-mail/SMS
 | exportação excessiva | endpoint exclusivo da Operação, projeção agregada, períodos fechados e CSV sem PII ou identificadores internos |
 | exportação do titular cruzada ou excessiva | sessão do próprio titular, função de identidade de escopo mínimo, filtros explícitos por ator, exclusão de conteúdo de terceiros, RLS, recibo e checksum |
 | exclusão indevida ou falsa conclusão LGPD | decisão humana versionada, justificativa obrigatória, separação técnica da exclusão física e gate de retenção permanentemente visível |
+| alteração retroativa ou corrida na evolução do banco | sequência contínua, SHA-256 normalizado por migration, advisory lock entre réplicas, recusa de histórico desconhecido ou fora de ordem e ensaio concorrente em banco descartável |
 | disparo de relatório sem consentimento | endereço sintético restrito, atestação explícita, pausa revogável, RLS exclusivo da Operação e provedor travado em modo local |
 | aceite ou consentimento forjado | sessão vinculada ao titular, documento limitado à audiência, hash congelado, finalidade separada, RLS e evento append-only |
 | sabotagem do catálogo | RLS exclusivo da operação, justificativa, evento append-only, auditoria e proteção da última categoria ativa |

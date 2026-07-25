@@ -11,12 +11,13 @@
     "api:dev": "tsx watch api/main.ts",
     "api:build": "tsc -p tsconfig.api.json",
     "api:start": "node api-dist/api/main.js",
-    "api:test": "tsx --test api/tests/demo-actor.test.ts api/tests/http-security.test.ts api/tests/idempotency.test.ts api/tests/rate-limit.test.ts api/tests/request-telemetry.test.ts api/tests/system-health.test.ts",
+    "api:test": "tsx --test api/tests/demo-actor.test.ts api/tests/http-security.test.ts api/tests/idempotency.test.ts api/tests/migrations.test.ts api/tests/rate-limit.test.ts api/tests/request-telemetry.test.ts api/tests/system-health.test.ts",
     "build": "vinext build",
-    "start": "vinext start",
+    "start": "node scripts/start-web.mjs",
     "test:integration": "node --test --test-concurrency=1 tests/postgres-schedule.integration.test.mjs tests/privacy-rights.integration.test.mjs",
     "test:storage": "node --test tests/private-storage-reconciliation.integration.test.mjs",
     "test:restore": "node scripts/backup-restore-drill.mjs",
+    "test:migrations": "npm run api:build && node scripts/migration-dry-run.mjs",
     "test:e2e": "playwright test",
     "test:smoke": "node tests/system-health.smoke.mjs",
     "storage:reconcile": "node scripts/private-storage-reconciliation.mjs",
@@ -39,6 +40,7 @@
     "react-dom": "19.2.8",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "vinext": "0.0.50",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
@@ -61,7 +63,6 @@
     "tailwindcss": "4.2.1",
     "tsx": "^4.23.1",
     "typescript": "5.9.3",
-    "vinext": "0.0.50",
     "vite": "8.1.5",
     "wrangler": "4.113.0"
   },

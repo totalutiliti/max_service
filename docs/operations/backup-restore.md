@@ -14,7 +14,7 @@ npm run test:restore
 
 O processo:
 
-1. lê uma fotografia das migrations, contagens críticas e proteções do banco original;
+1. lê uma fotografia das migrations com seus checksums, contagens críticas e proteções do banco original;
 2. produz um dump PostgreSQL em formato custom dentro do container;
 3. cria um banco temporário com nome aleatório;
 4. restaura esquema, dados, grants, constraints e policies;
@@ -27,7 +27,7 @@ O banco de origem nunca é apagado, renomeado ou usado como destino.
 ## Critérios de aprovação
 
 - dump maior que 4 KB;
-- lista completa de migrations idêntica;
+- lista completa de migrations e checksums idêntica;
 - contagens críticas idênticas;
 - mesmo número de tabelas com RLS e `FORCE ROW LEVEL SECURITY`;
 - mesmo número de policies;

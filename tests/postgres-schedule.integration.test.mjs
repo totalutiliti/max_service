@@ -37,6 +37,15 @@ async function withRollback(pool, run) {
 test("migrations de agenda e prontidão estão aplicadas com constraints de exclusão", async () => {
   const pool = new Pool({ connectionString: databaseUrl, max: 1 });
   try {
+    const migrationIntegrity = await pool.query(`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (
+          WHERE checksum ~ '^[0-9a-f]{64}$'
+        )::int AS checksummed
+      FROM schema_migrations
+    `);
+    assert.equal(migrationIntegrity.rows[0].total, migrationIntegrity.rows[0].checksummed);
     const migrations = await pool.query(`
       SELECT name
       FROM schema_migrations

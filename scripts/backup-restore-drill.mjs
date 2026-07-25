@@ -47,7 +47,7 @@ function databaseUrlFor(baseUrl, databaseName) {
 
 async function snapshot(pool) {
   const [migrations, counts, security] = await Promise.all([
-    pool.query("SELECT name FROM schema_migrations ORDER BY name"),
+    pool.query("SELECT name, checksum FROM schema_migrations ORDER BY name"),
     pool.query(`
       SELECT 'users' AS resource, count(*)::int AS count FROM users
       UNION ALL
@@ -101,7 +101,7 @@ async function snapshot(pool) {
     `),
   ]);
   return {
-    migrations: migrations.rows.map((row) => row.name),
+    migrations: migrations.rows,
     counts: Object.fromEntries(counts.rows.map((row) => [row.resource, row.count])),
     security: security.rows[0],
   };

@@ -62,7 +62,7 @@ Primeira base de produto para um marketplace regional de serviços. A plataforma
 - Cliente, profissional, parceiro e operação possuem extratos separados por RLS; os valores são previsões ou lançamentos demonstrativos, nunca saldo bancário ou dinheiro movimentado.
 - Pedidos agendados bloqueiam novas propostas e aceite duplicado; cada mudança relevante gera histórico e auditoria.
 - O banco aplica RLS por ator; a identidade demonstrativa é bloqueada fora de `DEMO_MODE`.
-- O CI reproduz lint, builds, testes funcionais, auditoria de dependências, scanner de segredos e uma instalação Docker limpa para testar migrations, RLS e conflitos de agenda no PostgreSQL.
+- O CI reproduz lint, builds, testes funcionais, auditoria de dependências, scanner de segredos e uma instalação Docker limpa; as imagens são verificadas por Trivy fixado por digest, e migrations possuem sequência contínua, checksum imutável, lock concorrente e ensaio em banco descartável antes dos testes de RLS.
 - Playwright e Axe percorrem os cinco perfis, suas quatro áreas, o acesso e a versão móvel, verificando WCAG 2.2 AA, teclado, foco, navegação e revogação de sessão; as jornadas transacionais conduzem pela interface o caminho do novo pedido à avaliação, o cancelamento com tratamento operacional, a indicação do parceiro até a aprovação para onboarding, o atendimento compartilhado da rede até a decisão de uma contestação, o anúncio do envio à moderação e exibição contextual transparente e o relatório do agendamento consentido à simulação e pausa; falhas preservam relatório, captura e trace por sete dias no CI.
 - O mesmo pipeline gera um backup lógico, restaura em banco isolado, compara dados e proteções, prova o RLS com a role de runtime e remove todos os artefatos temporários.
 - Um processo de manutenção reconcilia diariamente os quatro conjuntos de metadados com o bucket privado, preserva objetos recentes ou desconhecidos, expurga somente órfãos com mais de 24 horas e registra apenas contagens agregadas protegidas por RLS.
@@ -86,13 +86,14 @@ npm run lint
 npm run build
 npm test
 npm run test:integration
+npm run test:migrations
 npm run test:storage
 npm run test:restore
 npm run test:smoke
 npm run test:e2e
 ```
 
-`test:integration`, `test:storage` e `test:restore` exigem os serviços locais do Docker; `test:smoke` e `test:e2e` exigem também API e web. O E2E usa o Google Chrome instalado no sistema. O ensaio de restauração nunca usa o banco original como destino.
+`test:integration`, `test:migrations`, `test:storage` e `test:restore` exigem o PostgreSQL local do Docker; `test:smoke` e `test:e2e` exigem também API e web. O E2E usa o Google Chrome instalado no sistema. Os ensaios de migrations e restauração criam destinos descartáveis e nunca alteram o banco original.
 
 ## Rodar com Docker
 

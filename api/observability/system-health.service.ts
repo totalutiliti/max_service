@@ -1,8 +1,13 @@
 import { Injectable } from "@nestjs/common";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Actor } from "../auth/demo-actor.js";
 import { DatabaseService } from "../database/database.service.js";
+import {
+  checksumMigrationSql,
+  inspectMigrationState,
+  validateMigrationNames,
+} from "../database/migrations.js";
 import { PrivateObjectStorageService } from "../storage/private-object-storage.service.js";
 import {
   configuredIntegrationChecks,
@@ -141,25 +146,32 @@ export class SystemHealthService {
   private async migrationsCheck(): Promise<SystemHealthCheck> {
     const startedAt = Date.now();
     try {
-      const [files, applied] = await withTimeout(Promise.all([
-        readdir(join(process.cwd(), "api", "migrations")),
-        this.database.query<{ name: string }>("SELECT name FROM schema_migrations ORDER BY name"),
-      ]), 3_000, "Tempo limite ao conferir migrations.");
-      const expected = files.filter((name) => name.endsWith(".sql")).sort();
-      const appliedNames = applied.rows.map((row) => row.name);
-      const appliedSet = new Set(appliedNames);
-      const expectedSet = new Set(expected);
-      const pending = expected.filter((name) => !appliedSet.has(name));
-      const unknown = appliedNames.filter((name) => !expectedSet.has(name));
-      const synchronized = pending.length === 0 && unknown.length === 0;
+      const migrationsDirectory = join(process.cwd(), "api", "migrations");
+      const { expected, applied } = await withTimeout((async () => {
+        const names = validateMigrationNames(
+          (await readdir(migrationsDirectory)).filter((name) => name.endsWith(".sql")),
+        );
+        const [descriptors, records] = await Promise.all([
+          Promise.all(names.map(async (name) => {
+            const sql = await readFile(join(migrationsDirectory, name), "utf8");
+            return { name, sql, checksum: checksumMigrationSql(sql) };
+          })),
+          this.database.query<{ name: string; checksum: string | null }>(
+            "SELECT name, checksum FROM schema_migrations ORDER BY name",
+          ),
+        ]);
+        return { expected: descriptors, applied: records };
+      })(), 3_000, "Tempo limite ao conferir migrations.");
+      const state = inspectMigrationState(expected, applied.rows);
+      const synchronized = state.pending.length === 0 && state.backfill.length === 0;
       return {
         id: "migrations",
         area: "database",
         label: "Migrations",
         status: synchronized ? "healthy" : "critical",
         detail: synchronized
-          ? `${appliedNames.length} migration(ões) aplicadas e sincronizadas com o código.`
-          : `${pending.length} pendente(s) e ${unknown.length} desconhecida(s) no banco.`,
+          ? `${applied.rows.length} migration(ões) aplicadas, ordenadas e íntegras.`
+          : `${state.pending.length} pendente(s) e ${state.backfill.length} sem checksum verificável.`,
         latencyMs: Date.now() - startedAt,
         trafficBlocking: true,
         productionBlocking: !synchronized,

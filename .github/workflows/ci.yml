@@ -60,6 +60,30 @@ jobs:
       - name: Subir ambiente isolado
         run: docker compose up -d --build --wait
 
+      - name: Ensaiar migrations e detectar drift
+        env:
+          MIGRATION_DRY_RUN_DATABASE_URL: postgresql://max_service_admin:max_service_admin_local@127.0.0.1:54329/max_service
+        run: npm run test:migrations
+
+      - name: Escanear imagens por vulnerabilidades corrigíveis
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/" \
+            -v "$RUNNER_TEMP:/reports" \
+            ghcr.io/aquasecurity/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+            image --quiet --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
+            --format json --list-all-pkgs=false --output /reports/trivy-api.json max-service-api
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/" \
+            -v "$RUNNER_TEMP:/reports" \
+            ghcr.io/aquasecurity/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+            image --quiet --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
+            --format json --list-all-pkgs=false --output /reports/trivy-web.json max-service-web
+          node scripts/verify-vulnerability-reports.mjs \
+            "$RUNNER_TEMP/trivy-api.json" "$RUNNER_TEMP/trivy-web.json"
+
       - name: Testar jornadas e acessibilidade
         run: npm run test:e2e
 

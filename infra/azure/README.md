@@ -58,6 +58,8 @@ O script tolera a propagação transitória da identidade do Container Apps, mas
 
 O workflow manual `Deploy Azure dev` autentica por OIDC, não guarda senha Azure e só executa a partir de `main`. A identidade de implantação é exclusiva do CI, não é anexada aos containers e recebe `Contributor` apenas no resource group de desenvolvimento.
 
+O runner usa `-SkipAuthorization`: deployments normais preservam os papéis RBAC criados no bootstrap e não exigem permissão para conceder acesso. Nesse modo, o script falha fechado se a camada stateful ainda não existir; a criação inicial e qualquer reparo de autorização permanecem tarefas administrativas.
+
 Bootstrap único da confiança:
 
 ```powershell

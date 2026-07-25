@@ -5,6 +5,7 @@ param(
   [string]$AcrName = 'acrmaxservicedev2026',
   [string]$ImageTag = '',
   [switch]$SkipBuild,
+  [switch]$SkipAuthorization,
   [switch]$WhatIf
 )
 
@@ -158,6 +159,12 @@ try {
   else {
     $deploymentMode = 'create'
   }
+  if ($SkipAuthorization) {
+    $deployRoleAssignments = 'false'
+  }
+  else {
+    $deployRoleAssignments = 'true'
+  }
   az deployment group $deploymentMode `
     --resource-group $ResourceGroup `
     --name "registry-$ImageTag" `
@@ -170,7 +177,7 @@ try {
     --resource-group $ResourceGroup `
     --name "foundation-$ImageTag" `
     --template-file (Join-Path $scriptRoot 'foundation.bicep') `
-    --parameters location=$Location acrName=$AcrName `
+    --parameters location=$Location acrName=$AcrName deployRoleAssignments=$deployRoleAssignments `
     --output none
   Assert-LastExitCode 'Falha na fundação do Container Apps.'
 
@@ -182,6 +189,9 @@ try {
   $statefulEnvironment = Test-StatefulEnvironment
   if ($statefulEnvironment -eq 'partial') {
     throw 'O conjunto stateful está incompleto. Corrija os recursos antes de continuar para evitar rotação parcial de segredos.'
+  }
+  if ($SkipAuthorization -and $statefulEnvironment -eq 'absent') {
+    throw 'SkipAuthorization exige a camada stateful previamente criada por um administrador.'
   }
   if ($statefulEnvironment -eq 'absent') {
     $deployerObjectId = (az ad signed-in-user show --query id --output tsv).Trim()

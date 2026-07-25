@@ -33,4 +33,4 @@ jobs:
 
       - name: Implantar commit imutável
         shell: pwsh
-        run: ./infra/azure/deploy-dev.ps1
+        run: ./infra/azure/deploy-dev.ps1 -SkipAuthorization

@@ -2,6 +2,7 @@ targetScope = 'resourceGroup'
 
 param location string = resourceGroup().location
 param acrName string = 'acrmaxservicedev2026'
+param deployRoleAssignments bool = true
 param workspaceName string = 'log-max-service-dev'
 param environmentName string = 'cae-max-service-dev'
 param identityName string = 'id-max-service-dev'
@@ -38,7 +39,7 @@ resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' 
   tags: tags
 }
 
-resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (deployRoleAssignments) {
   name: guid(registry.id, identity.id, acrPullRoleDefinitionId)
   scope: registry
   properties: {

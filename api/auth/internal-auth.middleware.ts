@@ -20,7 +20,8 @@ export class InternalAuthMiddleware implements NestMiddleware {
     const role = header(request, "x-demo-role");
     const actorId = header(request, "x-demo-actor-id");
     const idempotencyKey = header(request, "idempotency-key");
-    const protectsSessionEndpoint = path.startsWith("/api/v1/auth/demo-sessions");
+    const protectsSessionEndpoint = path.startsWith("/api/v1/auth/demo-sessions")
+      || path.startsWith("/api/v1/auth/production-sessions");
 
     if (!role && !actorId && !protectsSessionEndpoint) {
       next();

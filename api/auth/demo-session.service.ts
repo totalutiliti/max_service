@@ -92,6 +92,7 @@ function present(row: SessionRow) {
     id: row.id,
     actorId: row.user_id,
     role: row.role,
+    identityMode: "demo" as const,
     name: profile.name,
     email: profile.email,
     expiresAt: row.expires_at,

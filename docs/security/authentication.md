@@ -15,13 +15,28 @@
 
 As chaves do Compose são exclusivas do ambiente local. `COOKIE_SECURE=false` existe somente porque a demonstração usa HTTP em `127.0.0.1`; qualquer ambiente HTTPS deve definir `COOKIE_SECURE=true` e provisionar segredos fora do repositório.
 
+## Fundação de produção adicionada
+
+A migration `0057` e os contratos de runtime adicionam uma base separada para
+identidade real: conta verificada, sessão opaca, validade absoluta e por inatividade,
+rotação encadeada, detecção de reuso, inventário, revogação atual/global, MFA
+obrigatório para Operação, auditoria sanitizada e RLS.
+
+Essa base permanece desabilitada e falha fechado. Ela não escolhe nem simula um
+provedor. Não existe rota pública capaz de emitir uma sessão a partir de dados
+declarados pelo navegador. Consulte:
+
+- [ADR 0005 — Estratégia de identidade de produção](../architecture/decisoes/0005-identidade-de-producao.md);
+- [Fundação de identidade de produção](production-identity-foundation.md).
+
 ## Ainda obrigatório antes de produção
 
-- cadastro e confirmação de e-mail/telefone;
-- senha com Argon2id e pepper em cofre, ou provedor OIDC homologado;
+- decidir e homologar credencial local, OIDC gerenciado ou estratégia híbrida;
+- cadastro e confirmação reais de e-mail/telefone;
 - recuperação de conta resistente a enumeração e tomada de conta;
-- MFA obrigatório para operação/administração;
-- o piloto local já coordena no Redis o limite global de criação de sessão demonstrativa e fecha a rota se o store falhar; produção ainda exige proteção por IP/conta na borda, lockout progressivo, detecção de reuso e alertas;
-- rotação de chaves, inventário de sessões/dispositivos e revogação global;
+- implementação real de MFA e step-up para Operação/administração;
+- conectar o lockout progressivo ao adaptador e adicionar proteção por IP/conta na
+  borda;
+- notificações, rotação de chaves e resposta a incidentes;
 - política de retenção, consentimentos, termos e revisão de privacidade/LGPD;
-- repetir o E2E já automatizado em HTTPS, proxy real e múltiplas réplicas.
+- repetir os testes em HTTPS, proxy real e múltiplas réplicas.

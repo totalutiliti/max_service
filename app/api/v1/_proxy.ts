@@ -108,7 +108,10 @@ async function authorize(path: string, request: Request, role: AllowedDemoRole):
   const session = await resolveDemoSession(request);
   if (!session) return Response.json({ error: "Sessão ausente, expirada ou revogada." }, { status: 401 });
   const allowedRoles: readonly DemoRole[] = typeof role === "string" ? [role] : role;
-  if (!allowedRoles.includes(session.role) || session.actorId !== demoActorIds[session.role]) {
+  const actorMatchesMode = session.identityMode === "production"
+    ? productionActorId(session.actorId)
+    : session.actorId === demoActorIds[session.role];
+  if (!allowedRoles.includes(session.role) || !actorMatchesMode) {
     return Response.json({ error: "O perfil da sessão não tem acesso a este recurso." }, { status: 403 });
   }
   try {
@@ -120,4 +123,9 @@ async function authorize(path: string, request: Request, role: AllowedDemoRole):
 
 export function proxyCustomerRequest(path: string, request: Request, payload?: unknown) {
   return proxyDemoRequest(path, request, "customer", payload);
+}
+
+function productionActorId(actorId: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(actorId)
+    && !Object.values(demoActorIds).includes(actorId as typeof demoActorIds[keyof typeof demoActorIds]);
 }

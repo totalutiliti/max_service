@@ -1,8 +1,10 @@
 import {
   apiUrl,
   clearedSessionCookie,
+  clearedProductionSessionCookie,
   crossOriginMutation,
   type DemoRole,
+  productionSessionToken,
   resolveDemoSession,
   sessionCookie,
   sessionToken,
@@ -33,6 +35,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   if (crossOriginMutation(request)) return Response.json({ error: "Origem da requisição inválida." }, { status: 403 });
+  if (productionSessionToken(request)) {
+    return Response.json(
+      { error: "Uma sessão de produção não pode trocar de perfil." },
+      { status: 403, headers: sessionResponseHeaders() },
+    );
+  }
   const payload = await request.json().catch(() => null) as { role?: string } | null;
   const role = payload?.role ? roleMap[payload.role] : null;
   if (!role) return Response.json({ error: "Perfil demonstrativo inválido." }, { status: 400 });
@@ -74,6 +82,17 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   if (crossOriginMutation(request)) return Response.json({ error: "Origem da requisição inválida." }, { status: 403 });
+  const productionToken = productionSessionToken(request);
+  if (productionToken) {
+    const path = "/api/v1/auth/production-sessions/current";
+    try {
+      const headers = await signedInternalHeaders("DELETE", path);
+      headers.set("authorization", `Bearer ${productionToken}`);
+      await fetch(`${apiUrl()}${path}`, { method: "DELETE", headers, cache: "no-store" });
+    } catch {
+      // A revogação poderá ser repetida; o cookie local sempre deve ser removido.
+    }
+  }
   const token = sessionToken(request);
   if (token) {
     const path = "/api/v1/auth/demo-sessions/current";
@@ -85,11 +104,21 @@ export async function DELETE(request: Request) {
       // O cookie local ainda deve ser removido se a API estiver indisponível.
     }
   }
-  return Response.json({ revoked: true }, { headers: sessionResponseHeaders(clearedSessionCookie()) });
+  return Response.json(
+    { revoked: true },
+    {
+      headers: sessionResponseHeaders(
+        clearedSessionCookie(),
+        clearedProductionSessionCookie(),
+      ),
+    },
+  );
 }
 
-function sessionResponseHeaders(cookie?: string) {
+function sessionResponseHeaders(...cookies: Array<string | undefined>) {
   const headers = new Headers({ "cache-control": "no-store" });
-  if (cookie) headers.set("set-cookie", cookie);
+  for (const cookie of cookies) {
+    if (cookie) headers.append("set-cookie", cookie);
+  }
   return headers;
 }

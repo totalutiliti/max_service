@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { crossOriginMutation } from "./_session";
+import {
+  crossOriginMutation,
+  productionSessionCookie,
+  productionSessionToken,
+} from "./_session";
 
 function mutation(origin?: string, url = "http://internal-web:4174/api/v1/auth/session") {
   return new Request(url, {
@@ -58,4 +62,20 @@ test("falha fechada quando a origem pública é inválida", () => {
     if (previous === undefined) delete process.env.APP_ORIGIN;
     else process.env.APP_ORIGIN = previous;
   }
+});
+
+test("cookie de produção usa prefixo de host e atributos defensivos", () => {
+  const cookie = productionSessionCookie("a".repeat(43), 900);
+  assert.match(cookie, /^__Host-ms_session=/);
+  assert.match(cookie, /; Path=\//);
+  assert.match(cookie, /; HttpOnly/);
+  assert.match(cookie, /; SameSite=Strict/);
+  assert.match(cookie, /; Secure/);
+  assert.match(cookie, /; Max-Age=900$/);
+  assert.equal(
+    productionSessionToken(new Request("https://app.example", {
+      headers: { cookie: "__Host-ms_session=abc123; outro=valor" },
+    })),
+    "abc123",
+  );
 });

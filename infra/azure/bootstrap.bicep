@@ -6,7 +6,12 @@ param acrName string = 'acrmaxservicedev2026'
 param identityName string = 'id-max-service-dev'
 param environmentName string = 'cae-max-service-dev'
 param keyVaultName string = 'kvmaxservicedev2026'
+@minLength(2)
+@maxLength(32)
 param migrationJobName string = 'job-max-service-migrate-dev'
+
+@minLength(2)
+@maxLength(32)
 param minioAppName string = 'ca-max-service-storage-dev'
 
 var tags = {

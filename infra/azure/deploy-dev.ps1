@@ -77,6 +77,32 @@ function Invoke-AcrImageBuild([string]$ImageName, [string]$Dockerfile) {
   } until ($status -eq 'Succeeded')
 }
 
+function Invoke-AzureDeploymentWithIdentityRetry(
+  [string]$Name,
+  [scriptblock]$Action
+) {
+  for ($attempt = 1; $attempt -le 3; $attempt += 1) {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $exitCode = 1
+    try {
+      $ErrorActionPreference = 'Continue'
+      $deploymentOutput = @(& $Action 2>&1)
+      $exitCode = $LASTEXITCODE
+    }
+    finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
+    $deploymentText = ($deploymentOutput | ForEach-Object { [string]$_ }) -join "`n"
+    if ($exitCode -eq 0) { return $deploymentText }
+    if ($deploymentText -notmatch 'IdentityDoesNotExist' -or $attempt -eq 3) {
+      Write-Host $deploymentText
+      throw "Falha no deployment Azure $Name."
+    }
+    Write-Host "Azure ainda propagando a identidade de $Name; nova tentativa $($attempt + 1)/3 em 30 segundos."
+    Start-Sleep -Seconds 30
+  }
+}
+
 function Test-StatefulEnvironment {
   $required = @(
     @{ Type = 'Microsoft.DBforPostgreSQL/flexibleServers'; Name = 'psql-max-service-dev-26' },
@@ -200,13 +226,15 @@ try {
     Invoke-AcrImageBuild -ImageName "max-service-web:$ImageTag" -Dockerfile 'Dockerfile'
   }
 
-  az deployment group create `
-    --resource-group $ResourceGroup `
-    --name "bootstrap-$ImageTag" `
-    --template-file (Join-Path $scriptRoot 'bootstrap.bicep') `
-    --parameters location=$Location imageTag=$ImageTag acrName=$AcrName `
-    --output none
-  Assert-LastExitCode 'Falha ao implantar o cofre de objetos ou o job de migration.'
+  Invoke-AzureDeploymentWithIdentityRetry -Name 'bootstrap' -Action {
+    az deployment group create `
+      --resource-group $ResourceGroup `
+      --name "bootstrap-$ImageTag" `
+      --template-file (Join-Path $scriptRoot 'bootstrap.bicep') `
+      --parameters location=$Location imageTag=$ImageTag acrName=$AcrName `
+      --only-show-errors `
+      --output none
+  } | Out-Null
 
   $executionName = (az containerapp job start `
       --resource-group $ResourceGroup `
@@ -234,14 +262,16 @@ try {
     if ((Get-Date) -gt $migrationDeadline) { throw 'Migration excedeu 30 minutos.' }
   } until ($migrationStatus -eq 'Succeeded')
 
-  $runtimeOutput = az deployment group create `
-    --resource-group $ResourceGroup `
-    --name "runtime-$ImageTag" `
-    --template-file (Join-Path $scriptRoot 'runtime.bicep') `
-    --parameters location=$Location imageTag=$ImageTag acrName=$AcrName `
-    --query properties.outputs `
-    --output json
-  Assert-LastExitCode 'Falha ao implantar API, web ou manutenção agendada.'
+  $runtimeOutput = Invoke-AzureDeploymentWithIdentityRetry -Name 'runtime' -Action {
+    az deployment group create `
+      --resource-group $ResourceGroup `
+      --name "runtime-$ImageTag" `
+      --template-file (Join-Path $scriptRoot 'runtime.bicep') `
+      --parameters location=$Location imageTag=$ImageTag acrName=$AcrName `
+      --query properties.outputs `
+      --only-show-errors `
+      --output json
+  }
   $outputs = $runtimeOutput | ConvertFrom-Json
   $apiUrl = $outputs.apiUrl.value
   $webUrl = $outputs.webUrl.value

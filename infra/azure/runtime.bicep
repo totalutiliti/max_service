@@ -342,6 +342,10 @@ resource webApp 'Microsoft.App/containerApps@2025-07-01' = {
               value: 'https://${apiFqdn}'
             }
             {
+              name: 'APP_ORIGIN'
+              value: 'https://${webFqdn}'
+            }
+            {
               name: 'BFF_INTERNAL_SECRET'
               secretRef: 'bff-internal-secret'
             }

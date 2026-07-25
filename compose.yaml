@@ -184,6 +184,7 @@ services:
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:3001
+      APP_ORIGIN: http://127.0.0.1:4174
       BFF_INTERNAL_SECRET: max-service-bff-local-only
       COOKIE_SECURE: "false"
       FINANCIAL_SANDBOX_SECRET: max-service-sandbox-local-only

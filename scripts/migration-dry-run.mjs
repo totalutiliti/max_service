@@ -34,6 +34,7 @@ const temporaryDatabaseUrl = databaseUrlFor(temporaryDatabase);
 const administrationPool = new Pool({ connectionString: administrationUrl, max: 1 });
 let validationPool;
 let databaseCreated = false;
+let cleanupStarted = false;
 
 try {
   await administrationPool.query(
@@ -69,6 +70,11 @@ try {
   assert.equal(idempotentRun.backfilled, 0, "Banco novo não deve exigir backfill.");
 
   validationPool = new Pool({ connectionString: temporaryDatabaseUrl, max: 1 });
+  validationPool.on("error", (error) => {
+    if (cleanupStarted && error?.code === "57P01") return;
+    console.error("Conexão ociosa do dry-run de migrations falhou.");
+    process.exitCode = 1;
+  });
   const [history, security] = await Promise.all([
     validationPool.query(`
       SELECT
@@ -125,6 +131,7 @@ try {
     policies: security.rows[0].policies,
   }, null, 2));
 } finally {
+  cleanupStarted = true;
   let cleanupError;
   if (validationPool) await validationPool.end().catch(() => undefined);
   if (databaseCreated) {

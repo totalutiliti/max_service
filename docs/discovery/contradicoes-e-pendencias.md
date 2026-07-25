@@ -16,7 +16,7 @@
 | Canais | web, Android e iOS desejados | web responsiva/PWA primeiro; apps depois | produto + tecnologia |
 | Responsabilidade | material quer “garantia”, mas questiona corresponsabilidade | não prometer garantia até definição contratual e operacional | jurídico |
 | Parceiro | período de teste aparece como 7-14 e também 15 dias | política configurável; sem automatizar até aprovação | comercial |
-| Anúncios | receita mensal citada, sem critérios de segmentação | P1; exigir política, moderação e métricas | comercial + privacidade |
+| Anúncios | receita mensal citada, sem critérios de segmentação | protótipo contextual moderado; cobrar e ampliar somente após política editorial, privacidade, retenção e modelo comercial aprovados | comercial + privacidade |
 
 ## Decisões bloqueadoras antes de produção
 

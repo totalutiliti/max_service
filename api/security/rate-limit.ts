@@ -11,7 +11,7 @@ export const rateLimitPolicies = [
   {
     id: "demo-session-create",
     label: "Criação de sessão demonstrativa",
-    limit: 30,
+    limit: 60,
     windowSeconds: 60,
   },
   {

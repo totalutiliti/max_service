@@ -17,7 +17,7 @@
 
 ### Perfis e geografia
 
-`service_regions`, `service_region_neighborhoods`, `provider_service_regions`, `provider_matching_profiles`, `provider_matching_events` e seus históricos append-only estão materializados no piloto. Pedidos e perfis de onboarding mantêm as chaves regionais e um snapshot textual da localização. O perfil de matching preserva categoria principal, disponibilidade, aceite de urgências e limites de capacidade com versão monotônica. `customer_profiles`, `provider_profiles`, `partner_profiles`, `advertiser_profiles` e endereços completos permanecem como alvo posterior.
+`service_regions`, `service_region_neighborhoods`, `provider_service_regions`, `provider_matching_profiles`, `provider_matching_events`, `advertiser_profiles` e seus históricos aplicáveis estão materializados no piloto. Pedidos e perfis de onboarding mantêm as chaves regionais e um snapshot textual da localização. O perfil de matching preserva categoria principal, disponibilidade, aceite de urgências e limites de capacidade com versão monotônica. O perfil do anunciante preserva marca, destino institucional e estado operacional. `customer_profiles`, `provider_profiles`, `partner_profiles` e endereços completos permanecem como alvo posterior.
 
 ### Catálogo e verificação
 
@@ -29,7 +29,7 @@
 
 ### Crescimento e receita
 
-`partner_referral_links`, `partner_referrals`, `partner_referral_events`, `marketing_campaigns`, `marketing_campaign_events`, `campaign_validation_attempts`, `campaign_reservations`, `commercial_rules`, `payment_intents`, `payment_allocations`, `payment_transactions`, `financial_ledger_entries`; campanhas congelam regra e elegibilidade na reserva, e comissões, cashback e recebíveis são tipos de alocação/ledger. Publicidade permanece como evolução posterior.
+`partner_referral_links`, `partner_referrals`, `partner_referral_events`, `marketing_campaigns`, `marketing_campaign_events`, `campaign_validation_attempts`, `campaign_reservations`, `contextual_ad_campaigns`, `contextual_ad_moderation_events`, `contextual_ad_deliveries`, `commercial_rules`, `payment_intents`, `payment_allocations`, `payment_transactions`, `financial_ledger_entries`; campanhas promocionais congelam regra e elegibilidade na reserva, e comissões, cashback e recebíveis são tipos de alocação/ledger. Campanhas publicitárias preservam decisão humana, contexto mínimo de entrega e métricas agregadas sem identidade bruta do visitante.
 
 ### Operação
 
@@ -87,6 +87,10 @@
 - apenas a Operação cria ou muda o estado, sempre com justificativa e evento append-only; a contagem global e o estado recente de abuso usam funções de escopo mínimo para não ampliar a leitura do cliente sob RLS;
 - cada validação persiste hash SHA-256 do código, contexto mínimo e resultado, nunca o código digitado; clientes não leem a trilha bruta e a Operação recebe somente projeções agregadas pela API;
 - cada pedido possui no máximo uma reserva de campanha; a reserva congela código, regra e snapshot de elegibilidade, e o aceite a transforma uma única vez em `redeemed` ou `ineligible`;
+- cada campanha publicitária nasce em `pending_review`; somente a Operação executa `approve`, `reject`, `pause` ou `activate`, com justificativa, evento append-only e auditoria;
+- uma impressão publicitária exige anunciante ativo, campanha aprovada e vigente, limite disponível e contexto atual compatível com categoria/região;
+- a entrega não persiste cliente, sessão, IP ou token bruto; o clique usa somente hash SHA-256 de token aleatório em função de banco restrita e devolve destino HTTPS enquanto a campanha continua válida;
+- anunciante e Operação recebem contagens agregadas, e a publicidade nunca altera matching, ranking, proposta ou elegibilidade do serviço;
 - o desconto é calculado no servidor sobre a proposta aceita, preserva ao menos R$ 1 de valor final e fica reconciliado por `valor de lista = valor final + desconto` no payment intent;
 - a soma das alocações de um intent é exatamente o valor bruto, com o resíduo de arredondamento absorvido pelo recebível do profissional;
 - liquidação exige serviço concluído; estorno de autorização exige serviço cancelado;

@@ -24,6 +24,10 @@ test("normaliza identificadores e descarta query strings antes de registrar a ro
     normalizeRoutePath("/api/v1/unknown/person@example.com"),
     "/api/v1/:value/:value",
   );
+  assert.equal(
+    normalizeRoutePath("/api/v1/operation/advertising/550e8400-e29b-41d4-a716-446655440000/actions"),
+    "/api/v1/operation/advertising/:id/actions",
+  );
 });
 
 test("agrega tráfego da janela e separa probes sem reter atores ou payloads", () => {

@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-export type DemoProfile = "cliente" | "prestador" | "parceiro" | "operacao";
+export type DemoProfile = "cliente" | "prestador" | "parceiro" | "anunciante" | "operacao";
 
 export async function enterDemo(page: Page, profile: DemoProfile) {
   await page.goto("/demo");

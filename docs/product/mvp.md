@@ -8,7 +8,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 
 - superfície pública e onboarding persistente de cliente e profissional, com documentos versionados, aceite íntegro e preferências opcionais separadas;
 - PWA instalável com ícones próprios, atalho para a plataforma e tela offline sem cache de dados autenticados;
-- cliente, prestador, parceiro e administração;
+- cliente, prestador, parceiro, anunciante e administração;
 - seis categorias piloto persistentes, ordenáveis e ativáveis pela Operação com justificativa e auditoria;
 - solicitações, propostas, conversa, agendamento e histórico de estados;
 - cancelamento estruturado e avaliações;
@@ -20,6 +20,7 @@ Uma cliente escolhe “Eletricista”, descreve a troca de um chuveiro, informa 
 - metas operacionais versionadas, comparação com o período anterior e monitor de desvios com limites ajustáveis e justificativa;
 - gestão operacional do catálogo compartilhado por cliente, parceiro e captura pública, sem apagar histórico ao desativar uma categoria;
 - campanhas e cupons persistentes, com criação e pausa pela Operação, público por categoria/região, consentimento promocional opcional, monitoramento agregado de abuso, reserva transacional no pedido e desconto congelado no aceite;
+- publicidade contextual moderada, com envio pelo anunciante, decisão humana, identificação patrocinada, explicação da exibição e métricas agregadas sem perfil comportamental;
 - mensagens transacionais e notificações internas persistentes, contadores reais de não lidas e sincronização incremental automática;
 - Web Push opt-in por aparelho para avisos transacionais, com fila durável, revogação da assinatura pelo próprio usuário, assuntos configuráveis e horário silencioso por fuso brasileiro;
 - central persistente de atendimento parceiro–Operação, com contexto opcional da indicação, conversa append-only, anexos privados sintéticos, transições justificadas, atribuição entre operadores, prioridade e SLA versionado de primeira resposta e resolução; e-mail e escalonamento externo permanecem como integrações posteriores;

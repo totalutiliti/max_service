@@ -18,6 +18,6 @@ Status: **hipótese** precisa de validação; **aprovado para protótipo** orien
 | R12 | F03/F09 | indicação por QR/link | parceiro | média | atribuição antifraude | autoindicação | aprovado para protótipo | primeira atribuição auditável | 4 | origem e vigência registradas |
 | R13 | F01/F09 | painel parceiro | parceiro | média | afiliados/comissões | acesso cruzado | hipótese | visão somente dos atribuídos | 4 | RLS bloqueia não afiliados |
 | R14 | F01/F09 | administração | operação/admin | alta | RBAC/auditoria | abuso interno | hipótese | permissão, justificativa e confirmação | 4 | antes/depois registrados |
-| R15 | F01/F03 | anúncios segmentados | anunciante | baixa no MVP | política/consentimento | rastreamento indevido | P1 | sem publicidade comportamental no P0 | 4+ | segmentação aprovada e transparente |
+| R15 | F01/F03 | anúncios segmentados | anunciante | baixa no MVP | política/moderação | rastreamento indevido | aprovado para protótipo | somente contexto do pedido, decisão humana e sem perfil comportamental | 4+ | peça aprovada, identificada e com motivo de exibição |
 | R16 | F03 | apps Android/iOS | todos | média | API/PWA | custo/dispersão | P1/P2 | PWA antes de lojas | 6+ | jornada web validada no piloto |
 | R17 | F01/F03/F09 | biometria, antecedentes e crédito | prestador | crítica | gates jurídicos | dano, discriminação, regulação | fora do MVP | interfaces desativadas | futuro | feature flag inacessível em produção |

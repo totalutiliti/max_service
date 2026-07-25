@@ -11,6 +11,7 @@ const actors = {
   customer: "00000000-0000-4000-8000-000000000101",
   provider: "00000000-0000-4000-8000-000000000201",
   partner: "00000000-0000-4000-8000-000000000301",
+  advertiser: "00000000-0000-4000-8000-000000000501",
   operation: "00000000-0000-4000-8000-000000000401",
 };
 
@@ -48,7 +49,11 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
         '0047_private_storage_reconciliation.sql',
         '0048_partner_support_disputes.sql',
         '0049_partner_referral_risk_assessments.sql',
-        '0050_campaign_targeting_monitoring.sql'
+        '0050_campaign_targeting_monitoring.sql',
+        '0051_contextual_advertising.sql',
+        '0052_advertiser_idempotency.sql',
+        '0053_advertiser_delivery_visibility.sql',
+        '0054_contextual_ad_click.sql'
       )
       ORDER BY name
     `);
@@ -62,6 +67,10 @@ test("migrations de agenda e prontidão estão aplicadas com constraints de excl
       "0048_partner_support_disputes.sql",
       "0049_partner_referral_risk_assessments.sql",
       "0050_campaign_targeting_monitoring.sql",
+      "0051_contextual_advertising.sql",
+      "0052_advertiser_idempotency.sql",
+      "0053_advertiser_delivery_visibility.sql",
+      "0054_contextual_ad_click.sql",
     ]);
     const constraints = await pool.query(`
       SELECT conrelid::regclass::text AS table_name
@@ -177,6 +186,141 @@ test("RLS protege tentativas de cupom e expõe somente o estado agregado ao clie
       if (targeting.rows[0].eligibilitySnapshot) {
         assert.equal(typeof targeting.rows[0].eligibilitySnapshot, "object");
       }
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("RLS separa anunciante, moderação e entrega contextual sem identidade bruta", async () => {
+  const pool = new Pool({ connectionString: databaseUrl, max: 1 });
+  try {
+    await withRollback(pool, async (client) => {
+      const campaignId = randomUUID();
+      const publicCode = `ADS-${randomUUID().slice(0, 6).toUpperCase()}`;
+      await setActor(client, "advertiser", actors.advertiser);
+      await client.query(`
+        INSERT INTO contextual_ad_campaigns (
+          id,
+          public_code,
+          advertiser_id,
+          name,
+          headline,
+          body,
+          cta_label,
+          destination_url,
+          target_category_id,
+          target_region_id,
+          starts_at,
+          ends_at,
+          impression_limit,
+          status
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          'Campanha integrada',
+          'Materiais para um reparo seguro',
+          'Conteúdo sintético submetido para validar isolamento e moderação.',
+          'Conhecer oferta',
+          'https://example.com/oferta-integrada',
+          '10000000-0000-4000-8000-000000000001',
+          'b2000000-0000-4000-8000-000000000001',
+          now() - interval '1 minute',
+          now() + interval '1 day',
+          100,
+          'pending_review'
+        )
+      `, [campaignId, publicCode, actors.advertiser]);
+      await client.query(`
+        INSERT INTO contextual_ad_moderation_events (
+          id,
+          campaign_id,
+          actor_id,
+          actor_role,
+          event_type,
+          to_status,
+          note
+        )
+        VALUES ($1, $2, $3, 'advertiser', 'submitted', 'pending_review', $4)
+      `, [
+        randomUUID(),
+        campaignId,
+        actors.advertiser,
+        "Peça sintética enviada para revisão no teste de RLS.",
+      ]);
+      const ownCampaign = await client.query(
+        "SELECT status FROM contextual_ad_campaigns WHERE id = $1",
+        [campaignId],
+      );
+      assert.equal(ownCampaign.rows[0].status, "pending_review");
+
+      await setActor(client, "customer", actors.customer);
+      const hiddenPending = await client.query(
+        "SELECT count(*)::int AS count FROM contextual_ad_campaigns WHERE id = $1",
+        [campaignId],
+      );
+      assert.equal(hiddenPending.rows[0].count, 0);
+
+      await setActor(client, "operation", actors.operation);
+      await client.query(`
+        UPDATE contextual_ad_campaigns
+        SET status = 'approved', reviewed_by = $2, reviewed_at = now()
+        WHERE id = $1
+      `, [campaignId, actors.operation]);
+
+      await setActor(client, "customer", actors.customer);
+      const visibleApproved = await client.query(
+        "SELECT status FROM contextual_ad_campaigns WHERE id = $1",
+        [campaignId],
+      );
+      assert.equal(visibleApproved.rows[0].status, "approved");
+      const deliveryId = randomUUID();
+      await client.query(`
+        INSERT INTO contextual_ad_deliveries (
+          id,
+          campaign_id,
+          delivery_token_hash,
+          context_category_id,
+          context_region_id
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          '10000000-0000-4000-8000-000000000001',
+          'b2000000-0000-4000-8000-000000000001'
+        )
+      `, [deliveryId, campaignId, "c".repeat(64)]);
+      const usage = await client.query(
+        'SELECT impression_count AS "impressionCount" FROM contextual_ad_usage($1)',
+        [campaignId],
+      );
+      assert.equal(usage.rows[0].impressionCount, 1);
+
+      await setActor(client, "provider", actors.provider);
+      const hiddenFromProvider = await client.query(
+        "SELECT count(*)::int AS count FROM contextual_ad_campaigns WHERE id = $1",
+        [campaignId],
+      );
+      assert.equal(hiddenFromProvider.rows[0].count, 0);
+      await client.query("SAVEPOINT forbidden_ad_metrics");
+      try {
+        await client.query("SELECT * FROM contextual_ad_usage($1)", [campaignId]);
+        assert.fail("As métricas publicitárias deveriam estar restritas.");
+      } catch (error) {
+        assert.equal(error.code, "42501");
+      }
+      await client.query("ROLLBACK TO SAVEPOINT forbidden_ad_metrics");
+
+      await setActor(client, "advertiser", actors.advertiser);
+      const advertiserDelivery = await client.query(
+        "SELECT clicked_at FROM contextual_ad_deliveries WHERE id = $1",
+        [deliveryId],
+      );
+      assert.equal(advertiserDelivery.rowCount, 1);
+      assert.equal(advertiserDelivery.rows[0].clicked_at, null);
     });
   } finally {
     await pool.end();

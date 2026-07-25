@@ -34,6 +34,7 @@ const allocationTypeByRole: Record<ActorRole, string> = {
   customer: "customer_cashback",
   provider: "provider_receivable",
   partner: "partner_commission",
+  advertiser: "advertiser_spend",
   operation: "platform_fee",
 };
 

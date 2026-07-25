@@ -6,9 +6,9 @@ As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace
 
 ## Cobertura atual
 
-- tela de acesso e radiogroup dos quatro perfis;
+- tela de acesso e radiogroup dos cinco perfis;
 - operação por teclado com setas, `Home` e `End`;
-- dezesseis combinações de perfil e área: início, atividade, mensagens e conta;
+- vinte combinações de perfil e área: início, atividade, mensagens e conta;
 - painel de reconciliação do cofre privado na Operação;
 - `skip link` com transferência efetiva de foco;
 - logout e revogação preservada após recarregar;
@@ -49,6 +49,11 @@ As suítes em `tests/e2e/` transformam os requisitos de navegação, marketplace
   - leitura do monitor de abuso agregado e da ressalva contra decisão automática;
   - criação auditável de campanha por categoria, região e consentimento;
   - confirmação do público e da saúde da campanha na listagem.
+- jornada de publicidade contextual:
+  - envio de peça, destino HTTPS, contexto e justificativa pelo anunciante;
+  - aprovação humana e auditável pela Operação;
+  - criação de pedido em contexto compatível pelo cliente;
+  - exibição identificada como patrocinada e explicação de que nenhum histórico pessoal foi usado.
 
 A busca de oportunidades por código, serviço, categoria ou região mantém a jornada operável mesmo quando o histórico do profissional cresce. Os cenários transacionais geram títulos exclusivos a cada execução e não dependem de registros preexistentes.
 
@@ -89,6 +94,12 @@ Para executar somente a jornada de campanhas:
 
 ```bash
 npm run test:e2e -- tests/e2e/campaign-operations.spec.ts
+```
+
+Para executar somente a jornada de publicidade contextual:
+
+```bash
+npm run test:e2e -- tests/e2e/contextual-advertising.spec.ts
 ```
 
 ## Diagnóstico e limite

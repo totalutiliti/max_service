@@ -1,4 +1,6 @@
 import { MiddlewareConsumer, Module, type NestModule } from "@nestjs/common";
+import { AdvertisingController } from "./advertising/advertising.controller.js";
+import { AdvertisingService } from "./advertising/advertising.service.js";
 import { DemoSessionController } from "./auth/demo-session.controller.js";
 import { DemoSessionService } from "./auth/demo-session.service.js";
 import { InternalAuthMiddleware } from "./auth/internal-auth.middleware.js";
@@ -37,8 +39,8 @@ import { OperationVerificationsController, ProviderVerificationController } from
 import { VerificationsService } from "./verifications/verifications.service.js";
 
 @Module({
-  controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
-  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService, IdempotencyService],
+  controllers: [ObservabilityController, DemoSessionController, OnboardingController, MarketplaceController, CampaignsController, AdvertisingController, MessagingController, BookingsController, OperationsController, NotificationsController, PartnersController, PublicReferralsController, PartnerSupportController, OperationSupportController, ProviderVerificationController, OperationVerificationsController, FinanceController],
+  providers: [DatabaseService, DemoSessionService, OnboardingService, InternalAuthMiddleware, RequestTelemetryMiddleware, RequestTelemetryService, HttpSecurityMiddleware, RateLimitMiddleware, RateLimitService, PrivateObjectStorageService, SystemHealthService, MarketplaceService, CampaignsService, AdvertisingService, MessagingService, BookingsService, OperationsService, NotificationsService, PushDeliveryService, PartnersService, PartnerSupportService, VerificationsService, FinanceService, IdempotencyService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

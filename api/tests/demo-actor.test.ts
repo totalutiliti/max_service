@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { demoActorIds, parseDemoActor } from "../auth/demo-actor.js";
 import {
+  contextualAdMatches,
+  contextualAdNextStatus,
+  contextualAdSpecificity,
+} from "../advertising/advertising-rules.js";
+import {
   calculateCampaignDiscount,
   campaignAbuseLevel,
   campaignEligibilityResult,
@@ -35,6 +40,32 @@ test("aceita somente a identidade correspondente ao perfil demonstrativo", () =>
     role: "customer",
   });
   assert.throws(() => parseDemoActor("provider", demoActorIds.customer, true), /Identidade/);
+  assert.deepEqual(parseDemoActor("advertiser", demoActorIds.advertiser, true), {
+    id: demoActorIds.advertiser,
+    role: "advertiser",
+  });
+});
+
+test("seleciona anúncios somente pelo contexto atual e mede a especificidade", () => {
+  const input = {
+    targetCategoryId: "category-a",
+    targetRegionId: "region-a",
+    contextCategoryId: "category-a",
+    contextRegionId: "region-a",
+  };
+  assert.equal(contextualAdMatches(input), true);
+  assert.equal(contextualAdMatches({ ...input, contextRegionId: "region-b" }), false);
+  assert.equal(contextualAdSpecificity(input), 2);
+  assert.equal(contextualAdSpecificity({ targetCategoryId: null, targetRegionId: "region-a" }), 1);
+});
+
+test("limita a moderação publicitária a transições explícitas", () => {
+  assert.equal(contextualAdNextStatus("pending_review", "approve"), "approved");
+  assert.equal(contextualAdNextStatus("pending_review", "reject"), "rejected");
+  assert.equal(contextualAdNextStatus("approved", "pause"), "paused");
+  assert.equal(contextualAdNextStatus("paused", "activate"), "approved");
+  assert.equal(contextualAdNextStatus("rejected", "activate"), null);
+  assert.equal(contextualAdNextStatus("approved", "approve"), null);
 });
 
 test("bloqueia cabeçalhos demonstrativos fora do modo de demonstração", () => {

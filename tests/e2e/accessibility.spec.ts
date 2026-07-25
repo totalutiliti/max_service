@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-const profiles = ["cliente", "prestador", "parceiro", "operacao"] as const;
+const profiles = ["cliente", "prestador", "parceiro", "anunciante", "operacao"] as const;
 const sections = ["inicio", "atividade", "mensagens", "conta"] as const;
 
 type Profile = (typeof profiles)[number];

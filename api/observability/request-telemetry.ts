@@ -3,6 +3,7 @@ export type TelemetryActorRole =
   | "customer"
   | "provider"
   | "partner"
+  | "advertiser"
   | "operation";
 
 export interface RequestTelemetrySample {
@@ -31,6 +32,8 @@ const safeStaticSegments = new Set([
   "activity",
   "api",
   "attachments",
+  "advertiser",
+  "advertising",
   "auth",
   "blocks",
   "bookings",

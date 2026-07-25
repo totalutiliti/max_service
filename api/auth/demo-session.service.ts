@@ -9,6 +9,7 @@ const demoProfiles: Record<ActorRole, { actorId: string; name: string; email: st
   customer: { actorId: demoActorIds.customer, name: "Marina Alves", email: "marina@demo.maxservice" },
   provider: { actorId: demoActorIds.provider, name: "Rafael Santos", email: "rafael@demo.maxservice" },
   partner: { actorId: demoActorIds.partner, name: "João Martins", email: "joao@demo.maxservice" },
+  advertiser: { actorId: demoActorIds.advertiser, name: "Casa Forte Materiais", email: "midia@demo.maxservice" },
   operation: { actorId: demoActorIds.operation, name: "Equipe Max", email: "operacao@demo.maxservice" },
 };
 

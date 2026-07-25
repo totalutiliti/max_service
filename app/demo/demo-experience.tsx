@@ -12,12 +12,12 @@ function pendingIdempotencyKey(keys: Map<string, string>, fingerprint: string) {
   return key;
 }
 
-type Role = "cliente" | "prestador" | "parceiro" | "operacao";
+type Role = "cliente" | "prestador" | "parceiro" | "anunciante" | "operacao";
 type Section = "inicio" | "atividade" | "mensagens" | "conta";
 type RequestStep = 1 | 2 | 3 | 4;
 
 interface DemoSession {
-  role: "customer" | "provider" | "partner" | "operation";
+  role: "customer" | "provider" | "partner" | "advertiser" | "operation";
   name: string;
   email: string;
   expiresAt: string;
@@ -996,6 +996,87 @@ interface CampaignData {
   campaigns: MarketingCampaign[];
 }
 
+type ContextualAdStatus = "pending_review" | "approved" | "rejected" | "paused" | "ended";
+type ContextualAdAction = "approve" | "reject" | "pause" | "activate";
+
+interface ContextualAdCampaign {
+  id: string;
+  publicCode: string;
+  advertiserId: string;
+  advertiserName: string;
+  name: string;
+  headline: string;
+  body: string;
+  ctaLabel: string;
+  destinationUrl: string;
+  targetCategoryId: string | null;
+  targetCategoryName: string | null;
+  targetRegionId: string | null;
+  targetRegionName: string | null;
+  startsAt: string;
+  endsAt: string;
+  impressionLimit: number;
+  status: ContextualAdStatus;
+  policyVersion: string;
+  impressionCount: number;
+  clickCount: number;
+  clickThroughRate: number;
+  targetingLabel: string;
+  latestEventNote: string | null;
+  latestEventAt: string | null;
+  latestActorName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ContextualAdMetrics {
+  totalCount: number;
+  pendingCount: number;
+  liveCount: number;
+  impressionCount: number;
+  clickCount: number;
+  clickThroughRate: number;
+}
+
+interface AdvertiserCampaignData {
+  profile: {
+    brandName: string;
+    websiteUrl: string;
+    status: "active" | "suspended";
+  };
+  metrics: ContextualAdMetrics;
+  campaigns: ContextualAdCampaign[];
+}
+
+interface OperationAdvertisingData {
+  policy: {
+    version: string;
+    selectionBasis: string;
+    behavioralProfiling: boolean;
+    rawViewerIdentityStored: boolean;
+    deliveryRetentionDays: number;
+  };
+  metrics: ContextualAdMetrics;
+  campaigns: ContextualAdCampaign[];
+  catalog: {
+    categories: Array<{ id: string; name: string; icon: string }>;
+    regions: Array<{ id: string; name: string; city: string; state: string }>;
+  };
+}
+
+interface ContextualAdDelivery {
+  id: string;
+  publicCode: string;
+  advertiserName: string;
+  headline: string;
+  body: string;
+  ctaLabel: string;
+  deliveryToken: string;
+  disclosure: string;
+  whyShown: string;
+  policyVersion: string;
+}
+
 interface PartnerDashboardData {
   link: { id: string; referralCode: string; slug: string; status: "active" | "paused"; createdAt: string };
   metrics: { totalCount: number; activeCount: number; pendingCount: number; activationRate: number };
@@ -1135,6 +1216,13 @@ const roleDetails: Record<Role, { label: string; short: string; name: string; em
     email: "joao@demo.maxservice",
     description: "Indicar profissionais e acompanhar a rede e as comissões.",
   },
+  anunciante: {
+    label: "Anunciante",
+    short: "AN",
+    name: "Casa Forte Materiais",
+    email: "midia@demo.maxservice",
+    description: "Criar campanhas contextuais e acompanhar revisão e resultados.",
+  },
   operacao: {
     label: "Administração",
     short: "AD",
@@ -1148,6 +1236,7 @@ const sectionLabels: Record<Role, Record<Section, string>> = {
   cliente: { inicio: "Início", atividade: "Meus pedidos", mensagens: "Mensagens", conta: "Conta e plano" },
   prestador: { inicio: "Visão geral", atividade: "Oportunidades", mensagens: "Mensagens", conta: "Conta e plano" },
   parceiro: { inicio: "Visão geral", atividade: "Minha rede", mensagens: "Mensagens", conta: "Conta e repasses" },
+  anunciante: { inicio: "Visão geral", atividade: "Campanhas", mensagens: "Revisões", conta: "Conta e plano" },
   operacao: { inicio: "Visão geral", atividade: "Fila operacional", mensagens: "Atendimentos", conta: "Configurações" },
 };
 
@@ -1253,6 +1342,7 @@ export function DemoExperience() {
       {section === "inicio" && role === "cliente" && <CustomerView notify={setToast} />}
       {section === "inicio" && role === "prestador" && <ProviderView notify={setToast} />}
       {section === "inicio" && role === "parceiro" && <PartnerView notify={setToast} />}
+      {section === "inicio" && role === "anunciante" && <AdvertiserView notify={setToast} />}
       {section === "inicio" && role === "operacao" && <OperationsView notify={setToast} />}
       {section === "atividade" && <ActivityView role={role} notify={setToast} />}
       {section === "mensagens" && <MessagesView role={role} notify={setToast} />}
@@ -1267,6 +1357,7 @@ function uiRole(role: DemoSession["role"]): Role {
   if (role === "customer") return "cliente";
   if (role === "provider") return "prestador";
   if (role === "partner") return "parceiro";
+  if (role === "advertiser") return "anunciante";
   return "operacao";
 }
 
@@ -1949,11 +2040,79 @@ function RequestDialog({
         {step < 4 && <><p className="dialog-kicker">NOVO PEDIDO · ETAPA {step} DE 3</p><div className="dialog-progress"><span style={{ width: `${step * 33.33}%` }} /></div></>}
         {step === 1 && <div className="dialog-content"><h2 id="request-title">Qual serviço você precisa?</h2><p>Escolha a opção que mais combina com a sua necessidade.</p><div className="dialog-categories">{categories.map((category) => <button key={category.id} onClick={() => { setCategorySlug(category.slug); setCouponOffer(null); }} className={categorySlug === category.slug ? "selected" : ""} aria-pressed={categorySlug === category.slug}><span>{category.icon}</span>{category.name}<i aria-hidden="true">✓</i></button>)}</div></div>}
         {step === 2 && <div className="dialog-content"><h2 id="request-title">Conte um pouco mais.</h2><p>Uma descrição clara ajuda o profissional a enviar uma proposta melhor.</p><label className="field"><span>O que precisa ser feito?</span><textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 500))} placeholder="Ex.: Preciso trocar um chuveiro que parou de aquecer..." rows={5} /><small>{description.length}/500 caracteres</small></label><label className="upload-placeholder"><input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" multiple onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} /><span>＋</span><strong>Adicionar fotos sintéticas</strong><small>Opcional · até 3 JPEG/PNG de 512 KB</small></label>{photos.length > 0 && <ul className="request-photo-selection">{photos.map((photo) => <li key={`${photo.name}-${photo.size}`}><span>{photo.type === "image/png" ? "PNG" : "JPG"}</span><div><strong>{photo.name}</strong><small>{Math.ceil(photo.size / 1024)} KB · privado</small></div><button type="button" onClick={() => setPhotos((current) => current.filter((item) => item !== photo))} aria-label={`Remover ${photo.name}`}>×</button></li>)}</ul>}<p className="synthetic-file-note">Use apenas imagens sintéticas nesta demonstração. Os arquivos ficam privados e sem link público.</p></div>}
-        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Escolha uma área coberta. Você poderá ajustar os detalhes pelo chat.</p><div className="location-fields"><label className="field"><span>Região do piloto</span><select value={selectedRegion?.id ?? ""} onChange={(event) => { changeRegion(event.target.value); setCouponOffer(null); }}>{regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Bairro</span><select value={selectedNeighborhood?.id ?? ""} onChange={(event) => setNeighborhoodId(event.target.value)}>{selectedRegion?.neighborhoods.map((neighborhood) => <option key={neighborhood.id} value={neighborhood.id}>{neighborhood.name}</option>)}</select></label></div><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="coupon-box"><div><span>CUPOM PROMOCIONAL</span><small>Experimente BEMVINDO20</small></div><div className="coupon-input"><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase().slice(0, 32)); setCouponOffer(null); }} placeholder="DIGITE SEU CUPOM" aria-label="Cupom promocional" /><button type="button" onClick={validateCoupon} disabled={couponChecking || couponCode.trim().length < 3}>{couponChecking ? "Validando..." : "Aplicar"}</button></div>{couponOffer && <p className="coupon-success"><strong>{couponOffer.code} aplicado</strong>{couponOffer.description} · válido para propostas a partir de {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(couponOffer.minAmountCents / 100)}.<small>{couponOffer.eligibilityLabel} · {couponOffer.consentBasis}.</small></p>}</div><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
+        {step === 3 && <div className="dialog-content"><h2 id="request-title">Quando e onde?</h2><p>Escolha uma área coberta. Você poderá ajustar os detalhes pelo chat.</p><div className="location-fields"><label className="field"><span>Região do piloto</span><select value={selectedRegion?.id ?? ""} onChange={(event) => { changeRegion(event.target.value); setCouponOffer(null); }}>{regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label><label className="field"><span>Bairro</span><select value={selectedNeighborhood?.id ?? ""} onChange={(event) => setNeighborhoodId(event.target.value)}>{selectedRegion?.neighborhoods.map((neighborhood) => <option key={neighborhood.id} value={neighborhood.id}>{neighborhood.name}</option>)}</select></label></div><div className="choice-grid"><button className="selected"><strong>O quanto antes</strong><small>Primeiro horário disponível</small></button><button><strong>Escolher uma data</strong><small>Defina dia e período</small></button></div><div className="coupon-box"><div><span>CUPOM PROMOCIONAL</span><small>Experimente BEMVINDO20</small></div><div className="coupon-input"><input value={couponCode} onChange={(event) => { setCouponCode(event.target.value.toUpperCase().slice(0, 32)); setCouponOffer(null); }} placeholder="DIGITE SEU CUPOM" aria-label="Cupom promocional" /><button type="button" onClick={validateCoupon} disabled={couponChecking || couponCode.trim().length < 3}>{couponChecking ? "Validando..." : "Aplicar"}</button></div>{couponOffer && <p className="coupon-success"><strong>{couponOffer.code} aplicado</strong>{couponOffer.description} · válido para propostas a partir de {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(couponOffer.minAmountCents / 100)}.<small>{couponOffer.eligibilityLabel} · {couponOffer.consentBasis}.</small></p>}</div><ContextualAdCard key={`${selectedCategory?.id}-${selectedRegion?.id}`} categoryId={selectedCategory?.id} regionId={selectedRegion?.id} notify={notify} /><div className="privacy-tip"><span>⌖</span><p><strong>Seu endereço completo fica protegido.</strong> Mostramos apenas a região até você escolher um profissional.</p></div></div>}
         {step === 4 && <div className="dialog-success"><span className="success-check">✓</span><p className="dialog-kicker">PEDIDO PRONTO</p><h2 id="request-title">Agora é com a gente.</h2><p>Confirme para salvar o pedido. Somente profissionais com cobertura ativa poderão enviar propostas.</p><div className="success-summary"><span>{selectedCategory?.icon}</span><div><small>Categoria</small><strong>{selectedCategory?.name}</strong><small>{selectedNeighborhood?.name} · {selectedRegion?.name} · o quanto antes{photos.length ? ` · ${photos.length} foto(s)` : ""}{couponOffer ? ` · cupom ${couponOffer.code}` : ""}</small></div></div><button className="button" onClick={finish} disabled={saving || !selectedCategory || !selectedRegion || !selectedNeighborhood}>{saving ? "Salvando pedido e imagens..." : "Confirmar e acompanhar"}</button></div>}
         {step < 4 && <footer className="dialog-footer"><button className="secondary-action" onClick={step === 1 ? onClose : back}>{step === 1 ? "Cancelar" : "Voltar"}</button><button className="primary-action" onClick={next} disabled={!selectedCategory || !selectedRegion || !selectedNeighborhood || (step === 2 && description.trim().length < 10)}>Continuar →</button></footer>}
       </section>
     </div>
+  );
+}
+
+function ContextualAdCard({
+  categoryId,
+  regionId,
+  notify,
+}: {
+  categoryId?: string;
+  regionId?: string;
+  notify: (message: string) => void;
+}) {
+  const [ad, setAd] = useState<ContextualAdDelivery | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [opening, setOpening] = useState(false);
+
+  useEffect(() => {
+    if (!categoryId || !regionId) return;
+    const controller = new AbortController();
+    fetch(`/api/v1/advertising/contextual?categoryId=${encodeURIComponent(categoryId)}&regionId=${encodeURIComponent(regionId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json() as { ad?: ContextualAdDelivery | null; error?: string; message?: string };
+        if (!response.ok) throw new Error(payload.error ?? payload.message ?? "Anúncio contextual indisponível.");
+        return payload.ad ?? null;
+      })
+      .then(setAd)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setAd(null);
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [categoryId, regionId]);
+
+  const open = async () => {
+    if (!ad) return;
+    setOpening(true);
+    try {
+      const response = await fetch("/api/v1/advertising/clicks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deliveryToken: ad.deliveryToken }),
+      });
+      const payload = await response.json() as { destinationUrl?: string; error?: string; message?: string };
+      if (!response.ok || !payload.destinationUrl) {
+        throw new Error(payload.error ?? payload.message ?? "Destino indisponível.");
+      }
+      window.open(payload.destinationUrl, "_blank", "noopener,noreferrer");
+      notify("Clique agregado às métricas da campanha, sem criar perfil pessoal.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível abrir a oferta.");
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  if (loading) return <div className="contextual-ad loading" aria-live="polite">Verificando conteúdo patrocinado compatível…</div>;
+  if (!ad) return null;
+  return (
+    <aside className="contextual-ad" data-testid="contextual-ad" aria-label={`Conteúdo patrocinado por ${ad.advertiserName}`}>
+      <header><span>{ad.disclosure}</span><small>{ad.advertiserName}</small></header>
+      <div><strong>{ad.headline}</strong><p>{ad.body}</p></div>
+      <button type="button" onClick={open} disabled={opening}>{opening ? "Abrindo…" : `${ad.ctaLabel} →`}</button>
+      <details><summary>Por que estou vendo isto?</summary><p>{ad.whyShown}</p><small>Política {ad.policyVersion}</small></details>
+    </aside>
   );
 }
 
@@ -2575,6 +2734,187 @@ function OperationReportGoalsDialog({
   );
 }
 
+const contextualAdStatusLabel: Record<ContextualAdStatus, string> = {
+  pending_review: "Aguardando revisão",
+  approved: "No ar",
+  rejected: "Reprovada",
+  paused: "Pausada",
+  ended: "Encerrada",
+};
+
+function AdvertiserView({ notify }: { notify: (message: string) => void }) {
+  const { categories } = useServiceCategories(notify);
+  const { regions } = useServiceRegions(notify);
+  const [data, setData] = useState<AdvertiserCampaignData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/advertiser/campaigns", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as AdvertiserCampaignData & { error?: string; message?: string };
+        if (!response.ok || !payload.profile || !payload.campaigns) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar as campanhas.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar as campanhas.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const metrics = data?.metrics;
+  return (
+    <>
+      <DashboardHeader role="anunciante" eyebrow="MÍDIA CONTEXTUAL" title="Sua marca no momento certo, com transparência.">
+        <button className="button button-small" data-testid="new-contextual-ad" onClick={() => setCreateOpen(true)} disabled={!data || data.profile.status !== "active"}>Nova campanha +</button>
+      </DashboardHeader>
+      <section className="advertiser-metrics">
+        <article><small>NO AR</small><strong>{loading ? "…" : metrics?.liveCount ?? 0}</strong><span>Peças aprovadas e vigentes</span></article>
+        <article><small>EM REVISÃO</small><strong>{loading ? "…" : metrics?.pendingCount ?? 0}</strong><span>Decisão sempre humana</span></article>
+        <article><small>IMPRESSÕES</small><strong>{loading ? "…" : metrics?.impressionCount ?? 0}</strong><span>Exibições agregadas</span></article>
+        <article><small>CLIQUES</small><strong>{loading ? "…" : metrics?.clickCount ?? 0}</strong><span>CTR {metrics?.clickThroughRate ?? 0}%</span></article>
+      </section>
+      <section className="dashboard-section contextual-ad-policy">
+        <span>i</span>
+        <div><small>POLÍTICA CONTEXTUAL</small><h2>Categoria e região do pedido atual. Só isso.</h2><p>A Max Service não usa histórico de navegação, perfil comportamental ou identidade bruta do cliente para selecionar e medir anúncios.</p></div>
+        <strong>CONTEXTUAL-ADS-2026-01</strong>
+      </section>
+      <section className="dashboard-section advertiser-campaigns" data-testid="advertiser-campaigns">
+        <div className="dashboard-section-title"><div><small>PORTFÓLIO MODERADO</small><h2>Campanhas publicitárias</h2></div><button onClick={() => { setLoading(true); setRefresh((value) => value + 1); }}>Atualizar ↻</button></div>
+        {loading && <div className="data-state">Carregando campanhas…</div>}
+        {!loading && data?.campaigns.length === 0 && <div className="data-state"><strong>Nenhuma campanha criada.</strong><span>Envie a primeira peça para revisão da operação.</span></div>}
+        <div className="advertiser-campaign-grid">
+          {data?.campaigns.map((campaign) => (
+            <article key={campaign.id} data-testid="advertiser-campaign-record">
+              <header><div><small>{campaign.publicCode}</small><h3>{campaign.name}</h3></div><span className={`status-pill ad-${campaign.status}`}>{contextualAdStatusLabel[campaign.status]}</span></header>
+              <div className="ad-creative-preview"><span>Patrocinado · {campaign.advertiserName}</span><strong>{campaign.headline}</strong><p>{campaign.body}</p><b>{campaign.ctaLabel} →</b></div>
+              <dl><div><dt>Público contextual</dt><dd>{campaign.targetingLabel}</dd></div><div><dt>Resultados</dt><dd>{campaign.impressionCount} impressões · {campaign.clickCount} cliques · {campaign.clickThroughRate}% CTR</dd></div><div><dt>Vigência</dt><dd>{contextualAdFormatted(campaign.startsAt)} até {contextualAdFormatted(campaign.endsAt)}</dd></div></dl>
+              {campaign.latestEventNote && <footer><small>ÚLTIMA REVISÃO</small><p>{campaign.latestEventNote}</p><span>{campaign.latestActorName} · {campaign.latestEventAt ? contextualAdFormatted(campaign.latestEventAt) : ""}</span></footer>}
+            </article>
+          ))}
+        </div>
+      </section>
+      {createOpen && <ContextualAdCreateDialog categories={categories} regions={regions} onClose={() => setCreateOpen(false)} onCreated={() => { setCreateOpen(false); setLoading(true); setRefresh((value) => value + 1); }} notify={notify} />}
+    </>
+  );
+}
+
+function AdvertiserReviewView({ notify }: { notify: (message: string) => void }) {
+  return <AdvertiserView notify={notify} />;
+}
+
+function ContextualAdCreateDialog({
+  categories,
+  regions,
+  onClose,
+  onCreated,
+  notify,
+}: {
+  categories: ServiceCategory[];
+  regions: ServiceRegion[];
+  onClose: () => void;
+  onCreated: () => void;
+  notify: (message: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [headline, setHeadline] = useState("");
+  const [body, setBody] = useState("");
+  const [ctaLabel, setCtaLabel] = useState("Conhecer oferta");
+  const [destinationUrl, setDestinationUrl] = useState("https://example.com/oferta");
+  const [targetCategoryId, setTargetCategoryId] = useState("");
+  const [targetRegionId, setTargetRegionId] = useState("");
+  const [startsAt, setStartsAt] = useState(() => contextualAdDateTime(0));
+  const [endsAt, setEndsAt] = useState(() => contextualAdDateTime(30));
+  const [impressionLimit, setImpressionLimit] = useState("10000");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const pendingKey = useRef<{ fingerprint: string; key: string } | null>(null);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const requestPayload = {
+      name: name.trim(),
+      headline: headline.trim(),
+      body: body.trim(),
+      ctaLabel: ctaLabel.trim(),
+      destinationUrl: destinationUrl.trim(),
+      targetCategoryId: targetCategoryId || undefined,
+      targetRegionId: targetRegionId || undefined,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+      impressionLimit: Number(impressionLimit),
+      note: note.trim(),
+    };
+    const fingerprint = JSON.stringify(requestPayload);
+    const idempotencyKey = pendingKey.current?.fingerprint === fingerprint
+      ? pendingKey.current.key
+      : crypto.randomUUID();
+    pendingKey.current = { fingerprint, key: idempotencyKey };
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/advertiser/campaigns", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
+        body: JSON.stringify(requestPayload),
+      });
+      const payload = await response.json() as { campaign?: { publicCode: string }; error?: string; message?: string };
+      if (!response.ok || !payload.campaign) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível enviar a campanha.");
+      }
+      pendingKey.current = null;
+      notify(`${payload.campaign.publicCode} enviada para revisão humana.`);
+      onCreated();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível enviar a campanha.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog contextual-ad-dialog" data-testid="contextual-ad-create-dialog" role="dialog" aria-modal="true" aria-labelledby="contextual-ad-create-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Fechar">×</button>
+        <header><span>AD</span><div><p className="dialog-kicker">NOVA PEÇA CONTEXTUAL</p><h2 id="contextual-ad-create-title">Envie uma campanha para revisão.</h2><p>O anúncio só poderá aparecer depois de uma decisão humana justificada.</p></div></header>
+        <form onSubmit={submit}>
+          <div className="campaign-form-grid">
+            <label className="field"><span>Nome interno</span><input minLength={3} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} required /></label>
+            <label className="field"><span>Chamada</span><input minLength={5} maxLength={90} value={headline} onChange={(event) => setHeadline(event.target.value)} required /></label>
+            <label className="field campaign-wide"><span>Texto da peça</span><textarea minLength={10} maxLength={240} value={body} onChange={(event) => setBody(event.target.value)} required /><small>{body.trim().length}/240</small></label>
+            <label className="field"><span>Texto do botão</span><input minLength={2} maxLength={32} value={ctaLabel} onChange={(event) => setCtaLabel(event.target.value)} required /></label>
+            <label className="field"><span>Destino HTTPS</span><input type="url" pattern="https://.*" value={destinationUrl} onChange={(event) => setDestinationUrl(event.target.value)} required /></label>
+            <label className="field"><span>Categoria</span><select value={targetCategoryId} onChange={(event) => setTargetCategoryId(event.target.value)}><option value="">Todas as categorias</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.icon} {category.name}</option>)}</select></label>
+            <label className="field"><span>Região</span><select value={targetRegionId} onChange={(event) => setTargetRegionId(event.target.value)}><option value="">Todas as regiões</option>{regions.map((region) => <option key={region.id} value={region.id}>{region.name} · {region.state}</option>)}</select></label>
+            <label className="field"><span>Início</span><input type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} required /></label>
+            <label className="field"><span>Fim</span><input type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} required /></label>
+            <label className="field"><span>Limite de impressões</span><input type="number" min="1" max="1000000" value={impressionLimit} onChange={(event) => setImpressionLimit(event.target.value)} required /></label>
+            <label className="field campaign-wide"><span>Contexto para moderação</span><textarea minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Explique a oferta, o público contextual e os cuidados da peça." required /><small>{note.trim().length}/1000</small></label>
+          </div>
+          <div className="ad-creative-preview dialog-preview"><span>Patrocinado · Casa Forte Materiais</span><strong>{headline || "Sua chamada aparecerá aqui"}</strong><p>{body || "A descrição ajuda a operação a revisar a peça como o cliente a verá."}</p><b>{ctaLabel || "Conhecer oferta"} →</b></div>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className="primary-action" disabled={saving || note.trim().length < 10}>{saving ? "Enviando…" : "Enviar para revisão →"}</button></footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function contextualAdDateTime(days: number) {
+  const date = new Date(Date.now() + days * 86_400_000);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+function contextualAdFormatted(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
 function OperationsView({ notify }: { notify: (message: string) => void }) {
   const [cases, setCases] = useState<SupportCase[]>([]);
   const [verifications, setVerifications] = useState<ProviderVerification[]>([]);
@@ -2947,6 +3287,7 @@ function OperationCaseDialog({ caseId, onClose, onChanged, notify }: { caseId: s
 function ActivityView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   if (role === "cliente" || role === "prestador") return <BookingActivityView role={role} notify={notify} />;
   if (role === "parceiro") return <PartnerActivityView notify={notify} />;
+  if (role === "anunciante") return <AdvertiserView notify={notify} />;
   return <OperationActivityView notify={notify} />;
 }
 
@@ -3678,6 +4019,7 @@ function ProposalComparisonDialog({ request, onClose, onChanged, notify }: { req
 
 function MessagesView({ role, notify }: { role: Role; notify: (message: string) => void }) {
   if (role === "parceiro" || role === "operacao") return <PartnerSupportCenter role={role} notify={notify} />;
+  if (role === "anunciante") return <AdvertiserReviewView notify={notify} />;
   return <PersistentMessages role={role} notify={notify} />;
 }
 
@@ -4900,6 +5242,129 @@ function CatalogActionDialog({
   );
 }
 
+function AdvertisingModerationPanel({ notify }: { notify: (message: string) => void }) {
+  const [data, setData] = useState<OperationAdvertisingData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [pending, setPending] = useState<{ campaign: ContextualAdCampaign; action: ContextualAdAction } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/v1/operation/advertising", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as OperationAdvertisingData & { error?: string; message?: string };
+        if (!response.ok || !payload.policy || !payload.campaigns) {
+          throw new Error(payload.error ?? payload.message ?? "Não foi possível carregar a moderação publicitária.");
+        }
+        return payload;
+      })
+      .then(setData)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify(error instanceof Error ? error.message : "Não foi possível carregar a moderação publicitária.");
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [notify, refresh]);
+
+  const reload = () => {
+    setLoading(true);
+    setRefresh((value) => value + 1);
+  };
+  return (
+    <section className="dashboard-section advertising-moderation" data-testid="advertising-moderation">
+      <div className="dashboard-section-title"><div><small>PUBLICIDADE RESPONSÁVEL</small><h2>Anúncios contextuais</h2><p>Revise cada peça e seu destino antes de qualquer exibição.</p></div><button onClick={reload}>Atualizar ↻</button></div>
+      <div className="advertising-policy-strip">
+        <article><small>EM REVISÃO</small><strong>{loading ? "…" : data?.metrics.pendingCount ?? 0}</strong><span>decisão humana obrigatória</span></article>
+        <article><small>NO AR</small><strong>{loading ? "…" : data?.metrics.liveCount ?? 0}</strong><span>{data?.metrics.impressionCount ?? 0} impressões agregadas</span></article>
+        <article><small>PERFILAMENTO</small><strong>Desativado</strong><span>somente contexto do pedido</span></article>
+        <article><small>IDENTIDADE BRUTA</small><strong>Não armazenada</strong><span>retenção de entrega: {data?.policy.deliveryRetentionDays ?? 30} dias</span></article>
+      </div>
+      <div className="advertising-policy-note"><span>✓</span><p><strong>{data?.policy.version ?? "CONTEXTUAL-ADS-2026-01"}</strong>{data?.policy.selectionBasis ?? "Somente categoria e região do pedido atual."}</p></div>
+      {loading && <div className="data-state">Carregando fila publicitária…</div>}
+      {!loading && data?.campaigns.length === 0 && <div className="data-state"><strong>Nenhuma peça na fila.</strong><span>Novas campanhas dos anunciantes aparecerão aqui.</span></div>}
+      <div className="advertising-review-grid">
+        {data?.campaigns.map((campaign) => (
+          <article key={campaign.id} data-testid="advertising-review-record">
+            <header><div><small>{campaign.publicCode} · {campaign.advertiserName}</small><h3>{campaign.name}</h3></div><span className={`status-pill ad-${campaign.status}`}>{contextualAdStatusLabel[campaign.status]}</span></header>
+            <div className="ad-creative-preview"><span>Patrocinado · {campaign.advertiserName}</span><strong>{campaign.headline}</strong><p>{campaign.body}</p><b>{campaign.ctaLabel} →</b></div>
+            <div className="advertising-review-facts"><span><small>CONTEXTO</small><strong>{campaign.targetingLabel}</strong></span><span><small>DESTINO</small><strong>{new URL(campaign.destinationUrl).hostname}</strong></span><span><small>MÉTRICAS</small><strong>{campaign.impressionCount} / {campaign.impressionLimit} · {campaign.clickThroughRate}% CTR</strong></span></div>
+            {campaign.latestEventNote && <blockquote>{campaign.latestEventNote}<small>{campaign.latestActorName} · {campaign.latestEventAt ? contextualAdFormatted(campaign.latestEventAt) : ""}</small></blockquote>}
+            <footer>
+              {campaign.status === "pending_review" && <><button className="danger-action" onClick={() => setPending({ campaign, action: "reject" })}>Reprovar</button><button className="primary-action" onClick={() => setPending({ campaign, action: "approve" })}>Aprovar peça</button></>}
+              {campaign.status === "approved" && <button className="danger-action" onClick={() => setPending({ campaign, action: "pause" })}>Pausar exibição</button>}
+              {campaign.status === "paused" && <button className="secondary-action" onClick={() => setPending({ campaign, action: "activate" })}>Reativar campanha</button>}
+            </footer>
+          </article>
+        ))}
+      </div>
+      {pending && <ContextualAdModerationDialog pending={pending} onClose={() => setPending(null)} onSaved={() => { setPending(null); reload(); }} notify={notify} />}
+    </section>
+  );
+}
+
+function ContextualAdModerationDialog({
+  pending,
+  onClose,
+  onSaved,
+  notify,
+}: {
+  pending: { campaign: ContextualAdCampaign; action: ContextualAdAction };
+  onClose: () => void;
+  onSaved: () => void;
+  notify: (message: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const pendingKeys = useRef(new Map<string, string>());
+  const actionLabel: Record<ContextualAdAction, string> = {
+    approve: "Aprovar",
+    reject: "Reprovar",
+    pause: "Pausar",
+    activate: "Reativar",
+  };
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const requestPayload = { action: pending.action, note: note.trim() };
+    const fingerprint = JSON.stringify(requestPayload);
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/operation/advertising", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": pendingIdempotencyKey(pendingKeys.current, fingerprint),
+        },
+        body: JSON.stringify({ campaignId: pending.campaign.id, ...requestPayload }),
+      });
+      const payload = await response.json() as { campaign?: { publicCode: string; status: ContextualAdStatus }; error?: string; message?: string };
+      if (!response.ok || !payload.campaign) {
+        throw new Error(payload.error ?? payload.message ?? "Não foi possível registrar a decisão.");
+      }
+      pendingKeys.current.delete(fingerprint);
+      notify(`${payload.campaign.publicCode}: decisão publicitária registrada e auditada.`);
+      onSaved();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Não foi possível registrar a decisão.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="request-dialog contextual-ad-moderation-dialog" data-testid="contextual-ad-moderation-dialog" role="dialog" aria-modal="true" aria-labelledby="contextual-ad-moderation-title">
+        <button className="dialog-close" onClick={onClose} aria-label="Fechar">×</button>
+        <header><span>AD</span><div><p className="dialog-kicker">DECISÃO PUBLICITÁRIA</p><h2 id="contextual-ad-moderation-title">{actionLabel[pending.action]} {pending.campaign.publicCode}</h2><p>{pending.campaign.advertiserName} · {pending.campaign.headline}</p></div></header>
+        <form onSubmit={submit}>
+          <div className="ad-creative-preview dialog-preview"><span>Patrocinado · {pending.campaign.advertiserName}</span><strong>{pending.campaign.headline}</strong><p>{pending.campaign.body}</p><b>{pending.campaign.ctaLabel} →</b></div>
+          <label className="field"><span>Justificativa da decisão</span><textarea minLength={10} maxLength={1000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Registre os critérios de conteúdo, destino, contexto e política." required /><small>{note.trim().length}/1000</small></label>
+          <footer className="dialog-footer"><button type="button" className="secondary-action" onClick={onClose}>Cancelar</button><button className={pending.action === "reject" || pending.action === "pause" ? "danger-action" : "primary-action"} disabled={saving || note.trim().length < 10}>{saving ? "Registrando…" : `${actionLabel[pending.action]} e auditar →`}</button></footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 function CampaignManagementPanel({ notify }: { notify: (message: string) => void }) {
   const [data, setData] = useState<CampaignData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -5827,7 +6292,8 @@ function AccountView({ role, notify }: { role: Role; notify: (message: string) =
         {isOperational && <RegionManagementPanel notify={notify} />}
         {isOperational && <CatalogManagementPanel notify={notify} />}
         {isOperational && <CampaignManagementPanel notify={notify} />}
-        <FinancialSandboxPanel key={role} role={role} notify={notify} />
+        {isOperational && <AdvertisingModerationPanel notify={notify} />}
+        {role !== "anunciante" && <FinancialSandboxPanel key={role} role={role} notify={notify} />}
       </div>
     </>
   );
@@ -5839,14 +6305,14 @@ const sandboxPaymentStatusLabel: Record<SandboxPaymentStatus, string> = {
   sandbox_refunded: "Estornado",
 };
 
-const financeRoleCopy: Record<Role, { title: string; recognized: string; pending: string; description: string }> = {
+const financeRoleCopy: Record<Exclude<Role, "anunciante">, { title: string; recognized: string; pending: string; description: string }> = {
   cliente: { title: "Cashback promocional", recognized: "Cashback reconhecido", pending: "Cashback previsto", description: "Benefício promocional vinculado ao serviço; não é saldo bancário, carteira ou valor sacável." },
   prestador: { title: "Recebíveis simulados", recognized: "Valor reconhecido", pending: "Valor previsto", description: "Estimativa líquida após a regra demonstrativa, sem antecipação ou movimentação de dinheiro." },
   parceiro: { title: "Comissões da rede", recognized: "Comissão reconhecida", pending: "Comissão prevista", description: "Somente serviços atribuídos à sua rede aparecem aqui; não existe conta de pagamento nesta demonstração." },
   operacao: { title: "Conciliação do sandbox", recognized: "Taxa reconhecida", pending: "Taxa prevista", description: "Eventos assinados atualizam um ledger imutável. Nenhum PSP ou pagamento real está conectado." },
 };
 
-function FinancialSandboxPanel({ role, notify }: { role: Role; notify: (message: string) => void }) {
+function FinancialSandboxPanel({ role, notify }: { role: Exclude<Role, "anunciante">; notify: (message: string) => void }) {
   const [data, setData] = useState<FinanceDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);

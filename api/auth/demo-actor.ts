@@ -3,6 +3,7 @@ export const demoActorIds = {
   provider: "00000000-0000-4000-8000-000000000201",
   partner: "00000000-0000-4000-8000-000000000301",
   operation: "00000000-0000-4000-8000-000000000401",
+  advertiser: "00000000-0000-4000-8000-000000000501",
 } as const;
 
 export type ActorRole = keyof typeof demoActorIds;

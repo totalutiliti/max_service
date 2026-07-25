@@ -2066,6 +2066,97 @@ img { max-width: 100%; }
   .referral-public-success { padding: 1.5rem; }
 }
 
+.contextual-ad {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 18px;
+  padding: 16px;
+  border: 1px solid #b7e66d;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f6ffe9 0%, #fff 72%);
+  box-shadow: inset 4px 0 0 #79d000;
+}
+.contextual-ad.loading { display: block; color: #64748b; font-size: .84rem; }
+.contextual-ad > header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.contextual-ad > header span { padding: 4px 8px; border-radius: 999px; background: #162014; color: #fff; font-size: .67rem; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; }
+.contextual-ad > header small, .contextual-ad details small { color: #64748b; }
+.contextual-ad > div { display: grid; gap: 5px; }
+.contextual-ad > div strong { color: #17211a; font-size: .98rem; }
+.contextual-ad > div p { margin: 0; color: #526052; font-size: .82rem; line-height: 1.45; }
+.contextual-ad > button { align-self: center; padding: 10px 14px; border: 0; border-radius: 10px; background: #4e9d00; color: #fff; font-weight: 800; cursor: pointer; }
+.contextual-ad details { grid-column: 1 / -1; color: #536154; font-size: .76rem; }
+.contextual-ad details summary { cursor: pointer; font-weight: 750; }
+.contextual-ad details p { margin: 7px 0 3px; line-height: 1.45; }
+
+.advertiser-metrics, .advertising-policy-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.advertiser-metrics article, .advertising-policy-strip article { display: grid; gap: 5px; padding: 18px; border: 1px solid #e4e9e1; border-radius: 16px; background: #fff; }
+.advertiser-metrics small, .advertising-policy-strip small, .advertiser-campaigns small, .advertising-moderation small { color: #6b776a; font-size: .68rem; font-weight: 850; letter-spacing: .09em; }
+.advertiser-metrics strong, .advertising-policy-strip strong { font-size: 1.4rem; color: #17211a; }
+.advertiser-metrics span, .advertising-policy-strip span { color: #69746a; font-size: .78rem; }
+
+.contextual-ad-policy { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; border-color: #b7e66d; background: #f8fff0; }
+.contextual-ad-policy > span, .advertising-policy-note > span { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #76cf00; color: #10200b; font-weight: 900; }
+.contextual-ad-policy h2 { margin: 3px 0; font-size: 1.15rem; }
+.contextual-ad-policy p { margin: 0; color: #5c685c; font-size: .85rem; line-height: 1.5; }
+.contextual-ad-policy > strong { color: #3f7f00; font-size: .75rem; }
+
+.advertiser-campaign-grid, .advertising-review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+.advertiser-campaign-grid > article, .advertising-review-grid > article { display: grid; gap: 14px; padding: 18px; border: 1px solid #e4e9e1; border-radius: 18px; background: #fff; }
+.advertiser-campaign-grid article > header, .advertising-review-grid article > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.advertiser-campaign-grid h3, .advertising-review-grid h3 { margin: 3px 0 0; font-size: 1rem; }
+
+.ad-creative-preview { display: grid; gap: 8px; padding: 15px; border-radius: 14px; background: linear-gradient(140deg, #17211a, #253523); color: #fff; }
+.ad-creative-preview > span { color: #a8d86b; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+.ad-creative-preview > strong { font-size: 1rem; }
+.ad-creative-preview > p { margin: 0; color: #dbe7d7; font-size: .8rem; line-height: 1.5; }
+.ad-creative-preview > b { color: #8ee21b; font-size: .78rem; }
+.ad-creative-preview.dialog-preview { margin: 16px 0; }
+
+.advertiser-campaign-grid dl { display: grid; gap: 9px; margin: 0; }
+.advertiser-campaign-grid dl div { display: grid; gap: 2px; }
+.advertiser-campaign-grid dt { color: #596559; font-size: .68rem; font-weight: 800; text-transform: uppercase; }
+.advertiser-campaign-grid dd { margin: 0; color: #273328; font-size: .82rem; }
+.advertiser-campaign-grid footer { padding-top: 12px; border-top: 1px solid #edf0eb; }
+.advertiser-campaign-grid footer p { margin: 4px 0; color: #39443a; font-size: .8rem; }
+.advertiser-campaign-grid footer span { color: #596359; font-size: .72rem; }
+
+.status-pill.ad-pending_review { background: #fff7d6; color: #876500; }
+.status-pill.ad-approved { background: #e8fbd5; color: #367600; }
+.status-pill.ad-rejected { background: #ffe5e7; color: #a51e2f; }
+.status-pill.ad-paused, .status-pill.ad-ended { background: #edf0ee; color: #5d6760; }
+
+.contextual-ad-dialog, .contextual-ad-moderation-dialog { width: min(820px, calc(100vw - 30px)); }
+.contextual-ad-dialog > header, .contextual-ad-moderation-dialog > header { display: flex; gap: 14px; align-items: center; }
+.contextual-ad-dialog > header > span, .contextual-ad-moderation-dialog > header > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: #1b271a; color: #8be01a; font-weight: 900; }
+
+.advertising-moderation > .dashboard-section-title p { margin: 4px 0 0; color: #6b756c; font-size: .82rem; }
+.advertising-policy-strip { margin-top: 18px; }
+.advertising-policy-strip article { background: #f9fbf8; }
+.advertising-policy-note { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 13px; border: 1px solid #cfeaa8; border-radius: 14px; background: #f8fff0; }
+.advertising-policy-note > span { width: 30px; height: 30px; }
+.advertising-policy-note p { display: grid; gap: 2px; margin: 0; color: #566257; font-size: .8rem; }
+.advertising-policy-note strong { color: #356d00; }
+.advertising-review-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.advertising-review-facts > span { display: grid; gap: 3px; padding: 9px; border-radius: 10px; background: #f5f7f4; }
+.advertising-review-facts strong { overflow-wrap: anywhere; font-size: .76rem; color: #2a352c; }
+.advertising-review-facts small, .advertising-review-grid blockquote small { color: #566156; }
+.advertising-review-grid blockquote { margin: 0; padding: 12px; border-left: 3px solid #91d736; background: #f8faf6; color: #465047; font-size: .8rem; }
+.advertising-review-grid blockquote small { display: block; margin-top: 5px; }
+.advertising-review-grid article > footer { display: flex; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 900px) {
+  .advertiser-metrics, .advertising-policy-strip, .advertiser-campaign-grid, .advertising-review-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .contextual-ad { grid-template-columns: 1fr; }
+  .contextual-ad > header, .contextual-ad details { grid-column: 1; }
+  .contextual-ad > button { width: 100%; }
+  .advertiser-metrics, .advertising-policy-strip, .advertiser-campaign-grid, .advertising-review-grid, .advertising-review-facts { grid-template-columns: 1fr; }
+  .contextual-ad-policy { grid-template-columns: auto 1fr; }
+  .contextual-ad-policy > strong { grid-column: 2; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }

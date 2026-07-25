@@ -23,6 +23,7 @@ const actorRoles = new Set<TelemetryActorRole>([
   "customer",
   "provider",
   "partner",
+  "advertiser",
   "operation",
 ]);
 

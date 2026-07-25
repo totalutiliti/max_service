@@ -48,6 +48,16 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 | perfil/eventos de matching | nenhum | perfil e histórico próprios | nenhum | visão completa e cockpit de bloqueios | categoria, verificação, disponibilidade e capacidade são revalidadas no insert |
 | aceites e consentimentos | próprios | próprios | nenhum | visão completa | evidência por versão e finalidade |
 
+O quinto papel, **Anunciante**, não participa dos agregados transacionais acima. Seu escopo específico é:
+
+| Recurso publicitário | Cliente | Anunciante | Prestador/Parceiro | Operação |
+|---|---|---|---|---|
+| perfil do anunciante | marca ativa apenas durante seleção de campanha | somente o próprio | zero linhas | visão completa |
+| campanha publicitária | somente aprovada, vigente e compatível com o contexto atual | cria e consulta somente as próprias; não modera | zero linhas | consulta completa e mudança justificada |
+| eventos de moderação | zero linhas | histórico somente das próprias campanhas | zero linhas | leitura e inclusão append-only |
+| entregas publicitárias | inclui impressão compatível; não lista trilha bruta | somente métricas agregadas por campanha | zero linhas | métricas agregadas |
+| clique | função restrita por hash de token aleatório | nenhum acesso individual | nenhum | métricas agregadas |
+
 ## Contexto seguro de conexão
 
 1. iniciar transação;
@@ -80,6 +90,8 @@ A captura sem sessão usa o contexto restrito `public_referral`: ele consulta so
 - cliente valida apenas campanha ativa, vigente e compatível com categoria/região; campanhas consentidas exigem preferência promocional vigente, e a reserva ocorre somente no próprio pedido sem ultrapassar limites;
 - cliente e prestador recebem zero linhas da trilha bruta de validações; a função de abuso aceita somente o cliente atual, enquanto a Operação projeta contagens agregadas sem código ou identificação pessoal;
 - prestador e parceiro recebem zero campanhas/reservas, e somente a operação cria ou muda estado;
+- cliente recebe somente anúncio aprovado, vigente e compatível com categoria/região; anunciante não vê identidade ou entrega individual e não modera a própria campanha;
+- prestador e parceiro recebem zero perfis, campanhas, eventos e entregas publicitárias; troca do token de clique ou campanha pausada retorna indisponível;
 - categoria desativada desaparece de novos pedidos, indicação manual e captura pública, sem ocultar pedidos ou indicações históricas;
 - desativação repetida, movimento além dos limites da lista e tentativa de desativar a última categoria ativa são bloqueados;
 - decisão sem análise, justificativa curta, repetição de estado e nova transição após decisão final são bloqueadas;

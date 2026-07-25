@@ -11,6 +11,13 @@ test("protege somente requisições verificadas nas superfícies sensíveis", ()
   });
   assert.deepEqual(unsigned, []);
 
+  const demoSession = requestRateLimitRules({
+    method: "POST",
+    originalUrl: "/api/v1/auth/demo-sessions",
+    headers: { "x-bff-verified": "1" },
+  });
+  assert.equal(demoSession[0]?.limit, 60);
+
   const capture = requestRateLimitRules({
     method: "POST",
     originalUrl: "/api/v1/public/referrals/PC-PRIVATE",

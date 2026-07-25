@@ -16,6 +16,7 @@ const roleMap: Record<string, DemoRole> = {
   cliente: "customer",
   prestador: "provider",
   parceiro: "partner",
+  anunciante: "advertiser",
   operacao: "operation",
 };
 

@@ -1,7 +1,9 @@
-import { proxyCustomerRequest } from "../_proxy";
+import { proxyDemoRequest } from "../_proxy";
 
 export const dynamic = "force-dynamic";
 
+const catalogRoles = ["customer", "provider", "partner", "advertiser"] as const;
+
 export async function GET(request: Request) {
-  return proxyCustomerRequest("/api/v1/categories", request);
+  return proxyDemoRequest("/api/v1/categories", request, catalogRoles);
 }

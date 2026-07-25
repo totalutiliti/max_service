@@ -449,6 +449,45 @@ assert.equal(
 );
 
 const partnerCookie = await sessionCookie("parceiro");
+const operationCookie = await sessionCookie("operacao");
+const staleSupport = await json(await fetch(
+  `${webBaseUrl}/api/v1/partner/support`,
+  { headers: { cookie: partnerCookie } },
+));
+for (const supportCase of staleSupport.cases.filter(
+  (item) => item.subject.startsWith("Atendimento sint") && item.status !== "resolved",
+)) {
+  if (supportCase.status === "open") {
+    await json(await fetch(`${webBaseUrl}/api/v1/operation/support`, {
+      method: "POST",
+      headers: {
+        cookie: operationCookie,
+        "content-type": "application/json",
+        "idempotency-key": randomUUID(),
+      },
+      body: JSON.stringify({
+        action: "transition",
+        caseId: supportCase.id,
+        status: "in_review",
+        note: "Limpeza de cenário sintético interrompido em execução anterior do smoke test.",
+      }),
+    }));
+  }
+  await json(await fetch(`${webBaseUrl}/api/v1/operation/support`, {
+    method: "POST",
+    headers: {
+      cookie: operationCookie,
+      "content-type": "application/json",
+      "idempotency-key": randomUUID(),
+    },
+    body: JSON.stringify({
+      action: "transition",
+      caseId: supportCase.id,
+      status: "resolved",
+      note: "Cenário sintético anterior encerrado para manter o smoke test repetível.",
+    }),
+  }));
+}
 const riskReferral = await json(await fetch(`${webBaseUrl}/api/v1/partner/dashboard`, {
   method: "POST",
   headers: { cookie: partnerCookie, "content-type": "application/json" },
@@ -542,7 +581,6 @@ assert.equal(limitedCapture?.headers.get("ratelimit-remaining"), "0");
 assert.match(limitedCapture?.headers.get("retry-after") ?? "", /^\d+$/);
 assert.equal((await limitedCapture?.json()).code, "RATE_LIMITED");
 
-const operationCookie = await sessionCookie("operacao");
 const campaignCode = `CTX${Date.now().toString(36).toUpperCase()}`;
 const campaignCreateResponse = await fetch(`${webBaseUrl}/api/v1/operation/campaigns`, {
   method: "POST",
@@ -614,6 +652,67 @@ assert.equal(monitoredCampaign.outsideSegmentCount24h >= 1, true);
 assert.equal(campaignReport.monitoring.attemptCount24h >= 2, true);
 assert.equal(Array.isArray(campaignReport.catalog.categories), true);
 assert.equal(Array.isArray(campaignReport.catalog.regions), true);
+
+const advertiserCookie = await sessionCookie("anunciante");
+const adHeadline = `Oferta contextual ${Date.now().toString(36).toUpperCase()}`;
+const adCreateResults = await concurrentJsonMutation(
+  "/api/v1/advertiser/campaigns",
+  advertiserCookie,
+  {
+    name: "Campanha publicitária sintética",
+    headline: adHeadline,
+    body: "Conteúdo sintético para validar envio, moderação e entrega contextual transparente.",
+    ctaLabel: "Conhecer oferta",
+    destinationUrl: "https://example.com/oferta-contextual",
+    targetCategoryId: otherCategory.id,
+    targetRegionId: region.id,
+    startsAt: new Date(Date.now() - 60_000).toISOString(),
+    endsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000).toISOString(),
+    impressionLimit: 100,
+    note: "Peça sintética enviada pelo smoke test para revisão humana e auditoria.",
+  },
+);
+assert.equal(adCreateResults[0].campaign.id, adCreateResults[1].campaign.id);
+assert.equal(adCreateResults[0].campaign.status, "pending_review");
+
+const adModerationResults = await concurrentJsonMutation(
+  "/api/v1/operation/advertising",
+  operationCookie,
+  {
+    campaignId: adCreateResults[0].campaign.id,
+    action: "approve",
+    note: "Conteúdo, destino HTTPS e contexto sintéticos revisados conforme a política publicitária.",
+  },
+);
+assert.equal(adModerationResults[0].campaign.id, adModerationResults[1].campaign.id);
+assert.equal(adModerationResults[0].campaign.status, "approved");
+
+const deliveredAd = await json(await fetch(
+  `${webBaseUrl}/api/v1/advertising/contextual?categoryId=${encodeURIComponent(otherCategory.id)}&regionId=${encodeURIComponent(region.id)}`,
+  { headers: { cookie: customerCookie } },
+));
+assert.ok(deliveredAd.ad, "Uma peça aprovada precisa ser entregue no contexto compatível.");
+assert.equal(deliveredAd.ad.disclosure, "Patrocinado");
+assert.match(deliveredAd.ad.whyShown, /Nenhum histórico pessoal foi usado/i);
+assert.equal(Object.hasOwn(deliveredAd.ad, "destinationUrl"), false);
+
+const trackedClick = await json(await fetch(`${webBaseUrl}/api/v1/advertising/clicks`, {
+  method: "POST",
+  headers: { cookie: customerCookie, "content-type": "application/json" },
+  body: JSON.stringify({ deliveryToken: deliveredAd.ad.deliveryToken }),
+}));
+assert.match(trackedClick.destinationUrl, /^https:\/\//);
+
+const advertisingReport = await json(await fetch(
+  `${webBaseUrl}/api/v1/operation/advertising`,
+  { headers: { cookie: operationCookie } },
+));
+const moderatedAd = advertisingReport.campaigns.find(
+  (item) => item.id === adCreateResults[0].campaign.id,
+);
+assert.equal(moderatedAd.status, "approved");
+assert.equal(advertisingReport.policy.behavioralProfiling, false);
+assert.equal(advertisingReport.policy.rawViewerIdentityStored, false);
 
 const riskDetail = await json(await fetch(
   `${webBaseUrl}/api/v1/operation/referrals?referralId=${encodeURIComponent(riskReferral.referral.id)}`,

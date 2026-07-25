@@ -1,0 +1,36 @@
+name: Deploy Azure dev
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Implantar ambiente sintético
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: azure-dev
+      url: https://ca-max-service-web-dev.braveforest-c1671597.brazilsouth.azurecontainerapps.io/demo
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Autenticar na Azure por OIDC
+        uses: azure/login@1384c340ab2dda50fed2bee3041d1d87018aa5e8 # v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Implantar commit imutável
+        shell: pwsh
+        run: ./infra/azure/deploy-dev.ps1

@@ -54,6 +54,21 @@ Endpoints estáveis do ambiente:
 
 O script tolera a propagação transitória da identidade do Container Apps, mas repete somente deployments que falham explicitamente com `IdentityDoesNotExist`. Outros erros continuam fail-closed.
 
+## Deploy pelo GitHub
+
+O workflow manual `Deploy Azure dev` autentica por OIDC, não guarda senha Azure e só executa a partir de `main`. A identidade de implantação é exclusiva do CI, não é anexada aos containers e recebe `Contributor` apenas no resource group de desenvolvimento.
+
+Bootstrap único da confiança:
+
+```powershell
+az deployment group create `
+  --resource-group rg-max-service-dev `
+  --name github-oidc `
+  --template-file infra/azure/github-oidc.bicep
+```
+
+O environment GitHub `azure-dev` deve manter `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` e `AZURE_SUBSCRIPTION_ID`. Esses identificadores não concedem acesso sem o token OIDC cujo subject exato é `repo:totalutiliti/max_service:environment:azure-dev`.
+
 ## Limites
 
 Este ambiente não autoriza dados pessoais ou documentos reais, pagamentos reais, e-mail/SMS, integrações externas, domínio final ou produção. Alertmanager/plantão, observabilidade gerenciada, restore periódico, orçamento e alertas de custo permanecem requisitos de operação.

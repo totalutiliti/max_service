@@ -13,12 +13,16 @@ param migrationJobName string = 'job-max-service-migrate-dev'
 @minLength(2)
 @maxLength(32)
 param minioAppName string = 'ca-max-service-storage-dev'
+param environmentTag string = 'dev'
+param dataClassification string = 'synthetic-only'
+param storageMinReplicas int = 1
+param storageMaxReplicas int = 1
 
 var tags = {
-  environment: 'dev'
+  environment: environmentTag
   project: 'max-service'
   'managed-by': 'bicep'
-  data: 'synthetic-only'
+  data: dataClassification
 }
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -138,8 +142,8 @@ resource storageApp 'Microsoft.App/containerApps@2025-07-01' = {
         }
       ]
       scale: {
-        minReplicas: 1
-        maxReplicas: 1
+        minReplicas: storageMinReplicas
+        maxReplicas: storageMaxReplicas
       }
       volumes: [
         {

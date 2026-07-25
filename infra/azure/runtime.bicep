@@ -21,15 +21,25 @@ param minioAppName string = 'ca-max-service-storage-dev'
 @minLength(2)
 @maxLength(32)
 param maintenanceJobName string = 'job-max-service-storage-dev'
+param environmentTag string = 'dev'
+param dataClassification string = 'synthetic-only'
+param demoMode bool = true
+param apiExternalIngress bool = true
+param apiMinReplicas int = 1
+param apiMaxReplicas int = 1
+param webMinReplicas int = 0
+param webMaxReplicas int = 1
+param appOrigin string = ''
 
 var tags = {
-  environment: 'dev'
+  environment: environmentTag
   project: 'max-service'
   'managed-by': 'bicep'
-  data: 'synthetic-only'
+  data: dataClassification
 }
 var webFqdn = '${webAppName}.${environment.properties.defaultDomain}'
 var apiFqdn = '${apiAppName}.${environment.properties.defaultDomain}'
+var effectiveAppOrigin = empty(appOrigin) ? 'https://${webFqdn}' : appOrigin
 var revisionSuffix = take(imageTag, 12)
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -68,7 +78,7 @@ resource apiApp 'Microsoft.App/containerApps@2025-07-01' = {
       activeRevisionsMode: 'Single'
       ingress: {
         allowInsecure: false
-        external: true
+        external: apiExternalIngress
         targetPort: 3001
         traffic: [
           {
@@ -144,11 +154,11 @@ resource apiApp 'Microsoft.App/containerApps@2025-07-01' = {
             }
             {
               name: 'DEMO_MODE'
-              value: 'true'
+              value: string(demoMode)
             }
             {
               name: 'CORS_ORIGIN'
-              value: 'https://${webFqdn}'
+              value: effectiveAppOrigin
             }
             {
               name: 'TRANSPORT_SECURITY_CONFIGURED'
@@ -256,8 +266,8 @@ resource apiApp 'Microsoft.App/containerApps@2025-07-01' = {
         }
       ]
       scale: {
-        minReplicas: 1
-        maxReplicas: 1
+        minReplicas: apiMinReplicas
+        maxReplicas: apiMaxReplicas
         rules: [
           {
             name: 'http'
@@ -343,7 +353,7 @@ resource webApp 'Microsoft.App/containerApps@2025-07-01' = {
             }
             {
               name: 'APP_ORIGIN'
-              value: 'https://${webFqdn}'
+              value: effectiveAppOrigin
             }
             {
               name: 'BFF_INTERNAL_SECRET'
@@ -359,7 +369,7 @@ resource webApp 'Microsoft.App/containerApps@2025-07-01' = {
             }
             {
               name: 'NEXT_PUBLIC_SITE_URL'
-              value: 'https://${webFqdn}'
+              value: effectiveAppOrigin
             }
           ]
           resources: {
@@ -395,8 +405,8 @@ resource webApp 'Microsoft.App/containerApps@2025-07-01' = {
         }
       ]
       scale: {
-        minReplicas: 0
-        maxReplicas: 1
+        minReplicas: webMinReplicas
+        maxReplicas: webMaxReplicas
         rules: [
           {
             name: 'http'

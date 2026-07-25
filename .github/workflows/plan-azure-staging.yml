@@ -1,0 +1,84 @@
+name: Plan Azure staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Commit Git imutável das imagens
+        required: false
+        type: string
+      include_runtime:
+        description: Incluir runtime no diff completo
+        required: true
+        default: true
+        type: boolean
+      include_github_identity:
+        description: Incluir bootstrap OIDC no diff
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: azure-staging-plan
+  cancel-in-progress: false
+
+jobs:
+  what-if:
+    name: Validar e calcular what-if
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: azure-staging
+    steps:
+      - name: Baixar código e histórico
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Autenticar na Azure por OIDC
+        uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compilar Bicep e executar somente what-if
+        shell: pwsh
+        env:
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          INCLUDE_RUNTIME: ${{ inputs.include_runtime }}
+          INCLUDE_GITHUB_IDENTITY: ${{ inputs.include_github_identity }}
+          AZURE_PRINCIPAL_OBJECT_ID: ${{ vars.AZURE_PRINCIPAL_OBJECT_ID }}
+          EXPECTED_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          $imageTag = if ([string]::IsNullOrWhiteSpace($env:INPUT_IMAGE_TAG)) {
+            '${{ github.sha }}'
+          } else {
+            $env:INPUT_IMAGE_TAG
+          }
+
+          $plan = @{
+            ImageTag = $imageTag
+            DeployerObjectId = $env:AZURE_PRINCIPAL_OBJECT_ID
+            DeployerPrincipalType = 'ServicePrincipal'
+            ExpectedSubscriptionId = $env:EXPECTED_SUBSCRIPTION_ID
+          }
+          if ($env:INCLUDE_RUNTIME -eq 'true') {
+            $plan.IncludeRuntime = $true
+          }
+          if ($env:INCLUDE_GITHUB_IDENTITY -eq 'true') {
+            $plan.IncludeGitHubIdentity = $true
+          }
+
+          ./infra/azure/staging/plan-staging.ps1 @plan
+
+      - name: Registrar escopo não autorizado
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host 'Este workflow executa somente what-if.'
+          Write-Host 'Nenhum deploy, criação de recurso, domínio, contato ou budget foi autorizado.'

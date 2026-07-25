@@ -74,3 +74,11 @@ O environment GitHub `azure-dev` deve manter `AZURE_CLIENT_ID`, `AZURE_TENANT_ID
 ## Limites
 
 Este ambiente não autoriza dados pessoais ou documentos reais, pagamentos reais, e-mail/SMS, integrações externas, domínio final ou produção. Alertmanager/plantão, observabilidade gerenciada, restore periódico, orçamento e alertas de custo permanecem requisitos de operação.
+
+## Staging planejado
+
+O pacote em [`staging`](staging) parametriza os mesmos módulos sem mudar os defaults de
+Dev e adiciona VNet, DNS privado, Private Endpoints, HA e API interna. Ele oferece somente
+build e `what-if`; não existe comando de deploy. Inventário, custo, destruição, RPO/RTO,
+restore, incidente, rollback e decisões bloqueadas estão em
+[`docs/operations/azure-staging-readiness.md`](../../docs/operations/azure-staging-readiness.md).

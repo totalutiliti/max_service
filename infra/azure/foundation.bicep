@@ -6,12 +6,24 @@ param deployRoleAssignments bool = true
 param workspaceName string = 'log-max-service-dev'
 param environmentName string = 'cae-max-service-dev'
 param identityName string = 'id-max-service-dev'
+param environmentTag string = 'dev'
+param dataClassification string = 'synthetic-only'
+param logRetentionInDays int = 30
+param infrastructureSubnetId string = ''
+param internalLoadBalancerEnabled bool = false
+param zoneRedundant bool = false
+
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param logPublicNetworkAccess string = 'Enabled'
 
 var tags = {
-  environment: 'dev'
+  environment: environmentTag
   project: 'max-service'
   'managed-by': 'bicep'
-  data: 'synthetic-only'
+  data: dataClassification
 }
 var acrPullRoleDefinitionId = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
@@ -27,9 +39,9 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
     sku: {
       name: 'PerGB2018'
     }
-    retentionInDays: 30
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
+    retentionInDays: logRetentionInDays
+    publicNetworkAccessForIngestion: logPublicNetworkAccess
+    publicNetworkAccessForQuery: logPublicNetworkAccess
   }
 }
 
@@ -56,7 +68,7 @@ resource environment 'Microsoft.App/managedEnvironments@2025-07-01' = {
   name: environmentName
   location: location
   tags: tags
-  properties: {
+  properties: union({
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
@@ -64,10 +76,17 @@ resource environment 'Microsoft.App/managedEnvironments@2025-07-01' = {
         sharedKey: workspace.listKeys().primarySharedKey
       }
     }
-  }
+    zoneRedundant: zoneRedundant
+  }, empty(infrastructureSubnetId) ? {} : {
+    vnetConfiguration: {
+      infrastructureSubnetId: infrastructureSubnetId
+      internal: internalLoadBalancerEnabled
+    }
+  })
 }
 
 output defaultDomain string = environment.properties.defaultDomain
 output environmentId string = environment.id
 output identityId string = identity.id
 output identityPrincipalId string = identity.properties.principalId
+output workspaceId string = workspace.id

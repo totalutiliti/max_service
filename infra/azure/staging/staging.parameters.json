@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "brazilsouth"
+    },
+    "resourceGroupName": {
+      "value": "rg-max-service-stg"
+    },
+    "nameSuffix": {
+      "value": "26"
+    },
+    "includeRuntimeInPlan": {
+      "value": false
+    },
+    "includeGitHubIdentityInPlan": {
+      "value": false
+    },
+    "githubEnvironment": {
+      "value": "azure-staging"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.40.0.0/16"
+    },
+    "containerAppsSubnetPrefix": {
+      "value": "10.40.0.0/23"
+    },
+    "postgresSubnetPrefix": {
+      "value": "10.40.2.0/24"
+    },
+    "privateEndpointsSubnetPrefix": {
+      "value": "10.40.3.0/24"
+    }
+  }
+}

@@ -88,15 +88,30 @@ jobs:
             ghcr.io/aquasecurity/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
             image --quiet --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
             --format json --list-all-pkgs=false --output /reports/trivy-redis.json redis:8.8.0-alpine
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/" \
+            -v "$RUNNER_TEMP:/reports" \
+            ghcr.io/aquasecurity/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+            image --quiet --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL \
+            --format json --list-all-pkgs=false --output /reports/trivy-prometheus.json \
+            max-service-prometheus:3.13.1-grpc.1
           node scripts/verify-vulnerability-reports.mjs \
             "$RUNNER_TEMP/trivy-api.json" "$RUNNER_TEMP/trivy-web.json" \
-            "$RUNNER_TEMP/trivy-redis.json"
+            "$RUNNER_TEMP/trivy-redis.json" "$RUNNER_TEMP/trivy-prometheus.json"
 
       - name: Testar jornadas e acessibilidade
         run: npm run test:e2e
 
       - name: Testar saúde e fronteiras de acesso
         run: npm run test:smoke
+
+      - name: Testar coleta, regras e SLOs
+        run: |
+          docker compose exec -T metrics promtool check config /etc/prometheus/prometheus.yml
+          docker compose exec -T -w /etc/prometheus/rules metrics \
+            promtool test rules max-service.rules.test.yml
+          npm run test:observability
 
       - name: Reconciliar cofre privado
         env:

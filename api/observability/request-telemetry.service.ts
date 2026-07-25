@@ -11,8 +11,17 @@ const supportedMethods = new Set(["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "
 export interface RequestMetricsSeries {
   method: string;
   statusClass: string;
-  traffic: "application" | "metrics" | "probe";
+  traffic: RequestTraffic;
   count: number;
+}
+
+export type RequestTraffic = "application" | "metrics" | "probe";
+
+interface RequestDurationMetrics {
+  traffic: RequestTraffic;
+  bucketCounts: number[];
+  count: number;
+  sumSeconds: number;
 }
 
 @Injectable()
@@ -20,9 +29,12 @@ export class RequestTelemetryService {
   private readonly processStartedAt = new Date().toISOString();
   private readonly samples: RequestTelemetrySample[] = [];
   private readonly requestCounts = new Map<string, RequestMetricsSeries>();
-  private readonly durationBucketCounts = histogramUpperBoundsSeconds.map(() => 0);
-  private durationCount = 0;
-  private durationSumSeconds = 0;
+  private readonly durationByTraffic = new Map<RequestTraffic, RequestDurationMetrics>([
+    ["application", emptyDurationMetrics("application")],
+    ["metrics", emptyDurationMetrics("metrics")],
+    ["probe", emptyDurationMetrics("probe")],
+  ]);
+  private readonly applicationRequests = { success: 0, error: 0 };
   private idempotencyReplayCount = 0;
 
   record(sample: RequestTelemetrySample) {
@@ -46,12 +58,17 @@ export class RequestTelemetryService {
       : { method, statusClass, traffic, count: 1 });
 
     const durationSeconds = sample.durationMs / 1_000;
-    this.durationCount += 1;
-    this.durationSumSeconds += durationSeconds;
+    const durationMetrics = this.durationByTraffic.get(traffic);
+    if (!durationMetrics) throw new Error(`Tipo de tráfego sem histograma: ${traffic}`);
+    durationMetrics.count += 1;
+    durationMetrics.sumSeconds += durationSeconds;
     for (let index = 0; index < histogramUpperBoundsSeconds.length; index += 1) {
       if (durationSeconds <= histogramUpperBoundsSeconds[index]) {
-        this.durationBucketCounts[index] += 1;
+        durationMetrics.bucketCounts[index] += 1;
       }
+    }
+    if (traffic === "application") {
+      this.applicationRequests[sample.statusCode >= 500 ? "error" : "success"] += 1;
     }
     if (sample.idempotencyReplayed) this.idempotencyReplayCount += 1;
   }
@@ -75,13 +92,26 @@ export class RequestTelemetryService {
         || left.statusClass.localeCompare(right.statusClass)
         || left.traffic.localeCompare(right.traffic)
       )),
-      durationBuckets: histogramUpperBoundsSeconds.map((upperBoundSeconds, index) => ({
-        upperBoundSeconds,
-        count: this.durationBucketCounts[index],
+      applicationRequests: { ...this.applicationRequests },
+      durationSeries: [...this.durationByTraffic.values()].map((series) => ({
+        traffic: series.traffic,
+        buckets: histogramUpperBoundsSeconds.map((upperBoundSeconds, index) => ({
+          upperBoundSeconds,
+          count: series.bucketCounts[index],
+        })),
+        count: series.count,
+        sumSeconds: series.sumSeconds,
       })),
-      durationCount: this.durationCount,
-      durationSumSeconds: this.durationSumSeconds,
       idempotencyReplayCount: this.idempotencyReplayCount,
     };
   }
+}
+
+function emptyDurationMetrics(traffic: RequestTraffic): RequestDurationMetrics {
+  return {
+    traffic,
+    bucketCounts: histogramUpperBoundsSeconds.map(() => 0),
+    count: 0,
+    sumSeconds: 0,
+  };
 }

@@ -77,8 +77,22 @@ test("exporta contadores monotônicos, histograma e dependências sem PII", () =
     output,
     /max_service_http_requests_total\{method="OTHER",status_class="4xx",traffic="metrics"\} 1/,
   );
-  assert.match(output, /max_service_http_request_duration_seconds_bucket\{le="\+Inf"\} 2/);
-  assert.match(output, /max_service_http_request_duration_seconds_count 2/);
+  assert.match(
+    output,
+    /max_service_http_application_requests_total\{outcome="success"\} 1/,
+  );
+  assert.match(
+    output,
+    /max_service_http_application_requests_total\{outcome="error"\} 0/,
+  );
+  assert.match(
+    output,
+    /max_service_http_request_duration_seconds_bucket\{le="\+Inf",traffic="application"\} 1/,
+  );
+  assert.match(
+    output,
+    /max_service_http_request_duration_seconds_count\{traffic="metrics"\} 1/,
+  );
   assert.match(output, /# UNIT max_service_http_request_duration_seconds seconds/);
   assert.match(output, /max_service_http_idempotency_replays_total 1/);
   assert.match(

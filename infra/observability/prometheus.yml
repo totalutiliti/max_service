@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 3s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+
+rule_files:
+  - /etc/prometheus/rules/max-service.rules.yml
+
+scrape_configs:
+  - job_name: max-service-api
+    metrics_path: /internal/metrics
+    scheme: http
+    body_size_limit: 1MB
+    sample_limit: 500
+    label_limit: 10
+    label_name_length_limit: 64
+    label_value_length_limit: 128
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/metrics-bearer-token
+    static_configs:
+      - targets:
+          - api:3001
+        labels:
+          service: max-service-api

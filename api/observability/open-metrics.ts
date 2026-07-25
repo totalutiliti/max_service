@@ -62,21 +62,46 @@ export function renderOpenMetrics(
         traffic: series.traffic,
       },
     )),
+    "# TYPE max_service_http_application_requests counter",
+    "# HELP max_service_http_application_requests Application requests grouped by SLI outcome.",
+    sample(
+      "max_service_http_application_requests_total",
+      telemetry.applicationRequests.success,
+      { outcome: "success" },
+    ),
+    sample(
+      "max_service_http_application_requests_total",
+      telemetry.applicationRequests.error,
+      { outcome: "error" },
+    ),
     "# TYPE max_service_http_request_duration_seconds histogram",
     "# UNIT max_service_http_request_duration_seconds seconds",
     "# HELP max_service_http_request_duration_seconds HTTP request duration in seconds.",
-    ...telemetry.durationBuckets.map((bucket) => sample(
-      "max_service_http_request_duration_seconds_bucket",
-      bucket.count,
-      { le: canonicalBucket(bucket.upperBoundSeconds) },
-    )),
-    sample(
-      "max_service_http_request_duration_seconds_bucket",
-      telemetry.durationCount,
-      { le: "+Inf" },
-    ),
-    sample("max_service_http_request_duration_seconds_sum", telemetry.durationSumSeconds),
-    sample("max_service_http_request_duration_seconds_count", telemetry.durationCount),
+    ...telemetry.durationSeries.flatMap((series) => [
+      ...series.buckets.map((bucket) => sample(
+        "max_service_http_request_duration_seconds_bucket",
+        bucket.count,
+        {
+          le: canonicalBucket(bucket.upperBoundSeconds),
+          traffic: series.traffic,
+        },
+      )),
+      sample(
+        "max_service_http_request_duration_seconds_bucket",
+        series.count,
+        { le: "+Inf", traffic: series.traffic },
+      ),
+      sample(
+        "max_service_http_request_duration_seconds_sum",
+        series.sumSeconds,
+        { traffic: series.traffic },
+      ),
+      sample(
+        "max_service_http_request_duration_seconds_count",
+        series.count,
+        { traffic: series.traffic },
+      ),
+    ]),
     "# TYPE max_service_http_idempotency_replays counter",
     "# HELP max_service_http_idempotency_replays Successful idempotent mutation replays.",
     sample(

@@ -47,7 +47,7 @@ Query strings são descartadas, UUIDs viram `:id`, códigos públicos viram `:co
 
 O mesmo middleware mantém no máximo mil amostras em memória. O cockpit mostra uma janela móvel de cinco minutos com requisições de aplicação, probes separados, replays idempotentes, rejeições `4xx`, bloqueios `429`, erros `5xx`, chamadas acima de um segundo, latência média, p95 e até cinco famílias de rota mais acessadas.
 
-Essas métricas são deliberadamente locais à réplica e zeram quando o processo reinicia. Elas comprovam o contrato e dão diagnóstico ao piloto, mas não oferecem retenção, consulta histórica, agregação entre réplicas, alertas ou SLO. O bloco aparece somente no endpoint autenticado da Operação; liveness e readiness públicos não expõem tráfego.
+As métricas do cockpit são deliberadamente locais à réplica e zeram quando o processo reinicia. O bloco aparece somente no endpoint autenticado da Operação; liveness e readiness públicos não expõem tráfego. A retenção histórica curta, as consultas e as regras locais ficam no coletor descrito abaixo.
 
 O mesmo cockpit apresenta exclusivamente agregados da proteção contra abuso: políticas ativas, contadores opacos observados pela réplica e bloqueios locais por política nos últimos cinco minutos. A decisão de bloqueio é coordenada no Redis entre réplicas; chaves, códigos, atores, endereços, URL e credenciais não fazem parte da resposta.
 
@@ -83,16 +83,43 @@ scrape_configs:
 
 Para rotacionar, gere um token aleatório com no mínimo 32 caracteres no cofre, atualize o segredo do workload e depois o `credentials_file` do coletor dentro de uma janela coordenada. Confirme `200`, o `Content-Type` OpenMetrics e `# EOF`; revogue o token anterior e registre a mudança sem copiar seu valor para ticket ou log. A credencial local do Compose é pública por definição e nunca pode ser promovida.
 
+## Coletor e SLOs locais
+
+O Docker executa o Prometheus `3.13.1` LTS em uma imagem reproduzível do projeto. O build fixa por digest as imagens de Go e de runtime, fixa o código-fonte oficial no commit `73ff57ce2b8161059ac7fe5188f03f1c3d22b29a`, valida o pacote oficial da interface por SHA-256 e recompila `prometheus` e `promtool` com `google.golang.org/grpc` `1.82.1`. Essa substituição preserva a LTS e remove a vulnerabilidade corrigível `GHSA-hrxh-6v49-42gf` presente nos binários originais; a CI escaneia a imagem final e continua recusando qualquer achado corrigível HIGH ou CRITICAL, sem lista de exceções.
+
+O coletor consulta a API a cada cinco segundos usando o segredo montado como arquivo, mantém no máximo 48 horas ou 256 MB e publica a interface somente em `http://127.0.0.1:59090`. A porta local não possui autenticação e nunca deve ser exposta em rede compartilhada ou produção.
+
+O contrato `SLO-LOCAL-2026-01` é uma hipótese técnica para o piloto, não um compromisso comercial aprovado:
+
+- disponibilidade mensal provisória de `99,5%`, considerando `5xx` como erro e excluindo probes e o próprio scrape;
+- latência p95 provisória de até um segundo para requisições de aplicação;
+- alerta de página quando o alvo ou a prontidão falham por dois minutos;
+- alerta rápido quando o consumo projetado do orçamento de erro supera `14,4x` nas janelas de cinco minutos e uma hora;
+- alerta sustentado quando supera `6x` nas janelas de 30 minutos e seis horas;
+- alerta de ticket quando a latência p95 permanece acima de um segundo por dez minutos ou uma dependência fica crítica.
+
+O Prometheus contém seis recording rules e sete alerting rules. `for` e `keep_firing_for` reduzem ruído e os alertas de página ficam restritos a sintomas associados à indisponibilidade. Não existe envio externo nesta etapa: Alertmanager, destino de notificação, escala, contatos e horários de plantão dependem de decisão operacional.
+
+## Runbook operacional
+
+1. Confirme em **Status → Targets** se `max-service-api` está `UP` e veja **Alerts** em `http://127.0.0.1:59090`.
+2. Consulte `/health/ready` e o cockpit **Operação → Conta**. Use `x-request-id` para correlacionar a falha com os logs JSON, sem copiar payloads ou dados pessoais.
+3. Diferencie falha de coleta, indisponibilidade real, dependência crítica, aumento de `5xx` e latência. Não desative RLS, rate limit fail-closed ou validações para recuperar tráfego.
+4. Em mudança recente, interrompa a promoção e aplique o rollback homologado. Em falha de banco, Redis ou storage, preserve evidências agregadas e acione o responsável da dependência.
+5. Considere recuperado somente após target `UP`, readiness saudável, alerta resolvido e janela de observação de cinco minutos. Registre horário, impacto, decisão, responsável e request IDs relevantes, nunca tokens ou conteúdo do usuário.
+
+Sem Alertmanager homologado, a aba de alertas é apenas evidência local e não substitui monitoramento externo, blackbox ou plantão.
+
 ## Evidência automatizada
 
-`npm run test:smoke` valida liveness, readiness incluindo Redis, autenticação e formato do OpenMetrics, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 33 ações de marketplace, comunicação, atendimento, disputa formal, análise preventiva de indicações, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. O teste de integração usa dois clientes independentes e comprova que ambos consomem o mesmo contador Redis. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
+`npm run test:smoke` valida liveness, readiness incluindo Redis, autenticação e formato do OpenMetrics, `x-request-id`, headers defensivos no frontend e API, CORS fechado, rejeição de payload grande, encaminhamento pelo BFF, cockpit operacional, métricas agregadas, última reconciliação do cofre, resposta `429`, cabeçalhos de rate limit, bloqueio do cliente, rejeição do canal interno não assinado e concorrência idempotente em 33 ações de marketplace, comunicação, atendimento, disputa formal, análise preventiva de indicações, agenda, ciclo do serviço e operação, incluindo os quatro uploads privados. `npm run test:observability` prova target autenticado, séries SLI, 13 regras saudáveis e ausência de alerta indevido. O `promtool` oficial valida configuração, PromQL e cenários positivos/negativos das regras. O teste de integração usa dois clientes independentes e comprova que ambos consomem o mesmo contador Redis. `npm run test:storage` cria objetos sintéticos controlados e prova dry-run, expurgo seletivo, preservação de referência e auditoria agregada. O conjunto roda depois de um `docker compose up --wait` limpo no GitHub Actions.
 
 ## Próximos requisitos de produção
 
-- coletor Prometheus/OpenTelemetry gerenciado, retenção e agregação entre réplicas para o endpoint OpenMetrics já definido;
+- Prometheus/OpenTelemetry gerenciado, alta disponibilidade, retenção aprovada e agregação entre réplicas; o coletor local de 48 horas já valida o contrato;
 - coleta, busca e política de retenção para os logs JSON já correlacionados;
 - traces entre borda, BFF, API, banco, filas e storage;
-- alertas externos e plantão;
-- SLOs, burn rate e orçamento de erro;
+- Alertmanager ou serviço equivalente, alertas externos e plantão;
+- aprovação dos SLOs, burn rate e orçamento de erro provisórios;
 - integração com plataforma gerenciada de observabilidade;
 - testes de falha controlada e múltiplas réplicas.

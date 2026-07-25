@@ -88,6 +88,11 @@ test("limita a retenção local a mil amostras", () => {
   assert.equal(service.snapshot(1_010).retainedSamples, 1_000);
   const metrics = service.metricsSnapshot();
   assert.equal(metrics.requestSeries[0]?.count, 1_010);
-  assert.equal(metrics.durationCount, 1_010);
-  assert.equal(metrics.durationBuckets.at(-1)?.count, 1_010);
+  assert.equal(metrics.applicationRequests.success, 1_010);
+  assert.equal(metrics.applicationRequests.error, 0);
+  const applicationDuration = metrics.durationSeries.find(
+    (series) => series.traffic === "application",
+  );
+  assert.equal(applicationDuration?.count, 1_010);
+  assert.equal(applicationDuration?.buckets.at(-1)?.count, 1_010);
 });

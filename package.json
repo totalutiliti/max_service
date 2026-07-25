@@ -20,6 +20,7 @@
     "test:migrations": "npm run api:build && node scripts/migration-dry-run.mjs",
     "test:e2e": "playwright test",
     "test:smoke": "node tests/system-health.smoke.mjs",
+    "test:observability": "node tests/prometheus.smoke.mjs",
     "storage:reconcile": "node scripts/private-storage-reconciliation.mjs",
     "test": "npm run build && npm run api:build && npm run api:test && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

@@ -1,0 +1,176 @@
+groups:
+  - name: max-service-slo-recording
+    interval: 30s
+    rules:
+      - record: max_service:sli_http_requests:rate5m
+        expr: |
+          sum by (job) (
+            rate(max_service_http_application_requests_total[5m])
+          )
+      - record: max_service:sli_http_error:ratio_rate5m
+        expr: |
+          sum by (job) (
+            rate(max_service_http_application_requests_total{outcome="error"}[5m])
+          )
+          /
+          clamp_min(
+            sum by (job) (
+              rate(max_service_http_application_requests_total[5m])
+            ),
+            0.000000001
+          )
+      - record: max_service:sli_http_error:ratio_rate30m
+        expr: |
+          sum by (job) (
+            rate(max_service_http_application_requests_total{outcome="error"}[30m])
+          )
+          /
+          clamp_min(
+            sum by (job) (
+              rate(max_service_http_application_requests_total[30m])
+            ),
+            0.000000001
+          )
+      - record: max_service:sli_http_error:ratio_rate1h
+        expr: |
+          sum by (job) (
+            rate(max_service_http_application_requests_total{outcome="error"}[1h])
+          )
+          /
+          clamp_min(
+            sum by (job) (
+              rate(max_service_http_application_requests_total[1h])
+            ),
+            0.000000001
+          )
+      - record: max_service:sli_http_error:ratio_rate6h
+        expr: |
+          sum by (job) (
+            rate(max_service_http_application_requests_total{outcome="error"}[6h])
+          )
+          /
+          clamp_min(
+            sum by (job) (
+              rate(max_service_http_application_requests_total[6h])
+            ),
+            0.000000001
+          )
+      - record: max_service:sli_http_latency_p95_seconds:rate5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (job, le) (
+              rate(max_service_http_request_duration_seconds_bucket{traffic="application"}[5m])
+            )
+          )
+
+  - name: max-service-alerts
+    interval: 30s
+    rules:
+      - alert: MaxServiceApiTargetDown
+        expr: up{job="max-service-api"} == 0
+        for: 2m
+        keep_firing_for: 5m
+        labels:
+          severity: page
+          service: max-service-api
+        annotations:
+          summary: "Coleta da API Max Service indisponível"
+          description: "O Prometheus não consegue coletar a instância {{ $labels.instance }} há mais de dois minutos."
+          runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+      - alert: MaxServiceMetricContractMissing
+        expr: |
+          up{job="max-service-api"} == 1
+          unless on (job, instance)
+          max_service_local_traffic_ready{job="max-service-api"}
+        for: 2m
+        keep_firing_for: 5m
+        labels:
+          severity: page
+          service: max-service-api
+        annotations:
+          summary: "Contrato de métricas da Max Service ausente"
+          description: "O alvo responde, mas a série obrigatória de prontidão não está presente."
+          runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+      - alert: MaxServiceTrafficNotReady
+        expr: max_service_local_traffic_ready{job="max-service-api"} == 0
+        for: 2m
+        keep_firing_for: 5m
+        labels:
+          severity: page
+          service: max-service-api
+        annotations:
+          summary: "API Max Service não está pronta para tráfego"
+          description: "Uma dependência obrigatória mantém a API fora do estado de prontidão."
+          runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+      - alert: MaxServiceFastErrorBudgetBurn
+        expr: |
+          (
+            max_service:sli_http_error:ratio_rate5m{job="max-service-api"} > 0.072
+            and on (job)
+            max_service:sli_http_error:ratio_rate1h{job="max-service-api"} > 0.072
+          )
+          and on (job)
+          max_service:sli_http_requests:rate5m{job="max-service-api"} > 0
+        for: 2m
+        keep_firing_for: 5m
+        labels:
+          severity: page
+          service: max-service-api
+        annotations:
+          summary: "Queima rápida do orçamento de erro"
+          description: "A taxa de 5xx excede 7,2% nas janelas curta e longa do SLO provisório."
+          runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+      - alert: MaxServiceSlowErrorBudgetBurn
+        expr: |
+          (
+            max_service:sli_http_error:ratio_rate30m{job="max-service-api"} > 0.03
+            and on (job)
+            max_service:sli_http_error:ratio_rate6h{job="max-service-api"} > 0.03
+          )
+          and on (job)
+          max_service:sli_http_requests:rate5m{job="max-service-api"} > 0
+        for: 15m
+        keep_firing_for: 15m
+        labels:
+          severity: ticket
+          service: max-service-api
+        annotations:
+          summary: "Queima sustentada do orçamento de erro"
+          description: "A taxa de 5xx excede 3% nas janelas de 30 minutos e seis horas."
+          runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+      - alert: MaxServiceHighRequestLatency
+        expr: |
+          max_service:sli_http_latency_p95_seconds:rate5m{job="max-service-api"} > 1
+          and on (job)
+          max_service:sli_http_requests:rate5m{job="max-service-api"} > 0
+        for: 10m
+        keep_firing_for: 5m
+        labels:
+          severity: ticket
+          service: max-service-api
+        annotations:
+          summary: "Latência p95 elevada na API Max Service"
+          description: "A latência p95 das requisições de aplicação excede um segundo há dez minutos."
+          runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+      - alert: MaxServiceDependencyCritical
+        expr: |
+          max_service_dependency_status{
+            job="max-service-api",
+            status="critical"
+          } == 1
+        for: 2m
+        keep_firing_for: 5m
+        labels:
+          severity: ticket
+          service: max-service-api
+        annotations:
+          summary: "Dependência crítica da Max Service"
+          description: "A dependência {{ $labels.dependency }} está em estado crítico."
+          runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"

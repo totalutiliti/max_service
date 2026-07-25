@@ -90,6 +90,7 @@ npm run test:migrations
 npm run test:storage
 npm run test:restore
 npm run test:smoke
+npm run test:observability
 npm run test:e2e
 ```
 
@@ -106,12 +107,13 @@ A prévia fica disponível em `http://127.0.0.1:4174` e a plataforma SaaS em `ht
 - API viva: `http://127.0.0.1:3001/health/live`
 - API pronta para tráfego local: `http://127.0.0.1:3001/health/ready`
 - OpenMetrics protegido: `http://127.0.0.1:3001/internal/metrics` (Bearer exclusivo do Compose; não abrir no navegador nem promover a produção);
+- Prometheus local: `http://127.0.0.1:59090` (LTS em build reproduzível com correção de segurança, 48 horas, regras e alertas locais; porta sem autenticação restrita ao loopback);
 - cockpit autenticado em **Operação → Conta**, com dependências, reconciliação do cofre e telemetria local dos últimos cinco minutos;
 - PostgreSQL local: `127.0.0.1:54329`
 - Redis autenticado do rate limit: `127.0.0.1:56379`;
 - armazenamento privado S3: `127.0.0.1:59000` (API) e `127.0.0.1:59001` (console local);
-- serviços: `database`, `redis`, `storage`, `api`, `storage-maintenance` e `web`;
-- volumes `max-service-postgres` e `max-service-objects` mantêm registros e arquivos entre reinícios.
+- serviços: `database`, `redis`, `storage`, `api`, `storage-maintenance`, `metrics` e `web`;
+- volumes `max-service-postgres`, `max-service-objects` e `max-service-prometheus` mantêm registros, arquivos e a janela local de métricas entre reinícios.
 
 ## Princípios
 

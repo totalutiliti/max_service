@@ -138,6 +138,44 @@ services:
       storage:
         condition: service_started
 
+  metrics:
+    image: max-service-prometheus:3.13.1-grpc.1
+    build:
+      context: .
+      dockerfile: infra/observability/Dockerfile
+    container_name: max-service-metrics
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=48h
+      - --storage.tsdb.retention.size=256MB
+      - --query.max-samples=100000
+      - --query.timeout=30s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    secrets:
+      - metrics-bearer-token
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/max-service.rules.yml:/etc/prometheus/rules/max-service.rules.yml:ro
+      - ./infra/observability/max-service.rules.test.yml:/etc/prometheus/rules/max-service.rules.test.yml:ro
+      - max-service-prometheus:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:59090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
   web:
     build:
       context: .
@@ -168,3 +206,8 @@ services:
 volumes:
   max-service-postgres:
   max-service-objects:
+  max-service-prometheus:
+
+secrets:
+  metrics-bearer-token:
+    file: ./infra/observability/metrics-token.local.txt

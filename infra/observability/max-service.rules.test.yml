@@ -1,0 +1,63 @@
+rule_files:
+  - max-service.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: alerta quando a coleta da API permanece indisponível
+    interval: 1m
+    input_series:
+      - series: 'up{job="max-service-api",instance="api:3001",service="max-service-api"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MaxServiceApiTargetDown
+        exp_alerts:
+          - exp_labels:
+              instance: api:3001
+              job: max-service-api
+              service: max-service-api
+              severity: page
+            exp_annotations:
+              summary: "Coleta da API Max Service indisponível"
+              description: "O Prometheus não consegue coletar a instância api:3001 há mais de dois minutos."
+              runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+  - name: alerta quando a API não fica pronta para tráfego
+    interval: 1m
+    input_series:
+      - series: 'up{job="max-service-api",instance="api:3001",service="max-service-api"}'
+        values: '1+0x5'
+      - series: 'max_service_local_traffic_ready{job="max-service-api",instance="api:3001",service="max-service-api"}'
+        values: '0+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MaxServiceTrafficNotReady
+        exp_alerts:
+          - exp_labels:
+              instance: api:3001
+              job: max-service-api
+              service: max-service-api
+              severity: page
+            exp_annotations:
+              summary: "API Max Service não está pronta para tráfego"
+              description: "Uma dependência obrigatória mantém a API fora do estado de prontidão."
+              runbook: "https://github.com/totalutiliti/max_service/blob/main/docs/operations/observability.md#runbook-operacional"
+
+  - name: não alerta quando coleta e prontidão estão saudáveis
+    interval: 1m
+    input_series:
+      - series: 'up{job="max-service-api",instance="api:3001",service="max-service-api"}'
+        values: '1+0x5'
+      - series: 'max_service_local_traffic_ready{job="max-service-api",instance="api:3001",service="max-service-api"}'
+        values: '1+0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MaxServiceApiTargetDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: MaxServiceMetricContractMissing
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: MaxServiceTrafficNotReady
+        exp_alerts: []

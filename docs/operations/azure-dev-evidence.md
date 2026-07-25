@@ -1,6 +1,6 @@
 # Evidência do Azure dev
 
-Registro da implantação inicial concluída em `2026-07-25T17:09:29-03:00`.
+Registro da implantação inicial concluída em `2026-07-25T17:09:29-03:00` e da validação funcional mais recente em `2026-07-25T17:23:57-03:00`.
 
 ## Escopo
 
@@ -8,10 +8,8 @@ Registro da implantação inicial concluída em `2026-07-25T17:09:29-03:00`.
 - resource group `rg-max-service-dev`;
 - região `Brazil South`;
 - tags `environment=dev`, `project=max-service` e `data=synthetic-only`;
-- infraestrutura versionada no commit `d61ed6d714639fafc1681f069e6844a1b51456c7`;
-- imagens imutáveis `max-service-api:f6a6e88d7e44` e `max-service-web:f6a6e88d7e44`.
-
-Os commits posteriores à imagem corrigiram somente o fluxo Bicep/PowerShell; não alteraram o código executável da API ou do web.
+- código e infraestrutura versionados no commit `4174b546aedb`;
+- imagens imutáveis `max-service-api:4174b546aedb` e `max-service-web:4174b546aedb`.
 
 ## Recursos confirmados
 
@@ -31,10 +29,14 @@ Os commits posteriores à imagem corrigiram somente o fluxo Bicep/PowerShell; n�
 - Bicep compilado para os cinco templates;
 - lint, build, testes unitários e scanner de segredos aprovados;
 - imagens API e web construídas remotamente no ACR;
-- migration `job-max-service-migrate-dev-pwbsjk7` concluída com `Succeeded`;
+- migration `job-max-service-migrate-dev-d9ikbgn` concluída com `Succeeded`;
 - camada stateful reaproveitada sem rotação de segredos durante a conclusão;
+- revisões `ca-max-service-api-dev--4174b546aedb` e `ca-max-service-web-dev--4174b546aedb` confirmadas como `Running`;
 - `GET /health/ready` da API respondeu HTTP `200`;
-- `GET /demo` do web respondeu HTTP `200`.
+- `GET /demo` do web respondeu HTTP `200`;
+- a entrada como Cliente criou uma sessão segura atrás do proxy Azure;
+- o painel e a lista persistente **Meus pedidos** foram carregados no navegador;
+- o navegador não registrou warnings ou erros após a jornada.
 
 ## Endpoints
 

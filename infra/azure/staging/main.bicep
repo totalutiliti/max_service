@@ -267,6 +267,7 @@ module governance 'governance.bicep' = {
     keyVaultName: keyVaultName
     storageAccountName: storageAccountName
     apiAppName: apiAppName
+    runtimeIncluded: includeRuntimeInPlan
     enableDiagnostics: enableDiagnostics
     externalAlertEmail: externalAlertEmail
     budgetAmount: budgetAmount
@@ -281,6 +282,7 @@ module governance 'governance.bicep' = {
 
 output apiIngressMode string = includeRuntimeInPlan ? 'internal' : 'not-included'
 output alertDestinationConfigured bool = governance.outputs.actionGroupPlanned
+output apiReplicaAlertConfigured bool = governance.outputs.apiReplicaAlertPlanned
 output budgetConfigured bool = governance.outputs.budgetPlanned
 output environmentName string = environmentName
 output keyVaultName string = keyVaultName

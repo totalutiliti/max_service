@@ -8,6 +8,7 @@ param redisName string
 param keyVaultName string
 param storageAccountName string
 param apiAppName string
+param runtimeIncluded bool = false
 param enableDiagnostics bool = true
 
 @secure()
@@ -22,6 +23,7 @@ param budgetContacts object = {}
 param budgetStartDate string = '2026-08-01T00:00:00Z'
 
 var alertsEnabled = !empty(externalAlertEmail)
+var apiReplicaAlertEnabled = alertsEnabled && runtimeIncluded
 var budgetContactEmails = budgetContacts.?emails ?? []
 var budgetEnabled = budgetAmount > 0 && length(budgetContactEmails) > 0
 var tags = {
@@ -176,7 +178,7 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (alertsEn
   }
 }
 
-resource apiReplicaAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (alertsEnabled) {
+resource apiReplicaAlert 'Microsoft.Insights/metricAlerts@2018-03-01' = if (apiReplicaAlertEnabled) {
   name: 'alert-max-service-stg-api-replicas'
   location: 'global'
   tags: tags
@@ -245,5 +247,6 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = if (budgetEnabled) 
 }
 
 output actionGroupPlanned bool = alertsEnabled
+output apiReplicaAlertPlanned bool = apiReplicaAlertEnabled
 output budgetPlanned bool = budgetEnabled
 output diagnosticsPlanned bool = enableDiagnostics

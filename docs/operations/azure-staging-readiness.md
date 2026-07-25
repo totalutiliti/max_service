@@ -348,6 +348,8 @@ Riscos residuais antes do primeiro apply:
   e decisão; o host ACA direto não comprova proteção de borda;
 - MinIO é uma única réplica e permanece ponto único de processo;
 - Action Group e budget são condicionais e ficam ausentes com defaults seguros;
+- a regra de réplicas da API exige explicitamente `includeRuntimeInPlan=true`, evitando
+  referência a um runtime ausente no plano base;
 - restore, failover, alerta externo e rollback ainda não foram observados em Azure;
 - faixas de custo precisam ser recalculadas na calculadora oficial no dia da aprovação.
 

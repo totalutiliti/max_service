@@ -17,6 +17,9 @@ O runtime completo aparece no what-if apenas com `-IncludeRuntime`. A flag nunca
 deploy. Em uma implantação futura e explicitamente autorizada, o job de migration deve
 terminar com sucesso antes de aplicar o módulo runtime separadamente.
 
+Mesmo quando um destinatário externo for informado, a regra de réplicas da API só entra
+no plano com `-IncludeRuntime`; o plano base não referencia uma Container App ausente.
+
 ## Validação local sem Azure
 
 ```powershell
